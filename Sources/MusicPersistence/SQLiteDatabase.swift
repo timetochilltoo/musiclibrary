@@ -283,6 +283,14 @@ public actor MusicDatabase {
         return issues.sorted { $0.albumTitle.localizedCaseInsensitiveCompare($1.albumTitle) == .orderedAscending }
     }
 
+    public func playbackAsset(trackID: TrackID) throws -> PlaybackAssetReference? {
+        let statement = try Self.prepare("SELECT track.title, digital_asset.storage_root_id, digital_asset.relative_path, digital_asset.availability FROM track JOIN digital_asset ON digital_asset.track_id = track.id WHERE track.id = ? ORDER BY digital_asset.id LIMIT 1;", on: connection)
+        defer { sqlite3_finalize(statement) }; try Self.bind(trackID.description, at: 1, to: statement)
+        guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
+        guard let rawRoot = Self.text(at: 1, from: statement), let rootUUID = UUID(uuidString: rawRoot), let rawAvailability = Self.text(at: 3, from: statement), let availability = DigitalAssetAvailability(rawValue: rawAvailability) else { throw DatabaseError.invalidIdentifier("Playback asset") }
+        return .init(trackID: trackID, title: Self.text(at: 0, from: statement) ?? "", storageRootID: .init(rawValue: rootUUID), relativePath: Self.text(at: 2, from: statement) ?? "", availability: availability)
+    }
+
     public func finishImportBatch(_ batchID: ImportBatchID, status: ImportBatchStatus, errorSummary: String? = nil) throws {
         guard status != .scanning else { throw DatabaseError.invalidOperation("A finished import batch must have a terminal status.") }
         try transaction {

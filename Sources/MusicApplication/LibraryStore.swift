@@ -187,6 +187,26 @@ public final class LibraryStore: ObservableObject {
         return albumID
     }
 
+    public func playbackURL(for trackID: TrackID) async throws -> (url: URL, title: String) {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        try await refreshStorageRootAccess()
+        guard let asset = try await database.playbackAsset(trackID: trackID) else { throw DatabaseError.notFound("Playable asset") }
+        guard asset.availability == .available else { throw DatabaseError.invalidOperation("This asset is not currently available.") }
+        guard let root = storageRoots.first(where: { $0.id == asset.storageRootID }) else { throw DatabaseError.notFound("Storage root") }
+        let resolved = resolveSecurityScopedBookmark(root)
+        guard resolved.status == .available, let rootURL = resolved.url else { throw DatabaseError.invalidOperation("The asset's storage root is unavailable.") }
+        let url = rootURL.appending(path: asset.relativePath)
+        guard FileManager.default.fileExists(atPath: url.path) else { throw DatabaseError.invalidOperation("The audio file is missing. Its catalogue record was left unchanged.") }
+        return (url, asset.title)
+    }
+
+    public func playbackURLs(discID: DiscID) async throws -> [(url: URL, trackID: TrackID, title: String)] {
+        let discTracks = try await tracks(discID: discID)
+        var results: [(url: URL, trackID: TrackID, title: String)] = []
+        for track in discTracks { let asset = try await playbackURL(for: track.id); results.append((asset.url, track.id, asset.title)) }
+        return results
+    }
+
     public func startImportScan(rootID: StorageRootID) async throws {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
         try await refreshStorageRootAccess()

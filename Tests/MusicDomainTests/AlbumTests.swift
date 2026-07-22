@@ -1,4 +1,5 @@
 import Testing
+import Foundation
 @testable import MusicDomain
 
 @Suite("Album validation")
@@ -40,5 +41,22 @@ struct AlbumTests {
             assetsByTrack: [[.available], [.available]]
         )
         #expect(summary.status == .complete)
+    }
+}
+
+@Suite("Playback queue")
+struct PlaybackQueueTests {
+    @Test("Queue advances, repeats, and preserves a Codable state")
+    func queueBehaviour() throws {
+        let first = TrackID(); let second = TrackID()
+        var queue = PlaybackQueue(trackIDs: [first, second], currentIndex: 0)
+        #expect(queue.next() == second)
+        #expect(queue.next() == nil)
+        queue.repeatMode = .all
+        #expect(queue.next() == first)
+        queue.repeatMode = .one
+        #expect(queue.next() == first)
+        let restored = try JSONDecoder().decode(PlaybackQueue.self, from: JSONEncoder().encode(queue))
+        #expect(restored == queue)
     }
 }

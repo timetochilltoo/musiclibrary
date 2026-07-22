@@ -169,6 +169,7 @@ Implemented and tested:
 - A cancellable Import Inbox scan creates batches and audio-file candidates only. It uses system content-type probing, skips hidden/package content, retains file-level errors, supports cancellation/retry, and recovers an interrupted scan as cancelled on relaunch. It never creates catalogue records or modifies audio files.
 - Embedded common tags and duration are read locally through AVFoundation, preserved with `embedded-tags` provenance, and grouped deterministically into release proposals. Review can approve-for-later or dismiss a proposal; neither action creates catalogue records, changes catalogue revision, contacts external services, nor writes audio tags.
 - Confirming an approved proposal explicitly creates an album, ordered discs/tracks, and root-relative digital assets in one idempotent transaction. A repeated confirmation returns the already created album. Library Health derives missing/offline/partial status from track assets and current root status; it never relocates or deletes a file.
+- Local Mac playback resolves only available, authorized root-relative assets, verifies file existence, and uses normal shared AVFoundation output. Playing a track queues its disc; the persisted queue supports previous/next, repeat, shuffle, volume, pause, stop, and seek API. Missing/offline files fail locally without any catalogue mutation.
 - Increment catalogue revision once per successful high-level write operation.
 
 ### macOS UI
@@ -183,6 +184,7 @@ Implemented:
 - Basic album detail view showing edition fields, CD status, and direct location or box/unknown state.
 - Import Inbox list/detail with scan progress, cancellation, retry, candidate paths/types, embedded tag values, grouped release proposals, confidence/provenance, explicit review controls, and an explicit create-catalogue-records confirmation.
 - Settings shows calculated Library Health issues for missing, offline, and partial digital albums.
+- Album tracks have Play controls; a persistent Now Playing strip provides transport, Queue (shuffle/repeat), volume, and stop controls.
 - Error alerts and initial database-opening progress UI.
 
 Runtime database location on the Mac:
@@ -195,7 +197,7 @@ This database is user data. Do not remove it during development. If a destructiv
 
 ## 8. Current tests and verification baseline
 
-The last verified baseline contains 22 tests in 3 suites. Run `swift test`; do not rely on this handoff alone.
+The last verified baseline contains 23 tests in 4 suites. Run `swift test`; do not rely on this handoff alone.
 
 `MusicDomainTests/AlbumTests.swift` verifies:
 
@@ -219,6 +221,7 @@ The last verified baseline contains 22 tests in 3 suites. Run `swift test`; do n
 - Import Inbox batch/candidate persistence and proof that scanning does not mutate albums or catalogue revision.
 - Metadata-proposal persistence, approval state, and proof that review does not create catalogue records or alter catalogue revision.
 - Idempotent approved-proposal confirmation and offline-root Library Health derivation.
+- Queue ordering/repeat and Codable state restoration.
 
 `MusicApplicationTests/ImportScannerTests.swift` verifies content-type audio discovery, hidden-file exclusion, cancellation before enumeration, and Unicode/multi-disc proposal grouping.
 
@@ -258,7 +261,7 @@ Album edits and box membership workflows are available. Album detail supports ma
 
 ### Digital media
 
-Storage-root authorization, Import Inbox scanning, embedded common-tag proposal review, confirmed digital assets, and calculated basic Library Health are implemented. No external metadata lookup, playback, playlists, SMB audio access, snapshots, iPad app, lyrics, tag write-back, or AI is implemented. Duplicate-content hashing and relocation remain future work. Existing strings/enums/schema tables beyond these slices are scaffolding, not completed features.
+Storage-root authorization, Import Inbox scanning, embedded common-tag proposal review, confirmed digital assets, basic Library Health, and local Mac playback are implemented. No external metadata lookup, playlists, SMB audio access, snapshots, iPad app, lyrics, tag write-back, or AI is implemented. Duplicate-content hashing, relocation, and automatic playback-end advancement remain future work. Existing strings/enums/schema tables beyond these slices are scaffolding, not completed features.
 
 ## 10. Non-negotiable invariants to preserve
 
@@ -279,34 +282,34 @@ Enforce these with transactions, validation, constraints, and tests where possib
 
 If an invariant needs to change, stop and document the proposed migration and user-facing impact before implementing it.
 
-## 11. Exact next slice: local playback queue
+## 11. Exact next slice: playlists and queue persistence refinement
 
-Confirmed digital assets and basic Library Health are complete. Build local Mac playback before iPad work; do not add remote streaming or tag write-back.
+Local Mac playback is complete. Build playlist management and playback-end advancement before any iPad playback or remote streaming.
 
 ### Goal
 
-Play available local assets with a durable queue, transport controls, and safe response to unavailable roots/files.
+Allow the user to create ordered playlists from catalogue tracks and improve local queue restoration/end-of-track behavior.
 
 ### Required persistence work
 
-1. Resolve asset URLs only through available security-scoped roots; reject missing/offline/permission-required assets without changing their records.
-2. Add a queue model with next/previous, seek, repeat, shuffle, volume, and persistent state.
-3. Keep playback failures local and recoverable; do not relink/move/delete assets automatically.
-4. Start with normal shared audio output; no exclusive/hog mode.
+1. Use existing playlist/playlist_item schema with ordered, duplicate-safe mutations and explicit track/asset choice.
+2. Advance local playback on normal completion according to repeat/shuffle, while preserving failures as local queue errors.
+3. Restore queue state on launch and clearly mark unresolved entries without modifying catalogue records.
+4. Do not add remote streaming, iPad playback, or tag write-back.
 
 ### Required UI work
 
-1. Add Now Playing, queue, and basic transport UI to the Mac app.
-2. Show unavailable asset reason and leave queue/catalogue intact.
+1. Add playlist list/detail/editor and add-to-playlist controls.
+2. Add a queue inspector with unresolved-item status.
 3. Do not add iPad streaming or automatic metadata correction.
 
 ### Required tests
 
 Add persistence tests for at least:
 
-- Queue ordering, repeat/shuffle, and state restoration.
-- Missing/offline/permission failures without catalogue writes.
-- Transport actions and output-device interruption recovery.
+- Playlist ordering/mutations and persistence.
+- Playback-end repeat/shuffle behavior and queue restoration with unavailable items.
+- No remote playback or catalogue writes from transport failures.
 
 Run `swift test` after the slice. Update this document's completed/not-implemented sections, tests, limitations, and next task before committing.
 
@@ -314,7 +317,7 @@ Run `swift test` after the slice. Update this document's completed/not-implement
 
 Do not implement all of this at once. Complete and test one vertical slice per commit group.
 
-1. Lossless local playback engine, queue, and playlists.
+1. Playlists and queue persistence refinement.
 5. Digital assets, availability health, duplicate detection, and relocation.
 6. Lossless playback engine, queue, and playlists.
 7. Library Health, soft delete/recovery, edit history, JSON/CSV export.

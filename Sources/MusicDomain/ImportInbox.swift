@@ -99,6 +99,15 @@ public struct LibraryHealthIssue: Identifiable, Equatable, Sendable {
     public init(kind: LibraryHealthKind, albumID: AlbumID, albumTitle: String, detail: String) { self.id = "\(kind.rawValue)-\(albumID.description)"; self.kind = kind; self.albumID = albumID; self.albumTitle = albumTitle; self.detail = detail }
 }
 
+public struct PlaybackAssetReference: Equatable, Sendable {
+    public let trackID: TrackID
+    public let title: String
+    public let storageRootID: StorageRootID
+    public let relativePath: String
+    public let availability: DigitalAssetAvailability
+    public init(trackID: TrackID, title: String, storageRootID: StorageRootID, relativePath: String, availability: DigitalAssetAvailability) { self.trackID = trackID; self.title = title; self.storageRootID = storageRootID; self.relativePath = relativePath; self.availability = availability }
+}
+
 public struct ImportReleaseProposalDraft: Equatable, Sendable {
     public let title: String
     public let artist: String?

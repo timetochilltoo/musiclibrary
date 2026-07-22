@@ -44,6 +44,7 @@ private struct LibraryShellView: View {
     }
 
     @ObservedObject var library: LibraryStore
+    @StateObject private var playback = PlaybackController()
     @State private var section: Section? = .albums
     @State private var selectedAlbumID: AlbumID?
     @State private var selectedBoxSetID: BoxSetID?
@@ -89,6 +90,12 @@ private struct LibraryShellView: View {
             Button("OK", role: .cancel) { library.dismissError() }
         } message: {
             Text(library.errorMessage ?? "")
+        }
+        .safeAreaInset(edge: .bottom) {
+            if playback.isPlaying || playback.currentTitle != "Nothing playing" {
+                HStack { Image(systemName: playback.isPlaying ? "speaker.wave.2.fill" : "pause.circle"); Text(playback.currentTitle).lineLimit(1); Spacer(); Button("Previous", systemImage: "backward.fill") { playback.previous() }.labelStyle(.iconOnly); Button(playback.isPlaying ? "Pause" : "Play") { playback.toggle() }; Button("Next", systemImage: "forward.fill") { playback.next() }.labelStyle(.iconOnly); Menu("Queue") { Button("Shuffle") { playback.shuffle() }; Picker("Repeat", selection: Binding(get: { playback.queue.repeatMode }, set: { playback.setRepeatMode($0) })) { ForEach(RepeatMode.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) } } }; Slider(value: Binding(get: { playback.volume }, set: { playback.setVolume(Float($0)) }), in: 0...1).frame(width: 90); Button("Stop") { playback.stop() } }
+                    .padding(10).background(.bar)
+            }
         }
     }
 
@@ -140,7 +147,7 @@ private struct LibraryShellView: View {
         } else if section == .importInbox, let selectedImportBatchID, let batch = library.importBatches.first(where: { $0.id == selectedImportBatchID }) {
             ImportBatchDetail(library: library, batch: batch)
         } else if let selectedAlbumID, let album = library.albums.first(where: { $0.id == selectedAlbumID }) {
-            AlbumDetail(library: library, album: album, locations: library.locations, onEdit: { albumToEdit = album })
+            AlbumDetail(library: library, playback: playback, album: album, locations: library.locations, onEdit: { albumToEdit = album })
         } else {
             ContentUnavailableView("Select an album", systemImage: "opticaldisc", description: Text("Album details will appear here."))
         }
@@ -299,6 +306,7 @@ private struct ImportBatchDetail: View {
 
 private struct AlbumDetail: View {
     @ObservedObject var library: LibraryStore
+    @ObservedObject var playback: PlaybackController
     let album: Album
     let locations: [PhysicalLocation]
     let onEdit: () -> Void
@@ -343,6 +351,7 @@ private struct AlbumDetail: View {
                             HStack {
                                 Text("\(track.number). \(track.title)")
                                 Spacer()
+                                Button("Play", systemImage: "play.fill") { play(track) }.labelStyle(.iconOnly)
                                 Button("Credit", systemImage: "person.badge.plus") { trackForContributor = track }
                                     .labelStyle(.iconOnly)
                                 Button("Remove", systemImage: "trash", role: .destructive) { Task { try? await library.deleteTrack(track.id); await loadContent() } }
@@ -404,6 +413,12 @@ private struct AlbumDetail: View {
         credits = (try? await library.albumContributors(albumID: album.id)) ?? []
         aliases = (try? await library.albumAliases(albumID: album.id)) ?? []
         artwork = (try? await library.albumArtwork(albumID: album.id)) ?? []
+    }
+
+    private func play(_ track: Track) {
+        Task {
+            if let items = try? await library.playbackURLs(discID: track.discID), let index = items.firstIndex(where: { $0.trackID == track.id }) { try? playback.play(items: items, startingAt: index) }
+        }
     }
 }
 
