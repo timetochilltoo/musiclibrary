@@ -193,8 +193,9 @@ private struct StorageRootList: View {
                 if let path = library.snapshotDestinationPath { Text(path).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
                 Text("Catalogue revision \(library.catalogueRevision) · last published \(library.lastPublishedRevision.map(String.init) ?? "never")\(library.isSnapshotPublishPending ? " · pending" : "")").font(.caption).foregroundStyle(.secondary)
                 if let lastPublishedAt { Text("Last successful publish \(lastPublishedAt.formatted(date: .abbreviated, time: .shortened))").font(.caption).foregroundStyle(.secondary) }
+                if let failure = library.lastSnapshotPublishFailure { Text(failure).font(.caption).foregroundStyle(.red) }
                 Button("Choose Snapshot Destination") { showsSnapshotDestinationPicker = true }
-                Button("Publish Now") { Task { try? await library.publishSnapshotNow() } }.disabled(library.snapshotDestinationPath == nil)
+                Button(library.lastSnapshotPublishFailure == nil ? "Publish Now" : "Retry Publish") { Task { try? await library.publishSnapshotNow() } }.disabled(library.snapshotDestinationPath == nil)
             }
             Section("Music Folders") {
                 Button("Verify Asset Fingerprints", systemImage: "checkmark.shield") { Task { try? await library.verifyFingerprints() } }

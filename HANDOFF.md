@@ -312,7 +312,7 @@ If an invariant needs to change, stop and document the proposed migration and us
 
 ## 11. Exact next slice: publication failure history and recovery review
 
-The Mac now uses a tested scheduler, performs a bounded background flush, and shows the last successful revision/time. Next, retain a small failure history and offer a recovery review without changing the publication protocol.
+The Mac now persists the latest publication failure, shows it in Settings after relaunch, and changes the manual action to Retry Publish. Next, review broader Library Health recovery actions.
 
 ### Goal
 

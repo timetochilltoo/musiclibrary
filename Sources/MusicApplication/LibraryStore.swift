@@ -21,6 +21,7 @@ public final class LibraryStore: ObservableObject {
     @Published public private(set) var catalogueRevision: Int64 = 0
     @Published public private(set) var lastPublishedRevision: Int64?
     @Published public private(set) var lastPublishedAt: Date?
+    @Published public private(set) var lastSnapshotPublishFailure: String?
     @Published public private(set) var isSnapshotPublishPending = false
 
     private var database: MusicDatabase?
@@ -30,6 +31,7 @@ public final class LibraryStore: ObservableObject {
     private let snapshotDestinationBookmarkKey = "MusicLibrary.snapshotDestinationBookmark"
     private let lastPublishedRevisionKey = "MusicLibrary.lastPublishedRevision"
     private let lastPublishedAtKey = "MusicLibrary.lastPublishedAt"
+    private let lastSnapshotPublishFailureKey = "MusicLibrary.lastSnapshotPublishFailure"
     private var publicationSchedule = SnapshotPublicationSchedule()
 
     public init() {}
@@ -250,6 +252,8 @@ public final class LibraryStore: ObservableObject {
         lastPublishedAt = Date()
         UserDefaults.standard.set(lastPublishedAt, forKey: lastPublishedAtKey)
         snapshotPublishStatus = "Published revision \(manifest.revision)"
+        lastSnapshotPublishFailure = nil
+        UserDefaults.standard.removeObject(forKey: lastSnapshotPublishFailureKey)
         isSnapshotPublishPending = false
     }
     public func flushPendingSnapshotPublication(maximumWait: Duration = .seconds(3)) async {
@@ -352,6 +356,7 @@ public final class LibraryStore: ObservableObject {
             publicationSchedule.markPublished(revision)
         }
         lastPublishedAt = UserDefaults.standard.object(forKey: lastPublishedAtKey) as? Date
+        lastSnapshotPublishFailure = UserDefaults.standard.string(forKey: lastSnapshotPublishFailureKey)
         snapshotPublishStatus = "Ready to publish"
     }
 
@@ -369,8 +374,16 @@ public final class LibraryStore: ObservableObject {
             try? await Task.sleep(for: .seconds(2))
             guard !Task.isCancelled, let self else { return }
             do { if self.publicationSchedule.needsPublication { try await self.publishSnapshotNow() } else { self.isSnapshotPublishPending = false } }
-            catch { self.isSnapshotPublishPending = false; self.snapshotPublishStatus = "Automatic publish failed: \(error.localizedDescription)" }
+            catch { self.recordSnapshotPublishFailure(error, prefix: "Automatic publish failed") }
         }
+    }
+
+    private func recordSnapshotPublishFailure(_ error: Error, prefix: String) {
+        isSnapshotPublishPending = false
+        let message = "\(prefix): \(error.localizedDescription)"
+        snapshotPublishStatus = message
+        lastSnapshotPublishFailure = message
+        UserDefaults.standard.set(message, forKey: lastSnapshotPublishFailureKey)
     }
 
     private func applicationSupportDirectory() throws -> URL {
