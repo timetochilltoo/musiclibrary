@@ -6,7 +6,7 @@ Detailed coding handoff: [IMPLEMENTATION_SPEC.md](IMPLEMENTATION_SPEC.md)
 
 Operational continuation guide: [HANDOFF.md](HANDOFF.md)
 
-Implementation baseline (22 July 2026): the macOS catalogue foundation, retained local/NAS authorization, Import Inbox, assets, playback, recovery, snapshot publisher, verified read-only cache, security-scoped snapshot/SMB selection, iPad album browsing, and safe device-local SMB track resolution are complete and covered by thirty-three automated tests. The companion is not yet a packaged iPad application and has no playback controls. See [HANDOFF.md](HANDOFF.md) for the current Git baseline and next implementation slice.
+Implementation baseline (22 July 2026): the macOS catalogue foundation, retained local/NAS authorization, Import Inbox, assets, playback, recovery, snapshot publisher, verified read-only cache, security-scoped snapshot/SMB selection, iPad browsing, safe SMB track resolution, and read-only single-track playback are complete and covered by thirty-four automated tests. The companion is not yet a packaged iPad application or automatic-refresh client. See [HANDOFF.md](HANDOFF.md) for the current Git baseline and next implementation slice.
 
 ## 1. Recommendation
 

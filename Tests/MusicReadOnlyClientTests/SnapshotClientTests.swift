@@ -59,3 +59,14 @@ func rootRelativeAssetResolution() {
     #expect(ReadOnlyDigitalAsset(storageRootID: "root-a", relativePath: "../outside.flac", availability: "available").resolve(using: mappings) == .unsafeRelativePath)
     #expect(ReadOnlyDigitalAsset(storageRootID: "root-a", relativePath: "Artist/Album/01.flac", availability: "rootOffline").resolve(using: mappings) == .unavailable("rootOffline"))
 }
+
+@Test("A companion track selects only a resolved available asset for playback")
+func companionPlayableURL() {
+    let mappings = [SMBRootMapping(publishedRootID: "root-a", localURL: URL(fileURLWithPath: "/Volumes/Music"))]
+    let track = ReadOnlyTrack(id: "track", number: 1, title: "Song", assets: [
+        .init(storageRootID: "missing-root", relativePath: "Song.flac", availability: "available"),
+        .init(storageRootID: "root-a", relativePath: "Song.flac", availability: "available")
+    ])
+    #expect(track.playableURL(using: mappings) == URL(fileURLWithPath: "/Volumes/Music/Song.flac"))
+    #expect(ReadOnlyTrack(id: "offline", number: 2, title: "Offline", assets: [.init(storageRootID: "root-a", relativePath: "Song.flac", availability: "rootOffline")]).playableURL(using: mappings) == nil)
+}

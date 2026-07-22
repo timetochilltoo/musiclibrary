@@ -106,6 +106,15 @@ public extension ReadOnlyDigitalAsset {
     }
 }
 
+public extension ReadOnlyTrack {
+    func playableURL(using mappings: [SMBRootMapping]) -> URL? {
+        for asset in assets {
+            if case .mapped(let url) = asset.resolve(using: mappings) { return url }
+        }
+        return nil
+    }
+}
+
 public extension SnapshotClient {
     func localCatalogue() throws -> ReadOnlyCatalogue? {
         let manifestURL = cacheDirectory.appending(path: "manifest.json")

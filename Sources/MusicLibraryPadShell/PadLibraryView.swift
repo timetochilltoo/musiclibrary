@@ -4,6 +4,7 @@ import MusicReadOnlyClient
 public struct PadLibraryView: View {
     @State private var snapshotStatus = "No verified snapshot loaded"
     @State private var catalogue: ReadOnlyCatalogue?
+    @StateObject private var playback = CompanionPlaybackController()
     @State private var searchText = ""
     @State private var mappings: [SMBRootMapping] = []
     @State private var sourceDirectory: URL?
@@ -44,7 +45,7 @@ public struct PadLibraryView: View {
                             Text("No albums match your search.").foregroundStyle(.secondary)
                         }
                         ForEach(filteredAlbums) { album in
-                            NavigationLink { PadAlbumDetailView(album: album, mappings: mappings) } label: { PadAlbumRow(album: album) }
+                            NavigationLink { PadAlbumDetailView(album: album, mappings: mappings, playback: playback) } label: { PadAlbumRow(album: album) }
                         }
                     } else {
                         Text("Refresh a verified snapshot to browse albums.").foregroundStyle(.secondary)
@@ -74,6 +75,9 @@ public struct PadLibraryView: View {
             .alert("Music Library", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
                 Button("OK", role: .cancel) { message = nil }
             } message: { Text(message ?? "") }
+            .alert("Playback", isPresented: Binding(get: { playback.errorMessage != nil }, set: { if !$0 { playback.dismissError() } })) {
+                Button("OK", role: .cancel) { playback.dismissError() }
+            } message: { Text(playback.errorMessage ?? "") }
         }
     }
 
@@ -153,10 +157,12 @@ public struct PadAlbumRow: View {
 public struct PadAlbumDetailView: View {
     public let album: ReadOnlyAlbum
     public let mappings: [SMBRootMapping]
+    @ObservedObject public var playback: CompanionPlaybackController
 
-    public init(album: ReadOnlyAlbum, mappings: [SMBRootMapping] = []) {
+    public init(album: ReadOnlyAlbum, mappings: [SMBRootMapping] = [], playback: CompanionPlaybackController) {
         self.album = album
         self.mappings = mappings
+        self.playback = playback
     }
 
     public var body: some View {
@@ -176,7 +182,14 @@ public struct PadAlbumDetailView: View {
                     Section(disc.title ?? "Disc \(disc.number)") {
                         ForEach(disc.tracks) { track in
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("\(track.number). \(track.title)")
+                                HStack {
+                                    Text("\(track.number). \(track.title)")
+                                    Spacer()
+                                    Button(playbackLabel(for: track)) {
+                                        playOrPause(track)
+                                    }
+                                    .disabled(track.playableURL(using: mappings) == nil)
+                                }
                                 Text(assetStatus(for: track))
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
@@ -197,5 +210,14 @@ public struct PadAlbumDetailView: View {
         case .unavailable(let state): "Digital file unavailable (\(state))"
         case .unsafeRelativePath: "Unsafe published path refused"
         }
+    }
+
+    private func playbackLabel(for track: ReadOnlyTrack) -> String {
+        playback.currentTrackID == track.id && playback.isPlaying ? "Pause" : "Play"
+    }
+
+    private func playOrPause(_ track: ReadOnlyTrack) {
+        if playback.currentTrackID == track.id { playback.togglePause() }
+        else { playback.play(track, mappings: mappings) }
     }
 }
