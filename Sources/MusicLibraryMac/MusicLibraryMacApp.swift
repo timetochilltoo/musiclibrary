@@ -225,6 +225,16 @@ private struct StorageRootList: View {
                     }
                 }
             }
+            if !library.duplicateAssets.isEmpty {
+                Section("Possible duplicate assets") {
+                    ForEach(library.duplicateAssets, id: \.contentHash) { duplicate in
+                        VStack(alignment: .leading) {
+                            Text("\(duplicate.paths.count) files share one content hash")
+                            ForEach(duplicate.paths, id: \.self) { Text($0).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+                        }
+                    }
+                }
+            }
             if !library.duplicateAssets.isEmpty { Section("Duplicate fingerprints") { ForEach(library.duplicateAssets) { duplicate in Text("\(duplicate.paths.count) files share fingerprint \(duplicate.contentHash.prefix(12))…") } } }
         }
         .fileImporter(isPresented: $showsSnapshotDestinationPicker, allowedContentTypes: [.folder]) { result in
