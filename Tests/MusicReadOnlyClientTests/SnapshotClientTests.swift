@@ -26,3 +26,26 @@ func snapshotSourceSelection() throws {
     try store.clear()
     #expect(try store.selectedDirectory() == nil)
 }
+
+@Test("Verified local snapshot decodes albums and supports read-only search")
+func localCatalogueBrowsing() throws {
+    let source = FileManager.default.temporaryDirectory.appending(path: "catalogue-source-\(UUID().uuidString)")
+    let cache = FileManager.default.temporaryDirectory.appending(path: "catalogue-cache-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: source); try? FileManager.default.removeItem(at: cache) }
+    try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+    let payload = ReadOnlyCatalogue(format: "music-library-json", schemaVersion: 7, catalogueRevision: 5, albums: [
+        .init(id: "one", title: "宇多田ヒカル", editionLabel: "Japan Remaster", releaseYear: 2004, catalogueNumber: "TOCT-123", hasCD: true, hasDigital: true),
+        .init(id: "two", title: "Other", hasCD: false, hasDigital: true)
+    ])
+    let data = try JSONEncoder().encode(payload)
+    try data.write(to: source.appending(path: "catalogue-5.json"))
+    let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    let manifest = ReadOnlySnapshotManifest(format: "music-library-snapshot-json-v1", revision: 5, fileName: "catalogue-5.json", sha256: hash)
+    try JSONEncoder().encode(manifest).write(to: source.appending(path: "manifest.json"))
+    let client = SnapshotClient(cacheDirectory: cache)
+    #expect(try client.update(from: source))
+    let catalogue = try #require(try client.localCatalogue())
+    #expect(catalogue.albums.first?.displayTitle == "宇多田ヒカル — Japan Remaster")
+    #expect(catalogue.albums.filter { $0.matches("TOCT") }.map(\.id) == ["one"])
+    #expect(catalogue.albums.filter { $0.matches("宇多田") }.map(\.id) == ["one"])
+}

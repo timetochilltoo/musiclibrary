@@ -298,10 +298,33 @@ public actor MusicDatabase {
         try transaction { let statement = try Self.prepare("UPDATE album SET deleted_at = NULL, updated_at = ? WHERE id = ? AND deleted_at IS NOT NULL;", on: connection); defer { sqlite3_finalize(statement) }; try Self.bind(Self.milliseconds(Date()), at: 1, to: statement); try Self.bind(id.description, at: 2, to: statement); try Self.stepDone(statement, connection: connection); guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Deleted album") }; try incrementRevision() }
     }
     public func catalogueExportJSON() throws -> String {
-        let albums = try self.albums(); let rows = albums.map { ["id": $0.id.description, "title": $0.title, "edition": $0.editionLabel ?? "", "releaseYear": $0.releaseYear.map(String.init) ?? ""] }
+        let albums = try self.albums()
+        let digitalAlbumIDs = try albumIDsWithDigitalAssets()
+        let rows: [[String: Any]] = albums.map {
+            var row: [String: Any] = [
+                "id": $0.id.description,
+                "title": $0.title,
+                "hasCD": $0.hasCD,
+                "hasDigital": digitalAlbumIDs.contains($0.id.description)
+            ]
+            if let editionLabel = $0.editionLabel, !editionLabel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { row["editionLabel"] = editionLabel }
+            if let releaseYear = $0.releaseYear { row["releaseYear"] = releaseYear }
+            if let catalogueNumber = $0.catalogueNumber, !catalogueNumber.isEmpty { row["catalogueNumber"] = catalogueNumber }
+            return row
+        }
         let data = try JSONSerialization.data(withJSONObject: ["format": "music-library-json", "schemaVersion": try schemaVersion(), "catalogueRevision": try currentRevision(), "albums": rows], options: [.prettyPrinted, .sortedKeys]); return String(decoding: data, as: UTF8.self)
     }
     public func publicationRevisionAndJSON() throws -> (Int64, String) { (try currentRevision(), try catalogueExportJSON()) }
+
+    private func albumIDsWithDigitalAssets() throws -> Set<String> {
+        let statement = try Self.prepare("SELECT DISTINCT disc.album_id FROM digital_asset JOIN track ON track.id = digital_asset.track_id JOIN disc ON disc.id = track.disc_id;", on: connection)
+        defer { sqlite3_finalize(statement) }
+        var values = Set<String>()
+        while sqlite3_step(statement) == SQLITE_ROW {
+            if let id = Self.text(at: 0, from: statement) { values.insert(id) }
+        }
+        return values
+    }
 
     public func recordAssetFingerprint(_ assetID: DigitalAssetID, contentHash: String, quickSignature: String) throws {
         try transaction { let statement = try Self.prepare("UPDATE digital_asset SET content_hash = ?, quick_signature = ? WHERE id = ?;", on: connection); defer { sqlite3_finalize(statement) }; try Self.bind(contentHash, at: 1, to: statement); try Self.bind(quickSignature, at: 2, to: statement); try Self.bind(assetID.description, at: 3, to: statement); try Self.stepDone(statement, connection: connection); guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Digital asset") } }

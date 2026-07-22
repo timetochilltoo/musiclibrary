@@ -3,6 +3,8 @@ import MusicReadOnlyClient
 
 public struct PadLibraryView: View {
     @State private var snapshotStatus = "No verified snapshot loaded"
+    @State private var catalogue: ReadOnlyCatalogue?
+    @State private var searchText = ""
     @State private var mappings: [SMBRootMapping] = []
     @State private var sourceDirectory: URL?
     @State private var isSelectingSnapshotSource = false
@@ -35,6 +37,19 @@ public struct PadLibraryView: View {
                     Button("Choose snapshot source") { isSelectingSnapshotSource = true }
                     Button("Refresh snapshot") { refreshSnapshot() }.disabled(sourceDirectory == nil)
                 }
+                Section("Albums") {
+                    if let catalogue {
+                        Text("Revision \(catalogue.catalogueRevision) · \(catalogue.albums.count) albums").font(.caption).foregroundStyle(.secondary)
+                        if filteredAlbums.isEmpty {
+                            Text("No albums match your search.").foregroundStyle(.secondary)
+                        }
+                        ForEach(filteredAlbums) { album in
+                            NavigationLink { PadAlbumDetailView(album: album) } label: { PadAlbumRow(album: album) }
+                        }
+                    } else {
+                        Text("Refresh a verified snapshot to browse albums.").foregroundStyle(.secondary)
+                    }
+                }
                 Section("SMB music roots") {
                     if mappings.isEmpty { Text("No device-local SMB mappings").foregroundStyle(.secondary) }
                     ForEach(mappings, id: \.publishedRootID) { mapping in
@@ -48,6 +63,7 @@ public struct PadLibraryView: View {
                 }
             }
             .navigationTitle("Music Library")
+            .searchable(text: $searchText, prompt: "Search title, edition, catalogue number")
             .task { loadState() }
             .fileImporter(isPresented: $isSelectingSnapshotSource, allowedContentTypes: [.folder]) { result in
                 selectSnapshotSource(result)
@@ -64,7 +80,14 @@ public struct PadLibraryView: View {
     private func loadState() {
         mappings = (try? mappingStore.mappings()) ?? []
         sourceDirectory = try? sourceStore.selectedDirectory()
-        snapshotStatus = FileManager.default.fileExists(atPath: snapshotDirectory.appending(path: "manifest.json").path) ? "Verified local snapshot available" : "No verified snapshot loaded"
+        do {
+            catalogue = try client.localCatalogue()
+            snapshotStatus = catalogue == nil ? "No verified snapshot loaded" : "Verified local snapshot available"
+        } catch {
+            catalogue = nil
+            snapshotStatus = "Verified cache could not be opened"
+            message = "The local snapshot is not usable: \(error.localizedDescription)"
+        }
     }
 
     private func selectSnapshotSource(_ result: Result<URL, Error>) {
@@ -100,5 +123,51 @@ public struct PadLibraryView: View {
             for offset in offsets { try mappingStore.remove(publishedRootID: mappings[offset].publishedRootID) }
             mappings = try mappingStore.mappings()
         } catch { message = "Could not remove SMB root: \(error.localizedDescription)" }
+    }
+
+    private var filteredAlbums: [ReadOnlyAlbum] {
+        guard let catalogue else { return [] }
+        return catalogue.albums.filter { $0.matches(searchText) }
+    }
+}
+
+public struct PadAlbumRow: View {
+    public let album: ReadOnlyAlbum
+
+    public init(album: ReadOnlyAlbum) { self.album = album }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(album.displayTitle)
+            HStack(spacing: 6) {
+                if let releaseYear = album.releaseYear { Text(String(releaseYear)) }
+                if album.hasCD { Text("CD") }
+                if album.hasDigital { Text("Digital") }
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+    }
+}
+
+public struct PadAlbumDetailView: View {
+    public let album: ReadOnlyAlbum
+
+    public init(album: ReadOnlyAlbum) { self.album = album }
+
+    public var body: some View {
+        List {
+            Section("Edition") {
+                LabeledContent("Title", value: album.title)
+                if let editionLabel = album.editionLabel { LabeledContent("Edition", value: editionLabel) }
+                if let releaseYear = album.releaseYear { LabeledContent("Release year", value: String(releaseYear)) }
+                if let catalogueNumber = album.catalogueNumber { LabeledContent("Catalogue number", value: catalogueNumber) }
+            }
+            Section("Availability") {
+                LabeledContent("CD", value: album.hasCD ? "Available" : "Not catalogued")
+                LabeledContent("Digital", value: album.hasDigital ? "Available" : "Not catalogued")
+            }
+        }
+        .navigationTitle(album.displayTitle)
     }
 }

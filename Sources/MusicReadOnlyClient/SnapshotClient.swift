@@ -2,7 +2,7 @@ import CryptoKit
 import Foundation
 
 public struct ReadOnlySnapshotManifest: Codable, Sendable { public let format: String; public let revision: Int64; public let fileName: String; public let sha256: String }
-public enum SnapshotClientError: Error, Equatable { case incompatibleFormat, unsafeFileName, checksumMismatch }
+public enum SnapshotClientError: Error, Equatable { case incompatibleFormat, incompatibleCatalogue, unsafeFileName, checksumMismatch }
 
 public final class SnapshotClient {
     public let cacheDirectory: URL
