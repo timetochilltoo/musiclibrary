@@ -1,0 +1,44 @@
+import Testing
+@testable import MusicDomain
+
+@Suite("Album validation")
+struct AlbumTests {
+    @Test("An album title is required")
+    func titleIsRequired() {
+        #expect(throws: ValidationError.requiredField("Album title")) {
+            _ = try NewAlbum(title: "  ").validated()
+        }
+    }
+
+    @Test("A direct physical location requires a CD")
+    func directLocationRequiresCD() {
+        #expect(throws: ValidationError.invalidLocationPlacement) {
+            _ = try NewAlbum(title: "Album", hasCD: false, physicalLocationID: PhysicalLocationID()).validated()
+        }
+    }
+
+    @Test("Edition label is included in the display title")
+    func editionLabelIsDisplayed() {
+        let album = Album(id: AlbumID(), from: NewAlbum(title: "Kind of Blue", editionLabel: "Japan version"))
+        #expect(album.displayTitle == "Kind of Blue — Japan version")
+    }
+
+    @Test("Digital status prioritises broken assets")
+    func brokenAssetsWin() {
+        let summary = DigitalAvailabilitySummary.derive(
+            expectedTrackCount: 2,
+            assetsByTrack: [[.available], [.missing]]
+        )
+        #expect(summary.status == .broken)
+        #expect(summary.availableTrackCount == 1)
+    }
+
+    @Test("An album with all available assets is complete")
+    func completeAssetsAreComplete() {
+        let summary = DigitalAvailabilitySummary.derive(
+            expectedTrackCount: 2,
+            assetsByTrack: [[.available], [.available]]
+        )
+        #expect(summary.status == .complete)
+    }
+}
