@@ -39,13 +39,14 @@ Completed and verified:
 - iPad application composition and launch-time refresh indication complete: `MusicLibraryPad` is a SwiftUI executable target that locates all companion state in Application Support. The client compares source/local manifest modification dates only to expose a refresh indicator; it never replaces cache content until an explicit verified refresh.
 - iPad lifecycle/deployment preparation complete: the companion repeats the source-date check on scene activation, and `project.yml` reproducibly generates `MusicLibraryPad.xcodeproj` with automatic signing configuration. The Xcode project builds the shared iPad modules directly to avoid local package-resolution cache failures; an unsigned iOS Simulator build succeeded on 22 July 2026. Select a Development Team for device deployment.
 - Mac publication integration complete: Settings chooses a security-scoped destination, supports explicit publish, shows a status string, debounces automatic publication, and retains the two newest revision payloads after manifest-last publication.
+- Mac publication observability complete: the store tracks observed catalogue and last-published revisions, schedules after an observed revision change, and attempts a best-effort scene-background publish without treating it as a hard quit blocker.
 
 Not yet implemented:
 
 - Precise Mac publication scheduling, last-published revision tracking, and orderly-quit flush.
 - General deletion/recovery, disc reordering/deletion, contributor-credit maintenance, full track-editor UI, tag write-back, lyrics, and AI.
 
-The next coding slice is **Mac publication reliability and quit handling**. Do not allow companion clients to alter the catalogue.
+The next coding slice is **Mac publication reliability tests and scheduling audit**. Do not allow companion clients to alter the catalogue.
 
 ## 1. Fixed decisions
 

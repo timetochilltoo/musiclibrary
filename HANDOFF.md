@@ -185,6 +185,7 @@ Implemented and tested:
 - Playlists use the existing ordered playlist tables. The UI supports playlist creation, listing/detail, and adding album tracks. Normal playback completion advances the resolved local queue; no queue failure changes catalogue data.
 - Snapshot publication writes a revisioned sanitized JSON payload and writes the SHA-256-protected manifest last. Its current payload contains a format, schema version, catalogue revision, album rows with ID, edition/year/catalogue/CD/digital data, ordered discs/tracks, and root-relative digital-asset references. It contains no Mac bookmark or absolute path. The read-only client refuses malformed formats, unsafe names, stale revisions, and checksum failures; it atomically retains the last verified cache after any failure.
 - Mac Settings now stores a security-scoped snapshot-destination bookmark, provides Publish Now, reports publication state, and debounces automatic publication after catalogue reloads. The publisher retains the two newest revision payloads by default, writes the revision file before the manifest, and leaves the prior manifest untouched on a failed write.
+- The Mac displays observed catalogue and last-published revisions. Reload schedules automatic publication only after a changed revision; scene background attempts a best-effort final publish without becoming a hard quit blocker.
 - Device-local SMB root mappings are persisted separately from published snapshot content. Replacing a mapping changes only the selected published-root ID.
 - `MusicLibraryPadShell` supplies a read-only SwiftUI navigation view which shows whether the local verified snapshot cache exists, lists the device-local SMB mappings, and browses the verified payload as searchable album list/detail views. Album detail shows tracks and whether their first asset is mapped, unmapped, unavailable, or refused for an unsafe path. A device-local player exposes play/pause/stop only for an existing file under a mapped, available root. It persists a user-selected snapshot folder as a security-scoped bookmark, offers manual verified refresh, and provides user-selected SMB root add/replace/remove controls. It exposes no catalogue edit controls.
 - `MusicLibraryPadApp` keeps all companion state under `Application Support/MusicLibraryPad`: `SnapshotCache`, `SMBRootMappings.json`, and `SnapshotSource.bookmark`. At launch it opens the last verified cache independently of the NAS and checks the selected source manifest modification date, non-blockingly indicating when a refresh is available.
@@ -308,9 +309,9 @@ Enforce these with transactions, validation, constraints, and tests where possib
 
 If an invariant needs to change, stop and document the proposed migration and user-facing impact before implementing it.
 
-## 11. Exact next slice: Mac publication reliability and quit handling
+## 11. Exact next slice: Mac publication reliability tests and scheduling audit
 
-The Mac can now publish manually and after a debounced catalogue reload to a selected destination, retaining prior revisions. The next slice must make publication scheduling precise (only after actual catalogue writes), publish on orderly quit with a bounded wait, and expose current revision versus last published revision.
+The Mac now tracks observed versus last-published revisions, schedules after an observed revision change, and attempts a best-effort background publish. The next slice is focused testing/audit of mutation paths and a time-bounded quit flush.
 
 ### Goal
 

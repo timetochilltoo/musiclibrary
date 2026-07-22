@@ -7,12 +7,16 @@ import MusicUIComponents
 @main
 struct MusicLibraryMacApp: App {
     @StateObject private var library = LibraryStore()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup("Music Library") {
             LibraryShellView(library: library)
                 .frame(minWidth: 980, minHeight: 640)
                 .task { await library.start() }
+                .onChange(of: scenePhase) { _, phase in
+                    if phase == .background { Task { try? await library.publishSnapshotNow() } }
+                }
         }
     }
 }
@@ -187,6 +191,7 @@ private struct StorageRootList: View {
             Section("Snapshot publishing") {
                 Text(library.snapshotPublishStatus).foregroundStyle(.secondary)
                 if let path = library.snapshotDestinationPath { Text(path).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+                Text("Catalogue revision \(library.catalogueRevision) · last published \(library.lastPublishedRevision.map(String.init) ?? "never")").font(.caption).foregroundStyle(.secondary)
                 Button("Choose Snapshot Destination") { showsSnapshotDestinationPicker = true }
                 Button("Publish Now") { Task { try? await library.publishSnapshotNow() } }.disabled(library.snapshotDestinationPath == nil)
             }

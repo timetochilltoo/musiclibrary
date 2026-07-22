@@ -18,12 +18,16 @@ public final class LibraryStore: ObservableObject {
     @Published public private(set) var errorMessage: String?
     @Published public private(set) var snapshotDestinationPath: String?
     @Published public private(set) var snapshotPublishStatus = "Snapshot destination not configured"
+    @Published public private(set) var catalogueRevision: Int64 = 0
+    @Published public private(set) var lastPublishedRevision: Int64?
 
     private var database: MusicDatabase?
     private var hasStarted = false
     private var scanTasks: [ImportBatchID: Task<Void, Never>] = [:]
     private var snapshotPublishTask: Task<Void, Never>?
     private let snapshotDestinationBookmarkKey = "MusicLibrary.snapshotDestinationBookmark"
+    private let lastPublishedRevisionKey = "MusicLibrary.lastPublishedRevision"
+    private var hasLoadedCatalogueRevision = false
 
     public init() {}
 
@@ -62,7 +66,11 @@ public final class LibraryStore: ObservableObject {
         libraryHealthIssues = try await loadedHealth
         playlists = try await loadedPlaylists
         duplicateAssets = try await database.duplicateAssets()
-        scheduleSnapshotPublication()
+        let revision = try await database.currentRevision()
+        let changed = hasLoadedCatalogueRevision && revision != catalogueRevision
+        catalogueRevision = revision
+        hasLoadedCatalogueRevision = true
+        if changed { scheduleSnapshotPublication() }
     }
 
     public func search(_ term: String) async {
@@ -235,6 +243,8 @@ public final class LibraryStore: ObservableObject {
         let accessed = destination.startAccessingSecurityScopedResource()
         defer { if accessed { destination.stopAccessingSecurityScopedResource() } }
         let manifest = try await publishSnapshot(to: destination)
+        lastPublishedRevision = manifest.revision
+        UserDefaults.standard.set(manifest.revision, forKey: lastPublishedRevisionKey)
         snapshotPublishStatus = "Published revision \(manifest.revision)"
     }
     public func verifyFingerprints() async throws {
@@ -315,6 +325,7 @@ public final class LibraryStore: ObservableObject {
     private func loadSnapshotDestination() {
         guard let destination = resolvedSnapshotDestination() else { return }
         snapshotDestinationPath = destination.path
+        if UserDefaults.standard.object(forKey: lastPublishedRevisionKey) != nil { lastPublishedRevision = Int64(UserDefaults.standard.integer(forKey: lastPublishedRevisionKey)) }
         snapshotPublishStatus = "Ready to publish"
     }
 
