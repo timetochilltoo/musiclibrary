@@ -312,7 +312,7 @@ If an invariant needs to change, stop and document the proposed migration and us
 
 ## 11. Exact next slice: publication failure history and recovery review
 
-The Mac now persists the latest publication failure, shows it in Settings after relaunch, and changes the manual action to Retry Publish. Next, review broader Library Health recovery actions.
+The Mac now persists the latest publication failure, shows it in Settings after relaunch, and changes the manual action to Retry Publish. Settings also provides a safe Library Health recheck: it refreshes root authorization/availability and derived issues without modifying files or stored paths.
 
 ### Goal
 

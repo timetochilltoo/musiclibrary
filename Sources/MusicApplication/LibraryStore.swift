@@ -168,6 +168,11 @@ public final class LibraryStore: ObservableObject {
         try await reload()
     }
 
+    public func recheckLibraryHealth() async throws {
+        try await refreshStorageRootAccess()
+        try await reload()
+    }
+
     public func importCandidates(batchID: ImportBatchID) async throws -> [ImportCandidate] {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
         return try await database.importCandidates(batchID: batchID)

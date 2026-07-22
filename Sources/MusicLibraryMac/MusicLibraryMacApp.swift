@@ -198,6 +198,7 @@ private struct StorageRootList: View {
                 Button(library.lastSnapshotPublishFailure == nil ? "Publish Now" : "Retry Publish") { Task { try? await library.publishSnapshotNow() } }.disabled(library.snapshotDestinationPath == nil)
             }
             Section("Music Folders") {
+                Button("Recheck Library Health", systemImage: "arrow.clockwise") { Task { try? await library.recheckLibraryHealth() } }
                 Button("Verify Asset Fingerprints", systemImage: "checkmark.shield") { Task { try? await library.verifyFingerprints() } }
                 ForEach(library.storageRoots) { root in
                     HStack {
