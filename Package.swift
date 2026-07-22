@@ -8,6 +8,7 @@ let package = Package(
         .library(name: "MusicDomain", targets: ["MusicDomain"]),
         .library(name: "MusicPersistence", targets: ["MusicPersistence"]),
         .library(name: "MusicApplication", targets: ["MusicApplication"]),
+        .library(name: "MusicReadOnlyClient", targets: ["MusicReadOnlyClient"]),
         .library(name: "MusicUIComponents", targets: ["MusicUIComponents"]),
         .executable(name: "MusicLibraryMac", targets: ["MusicLibraryMac"])
     ],
@@ -22,6 +23,7 @@ let package = Package(
             name: "MusicApplication",
             dependencies: ["MusicDomain", "MusicPersistence"]
         ),
+        .target(name: "MusicReadOnlyClient"),
         .target(
             name: "MusicUIComponents",
             dependencies: ["MusicDomain"]
@@ -32,6 +34,7 @@ let package = Package(
         ),
         .testTarget(name: "MusicDomainTests", dependencies: ["MusicDomain"]),
         .testTarget(name: "MusicPersistenceTests", dependencies: ["MusicDomain", "MusicPersistence"]),
-        .testTarget(name: "MusicApplicationTests", dependencies: ["MusicDomain", "MusicApplication"])
+        .testTarget(name: "MusicApplicationTests", dependencies: ["MusicDomain", "MusicApplication"]),
+        .testTarget(name: "MusicReadOnlyClientTests", dependencies: ["MusicReadOnlyClient"])
     ]
 )

@@ -285,9 +285,9 @@ Enforce these with transactions, validation, constraints, and tests where possib
 
 If an invariant needs to change, stop and document the proposed migration and user-facing impact before implementing it.
 
-## 11. Exact next slice: read-only iPad client foundation
+## 11. Exact next slice: iPad SwiftUI shell and SMB mappings
 
-Snapshot publishing is complete: the Mac writes sanitized revision-named JSON snapshots and atomically commits a SHA-256 manifest. The live SQLite database and bookmark data are never published. Next, build the iPad read-only snapshot consumer and device-local SMB mapping.
+Read-only client foundation is complete: it validates format, filename, revision, and checksum, atomically replaces only a verified local cache, and retains its prior cache after a corrupt update. Next, build the iPad read-only SwiftUI shell and device-local SMB mappings.
 
 ### Goal
 

@@ -22,7 +22,7 @@ Completed and verified:
 - Atomic album creation inside a box set, including inherited physical-location behaviour.
 - Album editing plus box-member browse, confirmed move, removal with a standalone placement, and reorder workflows.
 - Schema migration 2 adds `physical_location_unknown`, removing ambiguity between a boxed album and a standalone CD whose location is unknown.
-- Twenty-seven automated domain/persistence tests across four suites, last verified with `swift test` on 22 July 2026.
+- Twenty-eight automated tests across five targets, last verified with `swift test` on 22 July 2026.
 - Catalogue-content foundation complete: ordered discs/tracks, aliases, contributor roles at album and track level, selected album artwork with local-path provenance, and safe track/alias removal. Album detail supports manual creation of each of these relationships and user-selected front artwork without modifying source files.
 - Storage-root foundation complete: migration 3, persisted root records, security-scoped bookmark creation/resolution, availability checks, and Settings management. Offline and authorization-required roots are retained rather than removed.
 - Import Inbox foundation complete: migration 4, cancellable system-content-type scanning of available authorized roots, persistent batches/candidates/errors, recovery of interrupted scans, and Inbox cancellation/retry UI. Scans never create albums, tracks, or digital assets.
@@ -36,7 +36,7 @@ Not yet implemented:
 - General deletion/recovery, disc reordering/deletion, contributor-credit maintenance, full track-editor UI, file relocation, duplicate-content detection, snapshots, iPad, SMB mapping, tag write-back, lyrics, and AI.
 - Folder access, scanning, metadata services, import inbox, file relocation, duplicate detection, playback, playlists, snapshots, iPad, SMB mapping, tag write-back, lyrics, and AI.
 
-The next coding slice is **read-only iPad client foundation**. Do not allow companion clients to alter the catalogue.
+The next coding slice is **iPad SwiftUI shell and SMB mappings**. Do not allow companion clients to alter the catalogue.
 
 ## 1. Fixed decisions
 
