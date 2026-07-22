@@ -218,7 +218,7 @@ This database is user data. Do not remove it during development. If a destructiv
 
 ## 8. Current tests and verification baseline
 
-The last verified baseline contains 36 tests in 4 suites, run with a rebuilt `swift test` followed by `swift test --skip-build` on 22 July 2026. Run `swift test`; do not rely on this handoff alone.
+The last verified baseline contains 37 tests in 4 suites, run with a rebuilt `swift test` followed by `swift test --skip-build` on 22 July 2026. Run `swift test`; do not rely on this handoff alone.
 
 `MusicDomainTests/AlbumTests.swift` verifies:
 
@@ -310,9 +310,9 @@ Enforce these with transactions, validation, constraints, and tests where possib
 
 If an invariant needs to change, stop and document the proposed migration and user-facing impact before implementing it.
 
-## 11. Exact next slice: Mac publication scheduler tests and bounded quit flush
+## 11. Exact next slice: bounded Mac quit flush
 
-The Mac now tracks observed versus last-published revisions, shows pending state, skips redundant background work, and attempts a best-effort background publish. The next slice adds a testable scheduler and explicitly bounded quit flush.
+The Mac now uses a tested scheduler: initial/read-only observations do not publish, while a changed unpublished revision does. The remaining slice is an explicitly bounded quit flush.
 
 ### Goal
 

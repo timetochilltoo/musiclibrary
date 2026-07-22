@@ -28,7 +28,7 @@ public final class LibraryStore: ObservableObject {
     private var snapshotPublishTask: Task<Void, Never>?
     private let snapshotDestinationBookmarkKey = "MusicLibrary.snapshotDestinationBookmark"
     private let lastPublishedRevisionKey = "MusicLibrary.lastPublishedRevision"
-    private var hasLoadedCatalogueRevision = false
+    private var publicationSchedule = SnapshotPublicationSchedule()
 
     public init() {}
 
@@ -68,10 +68,8 @@ public final class LibraryStore: ObservableObject {
         playlists = try await loadedPlaylists
         duplicateAssets = try await database.duplicateAssets()
         let revision = try await database.currentRevision()
-        let changed = hasLoadedCatalogueRevision && revision != catalogueRevision
         catalogueRevision = revision
-        hasLoadedCatalogueRevision = true
-        if changed { scheduleSnapshotPublication() }
+        if publicationSchedule.observe(revision) { scheduleSnapshotPublication() }
     }
 
     public func search(_ term: String) async {
@@ -245,12 +243,13 @@ public final class LibraryStore: ObservableObject {
         defer { if accessed { destination.stopAccessingSecurityScopedResource() } }
         let manifest = try await publishSnapshot(to: destination)
         lastPublishedRevision = manifest.revision
+        publicationSchedule.markPublished(manifest.revision)
         UserDefaults.standard.set(manifest.revision, forKey: lastPublishedRevisionKey)
         snapshotPublishStatus = "Published revision \(manifest.revision)"
         isSnapshotPublishPending = false
     }
     public func publishPendingSnapshotBeforeBackground() async {
-        guard lastPublishedRevision != catalogueRevision else { return }
+        guard publicationSchedule.needsPublication else { return }
         do { try await publishSnapshotNow() }
         catch { snapshotPublishStatus = "Background publish deferred: \(error.localizedDescription)" }
     }
@@ -332,7 +331,11 @@ public final class LibraryStore: ObservableObject {
     private func loadSnapshotDestination() {
         guard let destination = resolvedSnapshotDestination() else { return }
         snapshotDestinationPath = destination.path
-        if UserDefaults.standard.object(forKey: lastPublishedRevisionKey) != nil { lastPublishedRevision = Int64(UserDefaults.standard.integer(forKey: lastPublishedRevisionKey)) }
+        if UserDefaults.standard.object(forKey: lastPublishedRevisionKey) != nil {
+            let revision = Int64(UserDefaults.standard.integer(forKey: lastPublishedRevisionKey))
+            lastPublishedRevision = revision
+            publicationSchedule.markPublished(revision)
+        }
         snapshotPublishStatus = "Ready to publish"
     }
 
@@ -349,7 +352,7 @@ public final class LibraryStore: ObservableObject {
         snapshotPublishTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(2))
             guard !Task.isCancelled, let self else { return }
-            do { if self.lastPublishedRevision != self.catalogueRevision { try await self.publishSnapshotNow() } else { self.isSnapshotPublishPending = false } }
+            do { if self.publicationSchedule.needsPublication { try await self.publishSnapshotNow() } else { self.isSnapshotPublishPending = false } }
             catch { self.isSnapshotPublishPending = false; self.snapshotPublishStatus = "Automatic publish failed: \(error.localizedDescription)" }
         }
     }

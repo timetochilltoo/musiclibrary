@@ -67,6 +67,24 @@ struct ImportScannerTests {
         #expect(manifest.fileName == "catalogue-4.json")
     }
 
+    @Test("Publication scheduling ignores initial and read-only observations but coalesces mutations")
+    func publicationScheduling() {
+        var schedule = SnapshotPublicationSchedule()
+        let initial = schedule.observe(4)
+        #expect(!initial)
+        let readOnly = schedule.observe(4)
+        #expect(!readOnly)
+        let mutation = schedule.observe(5)
+        #expect(mutation)
+        #expect(schedule.needsPublication)
+        schedule.markPublished(5)
+        #expect(!schedule.needsPublication)
+        let sameRevision = schedule.observe(5)
+        #expect(!sameRevision)
+        let nextMutation = schedule.observe(6)
+        #expect(nextMutation)
+    }
+
     private func temporaryDirectory() -> URL {
         FileManager.default.temporaryDirectory.appending(path: "ImportScannerTests-\(UUID().uuidString)", directoryHint: .isDirectory)
     }
