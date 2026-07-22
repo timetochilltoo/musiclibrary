@@ -374,4 +374,3 @@ private extension String {
         return trimmed.isEmpty ? nil : trimmed
     }
 }
-
