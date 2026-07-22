@@ -151,7 +151,7 @@ Implemented and tested:
 - `NewAlbum` validation: nonblank title, disc count at least one, valid years, rating range, and no direct physical location when no CD is marked.
 - Album display title combining title and optional edition label.
 - Derived digital availability state model: `none`, `complete`, `partial`, `offline`, and `broken`.
-- SQLite migrations 1 through 6 with foreign keys, catalogue revision state, album, aliases, locations, box sets, discs, tracks, contributors, storage roots, digital assets, playlists, import batches/candidates/release proposals, edit events, and FTS table placeholders.
+- SQLite migrations 1 through 7 with foreign keys, catalogue revision state, album, aliases, locations, box sets, discs, tracks, contributors, storage roots, digital assets, playlists, import batches/candidates/release proposals, and relink proposals.
 - SQLite WAL mode and foreign-key enforcement on database open.
 - Persist/create/query albums; search title, edition label, and catalogue number.
 - Persist/create/list/rename physical locations.
@@ -264,7 +264,7 @@ Album edits and box membership workflows are available. Album detail supports ma
 
 ### Digital media
 
-Storage-root authorization, Import Inbox scanning, embedded common-tag proposal review, confirmed digital assets, basic Library Health, local Mac playback, and basic playlists are implemented. No external metadata lookup, SMB audio access, snapshots, iPad app, lyrics, tag write-back, or AI is implemented. Duplicate-content hashing and relocation remain future work.
+Storage-root authorization, Import Inbox scanning, embedded common-tag proposal review, confirmed digital assets, basic Library Health, local Mac playback, playlists, and explicit SHA-256 duplicate diagnostics are implemented. Fingerprint verification is user-triggered; relink proposals never change paths automatically.
 
 ## 10. Non-negotiable invariants to preserve
 
@@ -285,9 +285,9 @@ Enforce these with transactions, validation, constraints, and tests where possib
 
 If an invariant needs to change, stop and document the proposed migration and user-facing impact before implementing it.
 
-## 11. Exact next slice: duplicate detection and relocation
+## 11. Exact next slice: library recovery and export
 
-Playlists and local queue refinement are complete. Improve library health before snapshot/iPad work; never move or delete an audio file automatically.
+Duplicate diagnostics are complete. Add safe recovery/export before snapshot/iPad work.
 
 ### Goal
 

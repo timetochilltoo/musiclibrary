@@ -108,6 +108,10 @@ public struct PlaybackAssetReference: Equatable, Sendable {
     public init(trackID: TrackID, title: String, storageRootID: StorageRootID, relativePath: String, availability: DigitalAssetAvailability) { self.trackID = trackID; self.title = title; self.storageRootID = storageRootID; self.relativePath = relativePath; self.availability = availability }
 }
 
+public struct AssetDuplicate: Identifiable, Equatable, Sendable { public let id: String; public let contentHash: String; public let paths: [String]; public init(contentHash: String, paths: [String]) { self.id = contentHash; self.contentHash = contentHash; self.paths = paths } }
+public struct AssetRelinkProposal: Identifiable, Equatable, Sendable { public let id: UUID; public let assetID: DigitalAssetID; public let currentPath: String; public let proposedPath: String; public init(id: UUID, assetID: DigitalAssetID, currentPath: String, proposedPath: String) { self.id = id; self.assetID = assetID; self.currentPath = currentPath; self.proposedPath = proposedPath } }
+public struct AssetFingerprintCandidate: Sendable { public let id: DigitalAssetID; public let rootID: StorageRootID; public let relativePath: String; public init(id: DigitalAssetID, rootID: StorageRootID, relativePath: String) { self.id = id; self.rootID = rootID; self.relativePath = relativePath } }
+
 public struct ImportReleaseProposalDraft: Equatable, Sendable {
     public let title: String
     public let artist: String?

@@ -1,4 +1,5 @@
 import Combine
+import CryptoKit
 import Foundation
 import MusicDomain
 import MusicPersistence
@@ -12,6 +13,7 @@ public final class LibraryStore: ObservableObject {
     @Published public private(set) var importBatches: [ImportBatch] = []
     @Published public private(set) var libraryHealthIssues: [LibraryHealthIssue] = []
     @Published public private(set) var playlists: [Playlist] = []
+    @Published public private(set) var duplicateAssets: [AssetDuplicate] = []
     @Published public private(set) var isReady = false
     @Published public private(set) var errorMessage: String?
 
@@ -54,6 +56,7 @@ public final class LibraryStore: ObservableObject {
         importBatches = try await loadedImportBatches
         libraryHealthIssues = try await loadedHealth
         playlists = try await loadedPlaylists
+        duplicateAssets = try await database.duplicateAssets()
     }
 
     public func search(_ term: String) async {
@@ -212,6 +215,14 @@ public final class LibraryStore: ObservableObject {
     public func playlistItems(_ id: PlaylistID) async throws -> [PlaylistItem] { guard let database else { throw DatabaseError.notFound("Catalogue database") }; return try await database.playlistItems(playlistID: id) }
     public func addPlaylist(name: String) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; _ = try await database.createPlaylist(name: name); try await reload() }
     public func addTrack(_ trackID: TrackID, toPlaylist id: PlaylistID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.addTrack(trackID, to: id); try await reload() }
+    public func verifyFingerprints() async throws {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await refreshStorageRootAccess()
+        for candidate in try await database.assetFingerprintCandidates() {
+            guard let root = storageRoots.first(where: { $0.id == candidate.rootID }) else { continue }; let state = resolveSecurityScopedBookmark(root); guard state.status == .available, let url = state.url?.appending(path: candidate.relativePath), let data = try? Data(contentsOf: url) else { continue }
+            let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined(); try await database.recordAssetFingerprint(candidate.id, contentHash: hash, quickSignature: "\(data.count)-\(hash.prefix(16))")
+        }
+        try await reload()
+    }
 
     public func startImportScan(rootID: StorageRootID) async throws {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }

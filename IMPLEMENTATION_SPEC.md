@@ -16,13 +16,13 @@ Completed and verified:
 
 - Swift package structure with macOS SwiftUI executable and separate Domain, Persistence, Application, and UI modules.
 - Domain identifiers, album/edition model, physical locations, box sets, contributor roles, and derived digital-availability logic.
-- SQLite schema migrations 1 through 6, foreign keys, catalogue revision tracking, and core repositories.
+- SQLite schema migrations 1 through 7, foreign keys, catalogue revision tracking, and core repositories.
 - Persistent Mac catalogue stored in the user's Application Support directory.
 - Catalogue UI: browse/search albums; add albums; create/rename locations; create box sets; show basic album details.
 - Atomic album creation inside a box set, including inherited physical-location behaviour.
 - Album editing plus box-member browse, confirmed move, removal with a standalone placement, and reorder workflows.
 - Schema migration 2 adds `physical_location_unknown`, removing ambiguity between a boxed album and a standalone CD whose location is unknown.
-- Twenty-four automated domain/persistence tests across four suites, last verified with `swift test` on 22 July 2026.
+- Twenty-five automated domain/persistence tests across four suites, last verified with `swift test` on 22 July 2026.
 - Catalogue-content foundation complete: ordered discs/tracks, aliases, contributor roles at album and track level, selected album artwork with local-path provenance, and safe track/alias removal. Album detail supports manual creation of each of these relationships and user-selected front artwork without modifying source files.
 - Storage-root foundation complete: migration 3, persisted root records, security-scoped bookmark creation/resolution, availability checks, and Settings management. Offline and authorization-required roots are retained rather than removed.
 - Import Inbox foundation complete: migration 4, cancellable system-content-type scanning of available authorized roots, persistent batches/candidates/errors, recovery of interrupted scans, and Inbox cancellation/retry UI. Scans never create albums, tracks, or digital assets.
@@ -36,7 +36,7 @@ Not yet implemented:
 - General deletion/recovery, disc reordering/deletion, contributor-credit maintenance, full track-editor UI, file relocation, duplicate-content detection, snapshots, iPad, SMB mapping, tag write-back, lyrics, and AI.
 - Folder access, scanning, metadata services, import inbox, file relocation, duplicate detection, playback, playlists, snapshots, iPad, SMB mapping, tag write-back, lyrics, and AI.
 
-The next coding slice is **duplicate detection and safe relocation proposals**. Do not move or delete assets automatically.
+The next coding slice is **library recovery and export**. Do not move or delete assets automatically.
 
 ## 1. Fixed decisions
 

@@ -184,6 +184,7 @@ private struct StorageRootList: View {
     var body: some View {
         List {
             Section("Music Folders") {
+                Button("Verify Asset Fingerprints", systemImage: "checkmark.shield") { Task { try? await library.verifyFingerprints() } }
                 ForEach(library.storageRoots) { root in
                     HStack {
                         Image(systemName: symbol(for: root.status)).foregroundStyle(color(for: root.status))
@@ -209,6 +210,7 @@ private struct StorageRootList: View {
                     }
                 }
             }
+            if !library.duplicateAssets.isEmpty { Section("Duplicate fingerprints") { ForEach(library.duplicateAssets) { duplicate in Text("\(duplicate.paths.count) files share fingerprint \(duplicate.contentHash.prefix(12))…") } } }
         }
         .overlay {
             if library.isReady && library.storageRoots.isEmpty { ContentUnavailableView("No music folders", systemImage: "externaldrive", description: Text("Add a local or NAS folder. The app saves access permission, not NAS credentials.")) }

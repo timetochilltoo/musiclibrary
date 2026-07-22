@@ -291,6 +291,29 @@ public actor MusicDatabase {
         return .init(trackID: trackID, title: Self.text(at: 0, from: statement) ?? "", storageRootID: .init(rawValue: rootUUID), relativePath: Self.text(at: 2, from: statement) ?? "", availability: availability)
     }
 
+    public func recordAssetFingerprint(_ assetID: DigitalAssetID, contentHash: String, quickSignature: String) throws {
+        try transaction { let statement = try Self.prepare("UPDATE digital_asset SET content_hash = ?, quick_signature = ? WHERE id = ?;", on: connection); defer { sqlite3_finalize(statement) }; try Self.bind(contentHash, at: 1, to: statement); try Self.bind(quickSignature, at: 2, to: statement); try Self.bind(assetID.description, at: 3, to: statement); try Self.stepDone(statement, connection: connection); guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Digital asset") } }
+    }
+    public func duplicateAssets() throws -> [AssetDuplicate] {
+        let statement = try Self.prepare("SELECT content_hash, group_concat(relative_path, '|') FROM digital_asset WHERE content_hash IS NOT NULL GROUP BY content_hash HAVING COUNT(*) > 1;", on: connection); defer { sqlite3_finalize(statement) }; var values: [AssetDuplicate] = []
+        while sqlite3_step(statement) == SQLITE_ROW { guard let hash = Self.text(at: 0, from: statement) else { continue }; values.append(.init(contentHash: hash, paths: (Self.text(at: 1, from: statement) ?? "").split(separator: "|").map(String.init))) }
+        return values
+    }
+    public func proposeRelink(assetID: DigitalAssetID, proposedRelativePath: String) throws -> AssetRelinkProposal {
+        let id = UUID(); var current = ""
+        try transaction { let source = try Self.prepare("SELECT relative_path FROM digital_asset WHERE id = ?;", on: connection); defer { sqlite3_finalize(source) }; try Self.bind(assetID.description, at: 1, to: source); guard sqlite3_step(source) == SQLITE_ROW else { throw DatabaseError.notFound("Digital asset") }; current = Self.text(at: 0, from: source) ?? ""; let statement = try Self.prepare("INSERT OR IGNORE INTO asset_relink_proposal (id, asset_id, proposed_relative_path, created_at) VALUES (?, ?, ?, ?);", on: connection); defer { sqlite3_finalize(statement) }; try Self.bind(id.uuidString.lowercased(), at: 1, to: statement); try Self.bind(assetID.description, at: 2, to: statement); try Self.bind(proposedRelativePath, at: 3, to: statement); try Self.bind(Self.milliseconds(Date()), at: 4, to: statement); try Self.stepDone(statement, connection: connection) }
+        return .init(id: id, assetID: assetID, currentPath: current, proposedPath: proposedRelativePath)
+    }
+    public func digitalAssetIDs(albumID: AlbumID) throws -> [DigitalAssetID] {
+        let statement = try Self.prepare("SELECT digital_asset.id FROM digital_asset JOIN track ON track.id = digital_asset.track_id JOIN disc ON disc.id = track.disc_id WHERE disc.album_id = ? ORDER BY digital_asset.id;", on: connection); defer { sqlite3_finalize(statement) }; try Self.bind(albumID.description, at: 1, to: statement); var values: [DigitalAssetID] = []
+        while sqlite3_step(statement) == SQLITE_ROW { guard let raw = Self.text(at: 0, from: statement), let uuid = UUID(uuidString: raw) else { throw DatabaseError.invalidIdentifier("digital_asset") }; values.append(.init(rawValue: uuid)) }
+        return values
+    }
+    public func assetFingerprintCandidates() throws -> [AssetFingerprintCandidate] {
+        let statement = try Self.prepare("SELECT id, storage_root_id, relative_path FROM digital_asset;", on: connection); defer { sqlite3_finalize(statement) }; var values: [AssetFingerprintCandidate] = []
+        while sqlite3_step(statement) == SQLITE_ROW { guard let raw = Self.text(at: 0, from: statement), let id = UUID(uuidString: raw), let rawRoot = Self.text(at: 1, from: statement), let rootID = UUID(uuidString: rawRoot) else { throw DatabaseError.invalidIdentifier("digital_asset") }; values.append(.init(id: .init(rawValue: id), rootID: .init(rawValue: rootID), relativePath: Self.text(at: 2, from: statement) ?? "")) }; return values
+    }
+
     public func createPlaylist(name: String) throws -> Playlist {
         guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw ValidationError.requiredField("Playlist name") }
         let id = PlaylistID(); let now = Self.milliseconds(Date())

@@ -2,7 +2,7 @@ import Foundation
 import SQLite3
 
 enum SchemaMigrator {
-    static let currentVersion = 6
+    static let currentVersion = 7
 
     static func migrate(_ connection: OpaquePointer) throws {
         var statement: OpaquePointer?
@@ -21,7 +21,8 @@ enum SchemaMigrator {
         if version == 2 { try migrateToVersion3(connection); version = 3 }
         if version == 3 { try migrateToVersion4(connection); version = 4 }
         if version == 4 { try migrateToVersion5(connection); version = 5 }
-        if version == 5 { try migrateToVersion6(connection) }
+        if version == 5 { try migrateToVersion6(connection); version = 6 }
+        if version == 6 { try migrateToVersion7(connection) }
     }
 
     private static func migrateToVersion1(_ connection: OpaquePointer) throws {
@@ -365,5 +366,9 @@ enum SchemaMigrator {
             defer { sqlite3_free(error) }
             throw DatabaseError.sqlite(message: error.map { String(cString: $0) } ?? String(cString: sqlite3_errmsg(connection)))
         }
+    }
+    private static func migrateToVersion7(_ connection: OpaquePointer) throws {
+        let sql = "BEGIN IMMEDIATE; CREATE TABLE IF NOT EXISTS asset_relink_proposal (id TEXT PRIMARY KEY, asset_id TEXT NOT NULL REFERENCES digital_asset(id) ON DELETE CASCADE, proposed_relative_path TEXT NOT NULL, created_at INTEGER NOT NULL, UNIQUE(asset_id, proposed_relative_path)); PRAGMA user_version = 7; UPDATE catalogue_state SET schema_version = 7 WHERE singleton_id = 1; COMMIT;"
+        var error: UnsafeMutablePointer<CChar>?; guard sqlite3_exec(connection, sql, nil, nil, &error) == SQLITE_OK else { defer { sqlite3_free(error) }; throw DatabaseError.sqlite(message: error.map { String(cString: $0) } ?? String(cString: sqlite3_errmsg(connection))) }
     }
 }
