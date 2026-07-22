@@ -160,9 +160,10 @@ Implemented and tested:
 - Create a new album directly in a box set atomically; failure to find the box rolls back album creation.
 - Edit albums; browse, confirm moves into, remove from, and reorder box-set members.
 - Distinguish standalone unknown physical location from boxed placement with `physical_location_unknown`.
-- Begin the catalogue-content persistence layer: ordered discs/tracks, aliases, contributors, and album-level contributor roles.
-- Album detail displays discs, tracks, aliases, and album contributor credits; discs and tracks can be added from the UI.
-- Album detail can also add aliases and contributor credits with an explicit role.
+- Catalogue-content persistence: ordered discs/tracks, aliases, contributors, album- and track-level contributor roles, and album artwork records with source provenance.
+- Album detail displays and adds discs, tracks, aliases, album contributor credits, and track contributor credits.
+- Tracks can be edited in persistence and safely removed from the UI; remaining tracks are renumbered transactionally. Aliases can be removed from the UI.
+- User-selected front artwork is recorded by local path and source label. Selecting another front image switches the selected state transactionally; the source image is never copied, modified, or downloaded automatically.
 - Increment catalogue revision once per successful high-level write operation.
 
 ### macOS UI
@@ -206,7 +207,7 @@ The last verified baseline contains 14 tests in 2 suites. Run `swift test`; do n
 - Failed creation in a nonexistent box set rolls back the album and revision.
 - Album editing preserves identity and revision semantics.
 - Member moves, reordering, removal, and invalid removal rollback preserve placement rules.
-- Ordered discs/tracks, aliases, and album contributor roles persist correctly.
+- Ordered discs/tracks, aliases, contributor roles at both album and track levels, selected artwork provenance, and safe content removal persist correctly.
 
 There are no UI automation or visual snapshot tests yet. Building via `swift test` compiles the macOS executable, but does not exercise a real UI session. Add targeted tests before making core data behaviour more complex.
 
@@ -240,7 +241,7 @@ Schema version 2 adds `physical_location_unknown`. A boxed album has no direct l
 
 ### Album detail and editing
 
-Albums are currently create-only in the UI. The data schema contains more fields than the initial detail view exposes. There is no edit, soft delete, restore, artwork, contributors, discs, or tracks UI.
+Album edits and box membership workflows are available. Album detail supports manual content entry, alias removal, track removal, track-level credit creation, and front-artwork selection. Track editing exists at the persistence/use-case layer but does not yet have a dedicated macOS editor. Disc reordering/deletion and removal/editing of contributor credits remain future work; do not claim general content-management completeness beyond the interactions above.
 
 ### Digital media
 
@@ -265,45 +266,36 @@ Enforce these with transactions, validation, constraints, and tests where possib
 
 If an invariant needs to change, stop and document the proposed migration and user-facing impact before implementing it.
 
-## 11. Exact next slice: contributors, discs, tracks, aliases, and artwork
+## 11. Exact next slice: storage roots and retained folder access
 
-This is the next task. Complete it before scanning, playback, metadata services, or iPad work.
+The catalogue-content slice is complete. Do not start scanning, playback, metadata services, or iPad work until storage-root access is robust and tested.
 
 ### Goal
 
-Continue making each edition accurately represent its contents and credits:
-
-- Add editing/reordering for ordered discs and tracks.
-- Add track-level contributors with roles and UI management.
-- Add editing/deletion for aliases and contributor credits.
-- Add selected front artwork with provenance.
+Allow the Mac to remember user-authorized local/NAS music folders without embedding credentials or assuming a fixed mount path.
 
 ### Required persistence work
 
-1. Add domain entities/drafts and persistence repositories for discs, tracks, contributors, aliases, and artwork.
-2. Preserve uniqueness of disc numbers within an album and track numbers within a disc.
-3. Use the existing contributor join tables for album and track roles; do not introduce one authoritative artist string.
-4. Add transactional create/edit/reorder operations and revision increment semantics.
-5. Add artwork provenance and selected-state rules without automatic external downloading or source-file mutation.
-6. Populate/use FTS only when its synchronization and search behaviour are tested.
+1. Add a `storage_root` entity/repository with stable identifier, display name, bookmark data, last-known path, and availability state.
+2. Use security-scoped bookmarks on macOS; resolve access only for the duration needed and always balance access calls.
+3. Treat an unavailable NAS mount as an offline root, never as permission to alter or delete catalogue paths.
+4. Keep credentials out of SQLite, logs, and snapshots.
+5. Add migrations rather than altering schema version 1/2 in place.
 
 ### Required UI work
 
-1. Add a disc/track editor from album detail.
-2. Add contributor selection/creation with role labels and ordering.
-3. Add alias and artwork management surfaces with clear source labels.
-4. Show discs, tracks, and contributors in album detail.
-5. Handle errors in the existing non-blocking alert pattern.
+1. Add a Settings surface to select, list, rename, and remove roots.
+2. Clearly distinguish accessible, offline, and authorization-required roots.
+3. Do not scan yet; this slice ends with reliable retained access only.
 
 ### Required tests
 
 Add persistence tests for at least:
 
-- Disc/track uniqueness and ordering.
-- Contributor role relationships at album and track level.
-- Alias persistence and future-search index behaviour.
-- Artwork selected-state rules and provenance.
-- Revision increments once for each successful high-level operation and rolls back on invalid input.
+- Migration and round-trip root persistence.
+- Bookmark creation/resolution where the host environment permits it.
+- Missing/offline root state without destructive side effects.
+- Revision and transaction behaviour for each root mutation.
 
 Run `swift test` after the slice. Update this document's completed/not-implemented sections, tests, limitations, and next task before committing.
 
@@ -311,8 +303,7 @@ Run `swift test` after the slice. Update this document's completed/not-implement
 
 Do not implement all of this at once. Complete and test one vertical slice per commit group.
 
-1. Contributors, discs, tracks, aliases, and artwork selection.
-2. Storage root selection and security-scoped bookmark persistence on macOS.
+1. Storage root selection and security-scoped bookmark persistence on macOS.
 3. Cancellable recursive scanner, embedded metadata extraction, grouping, and persistent Import Inbox.
 4. External metadata proposals/review and artwork; no write-back.
 5. Digital assets, availability health, duplicate detection, and relocation.

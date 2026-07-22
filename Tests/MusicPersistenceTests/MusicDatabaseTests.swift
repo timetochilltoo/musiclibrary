@@ -125,6 +125,28 @@ struct MusicDatabaseTests {
         #expect(try await database.albumContributors(albumID: album.id).first?.contributor.name == "Miles Davis")
     }
 
+    @Test("Track credits, artwork selection, and content removal are persisted safely")
+    func detailedCatalogueContent() async throws {
+        let database = try MusicDatabase(url: temporaryDatabaseURL())
+        try await database.migrate()
+        let album = try await database.createAlbum(.init(title: "Album"))
+        let disc = try await database.createDisc(albumID: album.id, title: nil)
+        let first = try await database.createTrack(discID: disc.id, draft: .init(title: "First"))
+        let second = try await database.createTrack(discID: disc.id, draft: .init(title: "Second"))
+        let contributor = try await database.createContributor(.init(name: "Guest"))
+        try await database.addTrackContributor(contributor.id, to: first.id, role: .performer, creditedName: "G. Artist")
+        #expect(try await database.trackContributors(trackID: first.id).first?.creditedName == "G. Artist")
+        _ = try await database.addAlbumArtwork(albumID: album.id, localPath: "/art/first.jpg")
+        let selected = try await database.addAlbumArtwork(albumID: album.id, localPath: "/art/second.jpg")
+        #expect(try await database.albumArtwork(albumID: album.id).filter(\.isSelected).map(\.id) == [selected.id])
+        try await database.deleteTrack(first.id)
+        #expect(try await database.tracks(discID: disc.id).map(\.number) == [1])
+        #expect(try await database.tracks(discID: disc.id).first?.id == second.id)
+        let alias = try await database.addAlbumAlias(albumID: album.id, name: "Alternate", kind: .alternate)
+        try await database.deleteAlbumAlias(alias.id)
+        #expect(try await database.albumAliases(albumID: album.id).isEmpty)
+    }
+
     private func temporaryDatabaseURL() -> URL {
         FileManager.default.temporaryDirectory.appending(path: "MusicDatabaseTests-\(UUID().uuidString).sqlite")
     }

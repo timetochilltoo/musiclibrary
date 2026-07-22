@@ -111,4 +111,6 @@ public struct Artwork: Identifiable, Equatable, Sendable {
     public let localPath: String?
     public let source: String
     public let isSelected: Bool
+
+    public init(id: UUID, ownerType: String, ownerID: String, role: ArtworkRole, localPath: String?, source: String, isSelected: Bool) { self.id = id; self.ownerType = ownerType; self.ownerID = ownerID; self.role = role; self.localPath = localPath; self.source = source; self.isSelected = isSelected }
 }

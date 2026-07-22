@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import MusicApplication
 import MusicDomain
 import MusicUIComponents
@@ -149,10 +150,13 @@ private struct AlbumDetail: View {
     @State private var tracksByDisc: [DiscID: [Track]] = [:]
     @State private var credits: [ContributorCredit] = []
     @State private var aliases: [AlbumAlias] = []
+    @State private var artwork: [Artwork] = []
     @State private var showsAddDisc = false
     @State private var discForTrack: Disc?
     @State private var showsAddAlias = false
     @State private var showsAddContributor = false
+    @State private var trackForContributor: Track?
+    @State private var showsArtworkPicker = false
 
     var body: some View {
         Form {
@@ -179,7 +183,14 @@ private struct AlbumDetail: View {
                     ForEach(discs) { disc in
                         Text(disc.title ?? "Disc \(disc.number)").font(.headline)
                         ForEach(tracksByDisc[disc.id] ?? []) { track in
-                            Text("\(track.number). \(track.title)")
+                            HStack {
+                                Text("\(track.number). \(track.title)")
+                                Spacer()
+                                Button("Credit", systemImage: "person.badge.plus") { trackForContributor = track }
+                                    .labelStyle(.iconOnly)
+                                Button("Remove", systemImage: "trash", role: .destructive) { Task { try? await library.deleteTrack(track.id); await loadContent() } }
+                                    .labelStyle(.iconOnly)
+                            }
                         }
                         Button("Add Track", systemImage: "plus") { discForTrack = disc }
                     }
@@ -192,8 +203,15 @@ private struct AlbumDetail: View {
                 Button("Add Contributor", systemImage: "plus") { showsAddContributor = true }
             }
             Section("Aliases") {
-                ForEach(aliases) { Text("\($0.name) (\($0.kind.rawValue))") }
+                ForEach(aliases) { alias in
+                    HStack { Text("\(alias.name) (\(alias.kind.rawValue))"); Spacer(); Button("Remove", systemImage: "trash", role: .destructive) { Task { try? await library.deleteAlbumAlias(alias.id); await loadContent() } }.labelStyle(.iconOnly) }
+                }
                 Button("Add Alias", systemImage: "plus") { showsAddAlias = true }
+            }
+            Section("Artwork") {
+                if artwork.isEmpty { Text("No artwork selected").foregroundStyle(.secondary) }
+                ForEach(artwork) { image in Text("\(image.isSelected ? "Selected " : "")\(image.role.rawValue): \(image.localPath.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "No local file")") }
+                Button("Choose Artwork…", systemImage: "photo.badge.plus") { showsArtworkPicker = true }
             }
         }
         .formStyle(.grouped)
@@ -207,6 +225,10 @@ private struct AlbumDetail: View {
         .sheet(item: $discForTrack) { disc in AddTrackEditor(library: library, disc: disc, onAdded: { await loadContent() }) }
         .sheet(isPresented: $showsAddAlias) { AddAliasEditor(library: library, albumID: album.id, onAdded: { await loadContent() }) }
         .sheet(isPresented: $showsAddContributor) { AddContributorEditor(library: library, albumID: album.id, onAdded: { await loadContent() }) }
+        .sheet(item: $trackForContributor) { track in AddTrackContributorEditor(library: library, track: track, onAdded: { await loadContent() }) }
+        .fileImporter(isPresented: $showsArtworkPicker, allowedContentTypes: [.image]) { result in
+            if case let .success(url) = result { Task { try? await library.addAlbumArtwork(albumID: album.id, localPath: url.path, role: .front); await loadContent() } }
+        }
     }
 
     private var locationName: String {
@@ -224,6 +246,7 @@ private struct AlbumDetail: View {
         tracksByDisc = mapped
         credits = (try? await library.albumContributors(albumID: album.id)) ?? []
         aliases = (try? await library.albumAliases(albumID: album.id)) ?? []
+        artwork = (try? await library.albumArtwork(albumID: album.id)) ?? []
     }
 }
 
@@ -285,6 +308,22 @@ private struct AddContributorEditor: View {
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button("Add") { add() }.disabled(name.nilIfBlank == nil) } }
     }
     private func add() { Task { try? await library.addAlbumContributor(albumID: albumID, name: name, role: role, creditedName: creditedName.nilIfBlank); await onAdded(); dismiss() } }
+}
+
+private struct AddTrackContributorEditor: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var library: LibraryStore
+    let track: Track
+    let onAdded: () async -> Void
+    @State private var name = ""
+    @State private var creditedName = ""
+    @State private var role: ContributorRole = .performer
+    var body: some View {
+        Form { TextField("Contributor name", text: $name); Picker("Role", selection: $role) { ForEach(ContributorRole.allCases, id: \.self) { Text($0.rawValue).tag($0) } }; TextField("Credited name (optional)", text: $creditedName) }
+            .padding().frame(width: 400)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button("Add") { add() }.disabled(name.nilIfBlank == nil) } }
+    }
+    private func add() { Task { try? await library.addTrackContributor(trackID: track.id, name: name, role: role, creditedName: creditedName.nilIfBlank); await onAdded(); dismiss() } }
 }
 
 private struct LocationList: View {

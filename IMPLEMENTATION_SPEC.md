@@ -22,15 +22,15 @@ Completed and verified:
 - Atomic album creation inside a box set, including inherited physical-location behaviour.
 - Album editing plus box-member browse, confirmed move, removal with a standalone placement, and reorder workflows.
 - Schema migration 2 adds `physical_location_unknown`, removing ambiguity between a boxed album and a standalone CD whose location is unknown.
-- Thirteen automated domain/persistence tests, last verified with `swift test` on 22 July 2026.
-- The catalogue-content phase has begun: domain and persistence support now exists for ordered discs/tracks, album aliases, contributors, and album-level contributor roles. Album detail can display and add discs, tracks, aliases, and album contributor credits; track-level roles, editing/deletion, and artwork are still pending.
+- Fifteen automated domain/persistence tests, last verified with `swift test` on 22 July 2026.
+- Catalogue-content foundation complete: ordered discs/tracks, aliases, contributor roles at album and track level, selected album artwork with local-path provenance, and safe track/alias removal. Album detail supports manual creation of each of these relationships and user-selected front artwork without modifying source files.
 
 Not yet implemented:
 
-- Deletion/recovery, contributors, discs, tracks, aliases, and artwork.
+- General deletion/recovery, disc reordering/deletion, contributor-credit maintenance, full track-editor UI, folder access, scanning, metadata services, import inbox, file relocation, duplicate detection, playback, playlists, snapshots, iPad, SMB mapping, tag write-back, lyrics, and AI.
 - Folder access, scanning, metadata services, import inbox, file relocation, duplicate detection, playback, playlists, snapshots, iPad, SMB mapping, tag write-back, lyrics, and AI.
 
-The next coding slice is **contributors, discs, tracks, aliases, and artwork selection**. Do not start file scanning or playback until those core catalogue relationships are complete and tested.
+The next coding slice is **storage-root selection and security-scoped bookmark persistence on macOS**. Do not start file scanning or playback until retained folder/NAS access is complete and tested.
 
 ## 1. Fixed decisions
 

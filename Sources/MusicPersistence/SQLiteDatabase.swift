@@ -341,6 +341,41 @@ public actor MusicDatabase {
         return .init(id: id, discID: discID, number: number, title: valid.title, displayPosition: valid.displayPosition, durationMilliseconds: valid.durationMilliseconds, workName: valid.workName, movementNumber: valid.movementNumber, movementName: valid.movementName, isInstrumental: valid.isInstrumental)
     }
 
+    public func updateTrack(_ trackID: TrackID, with draft: NewTrack) throws -> Track {
+        let valid = try draft.validated()
+        var result: Track?
+        try transaction {
+            let existing = try Self.prepare("SELECT disc_id, number FROM track WHERE id = ?;", on: connection)
+            defer { sqlite3_finalize(existing) }
+            try Self.bind(trackID.description, at: 1, to: existing)
+            guard sqlite3_step(existing) == SQLITE_ROW,
+                  let rawDiscID = Self.text(at: 0, from: existing),
+                  let discUUID = UUID(uuidString: rawDiscID) else { throw DatabaseError.notFound("Track") }
+            let statement = try Self.prepare("UPDATE track SET title = ?, display_position = ?, duration_ms = ?, work_name = ?, movement_number = ?, movement_name = ?, is_instrumental = ? WHERE id = ?;", on: connection)
+            defer { sqlite3_finalize(statement) }
+            try Self.bind(valid.title, at: 1, to: statement); try Self.bind(valid.displayPosition, at: 2, to: statement); try Self.bind(valid.durationMilliseconds.map(Int64.init), at: 3, to: statement); try Self.bind(valid.workName, at: 4, to: statement); try Self.bind(valid.movementNumber.map(Int64.init), at: 5, to: statement); try Self.bind(valid.movementName, at: 6, to: statement); try Self.bind(valid.isInstrumental.map { Int64($0 ? 1 : 0) }, at: 7, to: statement); try Self.bind(trackID.description, at: 8, to: statement); try Self.stepDone(statement, connection: connection)
+            result = .init(id: trackID, discID: .init(rawValue: discUUID), number: Int(Self.int(at: 1, from: existing) ?? 0), title: valid.title, displayPosition: valid.displayPosition, durationMilliseconds: valid.durationMilliseconds, workName: valid.workName, movementNumber: valid.movementNumber, movementName: valid.movementName, isInstrumental: valid.isInstrumental)
+            try incrementRevision()
+        }
+        guard let result else { throw DatabaseError.notFound("Track") }
+        return result
+    }
+
+    public func deleteTrack(_ trackID: TrackID) throws {
+        try transaction {
+            let existing = try Self.prepare("SELECT disc_id, number FROM track WHERE id = ?;", on: connection)
+            defer { sqlite3_finalize(existing) }
+            try Self.bind(trackID.description, at: 1, to: existing)
+            guard sqlite3_step(existing) == SQLITE_ROW, let discID = Self.text(at: 0, from: existing) else { throw DatabaseError.notFound("Track") }
+            let number = Self.int(at: 1, from: existing) ?? 0
+            let delete = try Self.prepare("DELETE FROM track WHERE id = ?;", on: connection)
+            defer { sqlite3_finalize(delete) }; try Self.bind(trackID.description, at: 1, to: delete); try Self.stepDone(delete, connection: connection)
+            let reorder = try Self.prepare("UPDATE track SET number = number - 1 WHERE disc_id = ? AND number > ?;", on: connection)
+            defer { sqlite3_finalize(reorder) }; try Self.bind(discID, at: 1, to: reorder); try Self.bind(number, at: 2, to: reorder); try Self.stepDone(reorder, connection: connection)
+            try incrementRevision()
+        }
+    }
+
     public func tracks(discID: DiscID) throws -> [Track] {
         let statement = try Self.prepare("SELECT id, number, title, display_position, duration_ms, work_name, movement_number, movement_name, is_instrumental FROM track WHERE disc_id = ? ORDER BY number;", on: connection)
         defer { sqlite3_finalize(statement) }; try Self.bind(discID.description, at: 1, to: statement)
@@ -383,6 +418,52 @@ public actor MusicDatabase {
         return values
     }
 
+    public func addTrackContributor(_ contributorID: ContributorID, to trackID: TrackID, role: ContributorRole, creditedName: String? = nil) throws {
+        try transaction {
+            guard try Self.exists("SELECT 1 FROM track WHERE id = ?;", value: trackID.description, on: connection) else { throw DatabaseError.notFound("Track") }
+            guard try Self.exists("SELECT 1 FROM contributor WHERE id = ?;", value: contributorID.description, on: connection) else { throw DatabaseError.notFound("Contributor") }
+            let position = try Self.nextNumber("SELECT COALESCE(MAX(position), -1) + 1 FROM track_contributor WHERE track_id = ? AND role = ?;", ownerID: trackID.description, on: connection, additionalValue: role.rawValue)
+            let statement = try Self.prepare("INSERT INTO track_contributor (track_id, contributor_id, role, credited_name, position) VALUES (?, ?, ?, ?, ?);", on: connection)
+            defer { sqlite3_finalize(statement) }; try Self.bind(trackID.description, at: 1, to: statement); try Self.bind(contributorID.description, at: 2, to: statement); try Self.bind(role.rawValue, at: 3, to: statement); try Self.bind(creditedName, at: 4, to: statement); try Self.bind(Int64(position), at: 5, to: statement); try Self.stepDone(statement, connection: connection); try incrementRevision()
+        }
+    }
+
+    public func trackContributors(trackID: TrackID) throws -> [ContributorCredit] {
+        let statement = try Self.prepare("SELECT contributor.id, contributor.name, contributor.sort_name, track_contributor.role, track_contributor.credited_name, track_contributor.position FROM track_contributor JOIN contributor ON contributor.id = track_contributor.contributor_id WHERE track_contributor.track_id = ? ORDER BY track_contributor.role, track_contributor.position;", on: connection)
+        defer { sqlite3_finalize(statement) }; try Self.bind(trackID.description, at: 1, to: statement)
+        var values: [ContributorCredit] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let raw = Self.text(at: 0, from: statement), let uuid = UUID(uuidString: raw), let roleRaw = Self.text(at: 3, from: statement), let role = ContributorRole(rawValue: roleRaw) else { throw DatabaseError.invalidIdentifier("track_contributor") }
+            values.append(.init(contributor: .init(id: .init(rawValue: uuid), name: Self.text(at: 1, from: statement) ?? "", sortName: Self.text(at: 2, from: statement)), role: role, creditedName: Self.text(at: 4, from: statement), position: Int(Self.int(at: 5, from: statement) ?? 0)))
+        }
+        return values
+    }
+
+    public func addAlbumArtwork(albumID: AlbumID, localPath: String, role: ArtworkRole = .front, source: String = "user-selected") throws -> Artwork {
+        let id = UUID()
+        try transaction {
+            guard try Self.exists("SELECT 1 FROM album WHERE id = ? AND deleted_at IS NULL;", value: albumID.description, on: connection) else { throw DatabaseError.notFound("Album") }
+            if role == .front {
+                let deselect = try Self.prepare("UPDATE artwork SET is_selected = 0 WHERE owner_type = 'album' AND owner_id = ? AND role = 'front';", on: connection)
+                defer { sqlite3_finalize(deselect) }; try Self.bind(albumID.description, at: 1, to: deselect); try Self.stepDone(deselect, connection: connection)
+            }
+            let statement = try Self.prepare("INSERT INTO artwork (id, owner_type, owner_id, role, local_path, source, is_selected) VALUES (?, 'album', ?, ?, ?, ?, ?);", on: connection)
+            defer { sqlite3_finalize(statement) }; try Self.bind(id.uuidString.lowercased(), at: 1, to: statement); try Self.bind(albumID.description, at: 2, to: statement); try Self.bind(role.rawValue, at: 3, to: statement); try Self.bind(localPath, at: 4, to: statement); try Self.bind(source, at: 5, to: statement); try Self.bind(role == .front ? 1 : 0, at: 6, to: statement); try Self.stepDone(statement, connection: connection); try incrementRevision()
+        }
+        return .init(id: id, ownerType: "album", ownerID: albumID.description, role: role, localPath: localPath, source: source, isSelected: role == .front)
+    }
+
+    public func albumArtwork(albumID: AlbumID) throws -> [Artwork] {
+        let statement = try Self.prepare("SELECT id, role, local_path, source, is_selected FROM artwork WHERE owner_type = 'album' AND owner_id = ? ORDER BY is_selected DESC, role;", on: connection)
+        defer { sqlite3_finalize(statement) }; try Self.bind(albumID.description, at: 1, to: statement)
+        var values: [Artwork] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let raw = Self.text(at: 0, from: statement), let id = UUID(uuidString: raw), let roleRaw = Self.text(at: 1, from: statement), let role = ArtworkRole(rawValue: roleRaw) else { throw DatabaseError.invalidIdentifier("artwork") }
+            values.append(.init(id: id, ownerType: "album", ownerID: albumID.description, role: role, localPath: Self.text(at: 2, from: statement), source: Self.text(at: 3, from: statement) ?? "", isSelected: Self.int(at: 4, from: statement) == 1))
+        }
+        return values
+    }
+
     public func addAlbumAlias(albumID: AlbumID, name: String, kind: AlbumAliasKind, locale: String? = nil) throws -> AlbumAlias {
         guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw ValidationError.requiredField("Alias") }
         let id = UUID()
@@ -402,6 +483,15 @@ public actor MusicDatabase {
             values.append(.init(id: id, albumID: albumID, name: Self.text(at: 1, from: statement) ?? "", locale: Self.text(at: 2, from: statement), kind: kind))
         }
         return values
+    }
+
+    public func deleteAlbumAlias(_ aliasID: UUID) throws {
+        try transaction {
+            let statement = try Self.prepare("DELETE FROM album_alias WHERE id = ?;", on: connection)
+            defer { sqlite3_finalize(statement) }; try Self.bind(aliasID.uuidString.lowercased(), at: 1, to: statement); try Self.stepDone(statement, connection: connection)
+            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Album alias") }
+            try incrementRevision()
+        }
     }
 
     public func addAlbum(_ albumID: AlbumID, to boxSetID: BoxSetID, at position: Int) throws {
