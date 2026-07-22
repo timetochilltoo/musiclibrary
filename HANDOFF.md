@@ -160,6 +160,7 @@ Implemented and tested:
 - Create a new album directly in a box set atomically; failure to find the box rolls back album creation.
 - Edit albums; browse, confirm moves into, remove from, and reorder box-set members.
 - Distinguish standalone unknown physical location from boxed placement with `physical_location_unknown`.
+- Begin the catalogue-content persistence layer: ordered discs/tracks, aliases, contributors, and album-level contributor roles.
 - Increment catalogue revision once per successful high-level write operation.
 
 ### macOS UI
@@ -184,7 +185,7 @@ This database is user data. Do not remove it during development. If a destructiv
 
 ## 8. Current tests and verification baseline
 
-The last verified baseline contains 13 tests in 2 suites. Run `swift test`; do not rely on this handoff alone.
+The last verified baseline contains 14 tests in 2 suites. Run `swift test`; do not rely on this handoff alone.
 
 `MusicDomainTests/AlbumTests.swift` verifies:
 
@@ -203,6 +204,7 @@ The last verified baseline contains 13 tests in 2 suites. Run `swift test`; do n
 - Failed creation in a nonexistent box set rolls back the album and revision.
 - Album editing preserves identity and revision semantics.
 - Member moves, reordering, removal, and invalid removal rollback preserve placement rules.
+- Ordered discs/tracks, aliases, and album contributor roles persist correctly.
 
 There are no UI automation or visual snapshot tests yet. Building via `swift test` compiles the macOS executable, but does not exercise a real UI session. Add targeted tests before making core data behaviour more complex.
 

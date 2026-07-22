@@ -107,6 +107,24 @@ struct MusicDatabaseTests {
         #expect(try await database.boxMembers(of: box.id).map(\.album.id) == [album.id])
     }
 
+    @Test("Discs, tracks, aliases, and contributor roles preserve catalogue order")
+    func catalogueContent() async throws {
+        let database = try MusicDatabase(url: temporaryDatabaseURL())
+        try await database.migrate()
+        let album = try await database.createAlbum(.init(title: "Album"))
+        let firstDisc = try await database.createDisc(albumID: album.id, title: "Disc One")
+        let secondDisc = try await database.createDisc(albumID: album.id, title: "Disc Two")
+        #expect(try await database.discs(albumID: album.id).map(\.id) == [firstDisc.id, secondDisc.id])
+        let firstTrack = try await database.createTrack(discID: firstDisc.id, draft: .init(title: "First"))
+        let secondTrack = try await database.createTrack(discID: firstDisc.id, draft: .init(title: "Second", durationMilliseconds: 210_000))
+        #expect(try await database.tracks(discID: firstDisc.id).map(\.id) == [firstTrack.id, secondTrack.id])
+        let alias = try await database.addAlbumAlias(albumID: album.id, name: "別名", kind: .original, locale: "ja")
+        #expect(alias.name == "別名")
+        let contributor = try await database.createContributor(.init(name: "Miles Davis"))
+        try await database.addAlbumContributor(contributor.id, to: album.id, role: .albumArtist)
+        #expect(try await database.albumContributors(albumID: album.id).first?.contributor.name == "Miles Davis")
+    }
+
     private func temporaryDatabaseURL() -> URL {
         FileManager.default.temporaryDirectory.appending(path: "MusicDatabaseTests-\(UUID().uuidString).sqlite")
     }

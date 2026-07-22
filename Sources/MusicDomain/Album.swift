@@ -23,6 +23,7 @@ public enum ValidationError: Error, Equatable, LocalizedError, Sendable {
     case invalidRating
     case invalidLocationPlacement
     case invalidUnknownLocationPlacement
+    case invalidDuration
 
     public var errorDescription: String? {
         switch self {
@@ -32,6 +33,7 @@ public enum ValidationError: Error, Equatable, LocalizedError, Sendable {
         case .invalidRating: "Rating must be between 1 and 5."
         case .invalidLocationPlacement: "A boxed album cannot also have a direct physical location."
         case .invalidUnknownLocationPlacement: "Unknown physical location is only valid for a standalone CD without a selected location."
+        case .invalidDuration: "Duration cannot be negative."
         }
     }
 }
