@@ -22,7 +22,7 @@ Completed and verified:
 - Atomic album creation inside a box set, including inherited physical-location behaviour.
 - Album editing plus box-member browse, confirmed move, removal with a standalone placement, and reorder workflows.
 - Schema migration 2 adds `physical_location_unknown`, removing ambiguity between a boxed album and a standalone CD whose location is unknown.
-- Twenty-nine automated tests across four test suites, last verified with a rebuilt `swift test` followed by `swift test --skip-build` on 22 July 2026.
+- Thirty automated tests across four test suites, last verified with a rebuilt `swift test` followed by `swift test --skip-build` on 22 July 2026.
 - Catalogue-content foundation complete: ordered discs/tracks, aliases, contributor roles at album and track level, selected album artwork with local-path provenance, and safe track/alias removal. Album detail supports manual creation of each of these relationships and user-selected front artwork without modifying source files.
 - Storage-root foundation complete: migration 3, persisted root records, security-scoped bookmark creation/resolution, availability checks, and Settings management. Offline and authorization-required roots are retained rather than removed.
 - Import Inbox foundation complete: migration 4, cancellable system-content-type scanning of available authorized roots, persistent batches/candidates/errors, recovery of interrupted scans, and Inbox cancellation/retry UI. Scans never create albums, tracks, or digital assets.
@@ -31,15 +31,15 @@ Completed and verified:
 - Local playback foundation complete: AVFoundation shared-output player, root-authorized/file-verified asset resolution, persisted disc queue, previous/next/repeat/shuffle/volume/pause/stop/seek controls, and a Now Playing surface. Playback failures leave queue and catalogue records unchanged.
 - Playlist/queue refinement complete: ordered playlist persistence and editor surfaces, add-track actions, and normal playback-completion advancement through the resolved local queue.
 - Snapshot distribution foundation complete: revisioned sanitized JSON publication with a SHA-256 manifest, a verified atomic read-only cache updater, and corrupt-download fallback to the prior cache.
-- Device-local SMB mapping foundation complete: persisted published-root to local-URL mappings are independent of the replaceable snapshot.
-- Portable iPad SwiftUI shell complete: `MusicLibraryPadShell` displays read-only cache status and local SMB mappings. It is a Swift package library, not yet a packaged iPad application.
+- Device-local SMB mapping foundation complete: persisted published-root to local-URL mappings are independent of the replaceable snapshot; selected folders are retained as security-scoped bookmarks.
+- Portable iPad SwiftUI shell complete: `MusicLibraryPadShell` displays read-only cache status and local SMB mappings, offers system folder selection and manual verified refresh with non-blocking fallback messaging. It is a Swift package library, not yet a separately packaged iPad application.
 
 Not yet implemented:
 
-- A packaged iPad app composition root, system picker/security-scoped source selection, snapshot refresh UI, parsed catalogue browsing, and companion playback.
+- A packaged iPad app composition root, automatic manifest-date polling, parsed catalogue browsing, and companion playback.
 - General deletion/recovery, disc reordering/deletion, contributor-credit maintenance, full track-editor UI, tag write-back, lyrics, and AI.
 
-The next coding slice is **packaged iPad companion refresh and root selection**. Do not allow companion clients to alter the catalogue.
+The next coding slice is **read-only iPad catalogue browsing**. Do not allow companion clients to alter the catalogue.
 
 ## 1. Fixed decisions
 

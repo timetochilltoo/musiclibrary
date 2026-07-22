@@ -13,3 +13,16 @@ func snapshotValidation() throws {
 func smbMappings() throws {
     let file = FileManager.default.temporaryDirectory.appending(path: "mappings-\(UUID().uuidString).json"); defer { try? FileManager.default.removeItem(at: file) }; let store = SMBRootMappingStore(url: file); try store.set(.init(publishedRootID: "root-a", localURL: URL(fileURLWithPath: "/Volumes/Music"))); try store.set(.init(publishedRootID: "root-a", localURL: URL(fileURLWithPath: "/Volumes/NewMusic"))); #expect(try store.mappings().map(\.localURL.path) == ["/Volumes/NewMusic"])
 }
+
+@Test("Snapshot source selection persists separately and can be cleared")
+func snapshotSourceSelection() throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: "selected-source-\(UUID().uuidString)")
+    let file = FileManager.default.temporaryDirectory.appending(path: "selected-source-\(UUID().uuidString).bookmark")
+    defer { try? FileManager.default.removeItem(at: directory); try? FileManager.default.removeItem(at: file) }
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let store = SnapshotSourceStore(url: file)
+    try store.set(selectedDirectory: directory)
+    #expect(try store.selectedDirectory()?.standardizedFileURL == directory.standardizedFileURL)
+    try store.clear()
+    #expect(try store.selectedDirectory() == nil)
+}

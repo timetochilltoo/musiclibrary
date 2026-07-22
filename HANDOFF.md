@@ -136,6 +136,7 @@ Sources/
   MusicReadOnlyClient/
     SnapshotClient.swift         Verified, atomic local snapshot-cache updater
     SMBRootMappings.swift        Device-local published-root to SMB-root preferences
+    SnapshotSourceStore.swift    Security-scoped selected snapshot-source preference
   MusicLibraryPadShell/
     PadLibraryView.swift         Portable read-only SwiftUI companion shell
 
@@ -178,7 +179,7 @@ Implemented and tested:
 - Playlists use the existing ordered playlist tables. The UI supports playlist creation, listing/detail, and adding album tracks. Normal playback completion advances the resolved local queue; no queue failure changes catalogue data.
 - Snapshot publication writes a revisioned sanitized JSON payload and writes the SHA-256-protected manifest last. The read-only client refuses malformed formats, unsafe names, stale revisions, and checksum failures; it atomically retains the last verified cache after any failure.
 - Device-local SMB root mappings are persisted separately from published snapshot content. Replacing a mapping changes only the selected published-root ID.
-- `MusicLibraryPadShell` supplies a read-only SwiftUI navigation view which shows whether the local verified snapshot cache exists and lists the device-local SMB mappings. It exposes no catalogue edit controls.
+- `MusicLibraryPadShell` supplies a read-only SwiftUI navigation view which shows whether the local verified snapshot cache exists and lists the device-local SMB mappings. It persists a user-selected snapshot folder as a security-scoped bookmark, offers manual verified refresh, and provides user-selected SMB root add/replace/remove controls. It exposes no catalogue edit controls.
 - Increment catalogue revision once per successful high-level write operation.
 
 ### macOS UI
@@ -207,7 +208,7 @@ This database is user data. Do not remove it during development. If a destructiv
 
 ## 8. Current tests and verification baseline
 
-The last verified baseline contains 29 tests in 4 suites, run with a rebuilt `swift test` followed by `swift test --skip-build` on 22 July 2026. Run `swift test`; do not rely on this handoff alone.
+The last verified baseline contains 30 tests in 4 suites, run with a rebuilt `swift test` followed by `swift test --skip-build` on 22 July 2026. Run `swift test`; do not rely on this handoff alone.
 
 `MusicDomainTests/AlbumTests.swift` verifies:
 
@@ -236,7 +237,7 @@ The last verified baseline contains 29 tests in 4 suites, run with a rebuilt `sw
 
 `MusicApplicationTests/ImportScannerTests.swift` verifies content-type audio discovery, hidden-file exclusion, cancellation before enumeration, and Unicode/multi-disc proposal grouping.
 
-`MusicReadOnlyClientTests/SnapshotClientTests.swift` verifies verified snapshot replacement, checksum-failure fallback to the prior local cache, and device-local SMB mapping replacement semantics.
+`MusicReadOnlyClientTests/SnapshotClientTests.swift` verifies verified snapshot replacement, checksum-failure fallback to the prior local cache, device-local SMB mapping replacement semantics, and snapshot-source bookmark persistence/clear behavior.
 
 There are no UI automation or visual snapshot tests yet. Building via `swift test` compiles the macOS executable, but does not exercise a real UI session. Add targeted tests before making core data behaviour more complex.
 
@@ -278,7 +279,7 @@ Storage-root authorization, Import Inbox scanning, embedded common-tag proposal 
 
 ### Read-only companion foundation
 
-`SnapshotClient` currently reads a published directory supplied by its host, verifies its JSON manifest and payload checksum, and maintains a local cache. `SMBRootMappingStore` is intentionally a separate device-local JSON preference store. `PadLibraryView` only renders cache/mapping status. There is not yet an iPad app target, a system file-importer flow to select an SMB location, a NAS transport implementation, a snapshot refresh control, parsed catalogue browsing, or companion playback. Do not imply that iPad can yet browse or play the real catalogue.
+`SnapshotClient` reads a published directory supplied by its host, verifies its JSON manifest and payload checksum, and maintains a local cache. `SnapshotSourceStore` persists a security-scoped selected source, and `SMBRootMappingStore` remains a separate device-local JSON preference store. `PadLibraryView` supplies folder-picker controls, manual refresh with non-blocking failure feedback, and mapping add/replace/removal. There is still no separately packaged iPad application target, automatic manifest-date polling, parsed catalogue browsing, a NAS-specific transport, or companion playback. Do not imply that iPad can yet browse or play the real catalogue.
 
 ## 10. Non-negotiable invariants to preserve
 
@@ -299,32 +300,32 @@ Enforce these with transactions, validation, constraints, and tests where possib
 
 If an invariant needs to change, stop and document the proposed migration and user-facing impact before implementing it.
 
-## 11. Exact next slice: packaged iPad companion refresh and root selection
+## 11. Exact next slice: read-only iPad catalogue browsing
 
-The portable iPad shell and device-local SMB mapping model are complete. The next slice must turn that foundation into an actual iPad application composition root: refresh from a user-selected snapshot source, select an SMB music root through the platform UI, and show non-blocking verification errors while preserving the last local cache.
+The portable companion now persists selected snapshot/SMB folders, refreshes a verified cache on demand, and retains its previous cache after errors. The next slice is rendering the published JSON snapshot as a read-only album list/detail experience.
 
 ### Goal
 
-Allow a read-only iPad user to establish local snapshot and SMB-root access safely, without introducing any catalogue mutation.
+Make the verified local snapshot useful on iPad without exposing any write pathway into the Mac catalogue.
 
 ### Required persistence work
 
-1. Add an iPad composition root that owns the cache and mapping preference locations.
-2. Use an iPad system picker/security-scoped URL for snapshot and SMB-root selection; never copy those URLs into the published snapshot.
-3. Invoke `SnapshotClient.update` only against a selected source and surface a non-blocking result/error while keeping a previous cache usable.
+1. Define a versioned, Codable read-only catalogue payload/view model shared by publication and the iPad client.
+2. Decode only a verified locally cached payload and report a non-blocking parse/format error.
+3. Keep published catalogue data separate from local source/bookmark/mapping preferences.
 
 ### Required UI work
 
-1. Provide a manual refresh action and last-known snapshot status.
-2. Provide add/replace/remove SMB root mapping controls, keyed by published root ID.
-3. Do not add album editing, upload, automatic metadata correction, or iPad playback in this slice.
+1. Add album list/search and album-detail presentation using the local verified payload.
+2. Include edition and CD/digital availability display; make no editing controls available.
+3. Do not add upload, automatic metadata correction, or iPad playback in this slice.
 
 ### Required tests
 
 Add persistence tests for at least:
 
-- Snapshot refresh success, stale/no-op result, and corrupt-download fallback.
-- Mapping changes remain device-local and do not mutate snapshot data.
+- Payload decoding/compatibility and malformed-payload fallback behavior.
+- Read-only album list/detail view-model behaviour, including Unicode search and edition labels.
 
 Run `swift test` after the slice. Update this document's completed/not-implemented sections, tests, limitations, and next task before committing.
 
