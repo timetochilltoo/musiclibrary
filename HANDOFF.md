@@ -184,6 +184,7 @@ Implemented and tested:
 - Local Mac playback resolves only available, authorized root-relative assets, verifies file existence, and uses normal shared AVFoundation output. Playing a track queues its disc; the persisted queue supports previous/next, repeat, shuffle, volume, pause, stop, and seek API. Missing/offline files fail locally without any catalogue mutation.
 - Playlists use the existing ordered playlist tables. The UI supports playlist creation, listing/detail, and adding album tracks. Normal playback completion advances the resolved local queue; no queue failure changes catalogue data.
 - Snapshot publication writes a revisioned sanitized JSON payload and writes the SHA-256-protected manifest last. Its current payload contains a format, schema version, catalogue revision, album rows with ID, edition/year/catalogue/CD/digital data, ordered discs/tracks, and root-relative digital-asset references. It contains no Mac bookmark or absolute path. The read-only client refuses malformed formats, unsafe names, stale revisions, and checksum failures; it atomically retains the last verified cache after any failure.
+- Mac Settings now stores a security-scoped snapshot-destination bookmark, provides Publish Now, reports publication state, and debounces automatic publication after catalogue reloads. The publisher retains the two newest revision payloads by default, writes the revision file before the manifest, and leaves the prior manifest untouched on a failed write.
 - Device-local SMB root mappings are persisted separately from published snapshot content. Replacing a mapping changes only the selected published-root ID.
 - `MusicLibraryPadShell` supplies a read-only SwiftUI navigation view which shows whether the local verified snapshot cache exists, lists the device-local SMB mappings, and browses the verified payload as searchable album list/detail views. Album detail shows tracks and whether their first asset is mapped, unmapped, unavailable, or refused for an unsafe path. A device-local player exposes play/pause/stop only for an existing file under a mapped, available root. It persists a user-selected snapshot folder as a security-scoped bookmark, offers manual verified refresh, and provides user-selected SMB root add/replace/remove controls. It exposes no catalogue edit controls.
 - `MusicLibraryPadApp` keeps all companion state under `Application Support/MusicLibraryPad`: `SnapshotCache`, `SMBRootMappings.json`, and `SnapshotSource.bookmark`. At launch it opens the last verified cache independently of the NAS and checks the selected source manifest modification date, non-blockingly indicating when a refresh is available.
@@ -215,7 +216,7 @@ This database is user data. Do not remove it during development. If a destructiv
 
 ## 8. Current tests and verification baseline
 
-The last verified baseline contains 35 tests in 4 suites, run with a rebuilt `swift test` followed by `swift test --skip-build` on 22 July 2026. Run `swift test`; do not rely on this handoff alone.
+The last verified baseline contains 36 tests in 4 suites, run with a rebuilt `swift test` followed by `swift test --skip-build` on 22 July 2026. Run `swift test`; do not rely on this handoff alone.
 
 `MusicDomainTests/AlbumTests.swift` verifies:
 
@@ -242,7 +243,7 @@ The last verified baseline contains 35 tests in 4 suites, run with a rebuilt `sw
 - Queue ordering/repeat and Codable state restoration.
 - Playlist ordered membership persistence.
 
-`MusicApplicationTests/ImportScannerTests.swift` verifies content-type audio discovery, hidden-file exclusion, cancellation before enumeration, and Unicode/multi-disc proposal grouping.
+`MusicApplicationTests/ImportScannerTests.swift` verifies content-type audio discovery, hidden-file exclusion, cancellation before enumeration, Unicode/multi-disc proposal grouping, manifest-last publication, and bounded revision retention.
 
 `MusicReadOnlyClientTests/SnapshotClientTests.swift` verifies verified snapshot replacement, checksum-failure fallback to the prior local cache, device-local SMB mapping replacement semantics, snapshot-source bookmark persistence/clear behavior, verified-payload Unicode/search decoding, root-relative asset resolution (including unmapped, unavailable, and traversal-path refusal states), selection of a playable URL only from a mapped available asset, and manifest-date refresh indication without cache mutation.
 
@@ -307,31 +308,31 @@ Enforce these with transactions, validation, constraints, and tests where possib
 
 If an invariant needs to change, stop and document the proposed migration and user-facing impact before implementing it.
 
-## 11. Exact next slice: automatic Mac snapshot publication
+## 11. Exact next slice: Mac publication reliability and quit handling
 
-The iPad companion now has foreground source-date checks and a reproducible generated Xcode project. The next highest-value gap is Mac integration: the tested publisher utility needs destination settings, manual/debounced automatic publication, retention, and status UI.
+The Mac can now publish manually and after a debounced catalogue reload to a selected destination, retaining prior revisions. The next slice must make publication scheduling precise (only after actual catalogue writes), publish on orderly quit with a bounded wait, and expose current revision versus last published revision.
 
 ### Goal
 
-Publish verified snapshots from the Mac app on explicit request and after safe debounced catalogue changes, retaining prior revision files for recovery.
+Make automatic publication reliable and observable without delaying normal UI work or quit indefinitely.
 
 ### Required persistence work
 
-1. Add a Mac-configured publication destination, explicit Publish action, status/error display, and a debounced post-write publisher.
-2. Retain a bounded number of revision payloads; update the manifest only after complete successful publication.
-3. Never publish private bookmarks, live SQLite/WAL files, or partially migrated data.
+1. Schedule only after successful catalogue-mutating use cases, not read-only reload/access checks.
+2. Add last-published revision metadata and bounded orderly-quit flush behavior.
+3. Preserve failed-publish diagnostics and never block quitting indefinitely.
 
 ### Required UI work
 
-1. Add Mac publication settings and clear last-published/current-revision status.
+1. Display current vs. last-published revision, pending state, and retryable errors.
 2. Do not alter iPad catalogue, mapping, or playback logic in this slice.
 
 ### Required tests
 
 Add persistence tests for at least:
 
-- Debounce/coalescing and manifest-last publication behavior.
-- Failed destination access preserves prior manifest/revisions and exposes a retryable error.
+- Read-only reloads do not schedule publication; successful mutations coalesce one publication.
+- Quit flush is bounded and failed destination access preserves prior manifest/revisions.
 
 Run `swift test` after the slice. Update this document's completed/not-implemented sections, tests, limitations, and next task before committing.
 

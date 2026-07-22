@@ -38,13 +38,14 @@ Completed and verified:
 - Read-only iPad playback foundation complete: `CompanionPlaybackController` accepts only a resolved mapped URL, checks that it exists, then uses local `AVAudioPlayer` playback. Failed opens and non-playable assets show local feedback and leave all catalogue/snapshot/mapping data unchanged.
 - iPad application composition and launch-time refresh indication complete: `MusicLibraryPad` is a SwiftUI executable target that locates all companion state in Application Support. The client compares source/local manifest modification dates only to expose a refresh indicator; it never replaces cache content until an explicit verified refresh.
 - iPad lifecycle/deployment preparation complete: the companion repeats the source-date check on scene activation, and `project.yml` reproducibly generates `MusicLibraryPad.xcodeproj` with automatic signing configuration. Select a Development Team for device deployment; sandboxed `xcodebuild` package resolution is currently blocked before compilation by a `ManifestLoading` cache conflict, while SwiftPM compiles the target successfully.
+- Mac publication integration complete: Settings chooses a security-scoped destination, supports explicit publish, shows a status string, debounces automatic publication, and retains the two newest revision payloads after manifest-last publication.
 
 Not yet implemented:
 
-- Automatic Mac snapshot publication integration, retention, and publish-status reporting.
+- Precise Mac publication scheduling, last-published revision tracking, and orderly-quit flush.
 - General deletion/recovery, disc reordering/deletion, contributor-credit maintenance, full track-editor UI, tag write-back, lyrics, and AI.
 
-The next coding slice is **automatic Mac snapshot publication**. Do not allow companion clients to alter the catalogue.
+The next coding slice is **Mac publication reliability and quit handling**. Do not allow companion clients to alter the catalogue.
 
 ## 1. Fixed decisions
 

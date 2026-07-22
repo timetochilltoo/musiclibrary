@@ -56,6 +56,17 @@ struct ImportScannerTests {
         #expect(decoded.sha256 == manifest.sha256)
     }
 
+    @Test("Snapshot publisher retains only the configured recent revisions")
+    func retainsSnapshotRevisions() throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        for revision in 1...4 { _ = try SnapshotPublisher.publish(json: "{\"format\":\"music-library-json\",\"revision\":\(revision)}", revision: Int64(revision), to: directory, retainRevisions: 2) }
+        let files = try FileManager.default.contentsOfDirectory(atPath: directory.path).filter { $0.hasPrefix("catalogue-") && $0.hasSuffix(".json") }
+        #expect(files.sorted() == ["catalogue-3.json", "catalogue-4.json"])
+        let manifest = try JSONDecoder().decode(SnapshotManifest.self, from: Data(contentsOf: directory.appending(path: "manifest.json")))
+        #expect(manifest.fileName == "catalogue-4.json")
+    }
+
     private func temporaryDirectory() -> URL {
         FileManager.default.temporaryDirectory.appending(path: "ImportScannerTests-\(UUID().uuidString)", directoryHint: .isDirectory)
     }

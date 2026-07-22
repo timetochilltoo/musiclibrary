@@ -16,10 +16,14 @@ public final class LibraryStore: ObservableObject {
     @Published public private(set) var duplicateAssets: [AssetDuplicate] = []
     @Published public private(set) var isReady = false
     @Published public private(set) var errorMessage: String?
+    @Published public private(set) var snapshotDestinationPath: String?
+    @Published public private(set) var snapshotPublishStatus = "Snapshot destination not configured"
 
     private var database: MusicDatabase?
     private var hasStarted = false
     private var scanTasks: [ImportBatchID: Task<Void, Never>] = [:]
+    private var snapshotPublishTask: Task<Void, Never>?
+    private let snapshotDestinationBookmarkKey = "MusicLibrary.snapshotDestinationBookmark"
 
     public init() {}
 
@@ -31,6 +35,7 @@ public final class LibraryStore: ObservableObject {
             let database = try MusicDatabase(url: directory.appending(path: "MusicLibrary.sqlite"))
             try await database.migrate()
             self.database = database
+            loadSnapshotDestination()
             try await database.recoverInterruptedImportBatches()
             try await reload()
             try await refreshStorageRootAccess()
@@ -57,6 +62,7 @@ public final class LibraryStore: ObservableObject {
         libraryHealthIssues = try await loadedHealth
         playlists = try await loadedPlaylists
         duplicateAssets = try await database.duplicateAssets()
+        scheduleSnapshotPublication()
     }
 
     public func search(_ term: String) async {
@@ -218,6 +224,19 @@ public final class LibraryStore: ObservableObject {
     public func softDeleteAlbum(_ id: AlbumID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.softDeleteAlbum(id); try await reload() }
     public func exportCatalogue(to url: URL) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; let json = try await database.catalogueExportJSON(); try json.write(to: url, atomically: true, encoding: .utf8) }
     public func publishSnapshot(to directory: URL) async throws -> SnapshotManifest { guard let database else { throw DatabaseError.notFound("Catalogue database") }; let value = try await database.publicationRevisionAndJSON(); return try SnapshotPublisher.publish(json: value.1, revision: value.0, to: directory) }
+    public func setSnapshotDestination(_ url: URL) throws {
+        let bookmark = try makeSecurityScopedBookmark(for: url)
+        UserDefaults.standard.set(bookmark, forKey: snapshotDestinationBookmarkKey)
+        snapshotDestinationPath = url.path
+        snapshotPublishStatus = "Ready to publish"
+    }
+    public func publishSnapshotNow() async throws {
+        guard let destination = resolvedSnapshotDestination() else { throw DatabaseError.invalidOperation("Choose a snapshot destination first.") }
+        let accessed = destination.startAccessingSecurityScopedResource()
+        defer { if accessed { destination.stopAccessingSecurityScopedResource() } }
+        let manifest = try await publishSnapshot(to: destination)
+        snapshotPublishStatus = "Published revision \(manifest.revision)"
+    }
     public func verifyFingerprints() async throws {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await refreshStorageRootAccess()
         for candidate in try await database.assetFingerprintCandidates() {
@@ -291,6 +310,29 @@ public final class LibraryStore: ObservableObject {
 
     public func dismissError() {
         errorMessage = nil
+    }
+
+    private func loadSnapshotDestination() {
+        guard let destination = resolvedSnapshotDestination() else { return }
+        snapshotDestinationPath = destination.path
+        snapshotPublishStatus = "Ready to publish"
+    }
+
+    private func resolvedSnapshotDestination() -> URL? {
+        guard let bookmark = UserDefaults.standard.data(forKey: snapshotDestinationBookmarkKey) else { return nil }
+        var stale = false
+        return try? URL(resolvingBookmarkData: bookmark, options: [.withSecurityScope], relativeTo: nil, bookmarkDataIsStale: &stale)
+    }
+
+    private func scheduleSnapshotPublication() {
+        guard resolvedSnapshotDestination() != nil else { return }
+        snapshotPublishTask?.cancel()
+        snapshotPublishTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled, let self else { return }
+            do { try await self.publishSnapshotNow() }
+            catch { self.snapshotPublishStatus = "Automatic publish failed: \(error.localizedDescription)" }
+        }
     }
 
     private func applicationSupportDirectory() throws -> URL {

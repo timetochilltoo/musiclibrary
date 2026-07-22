@@ -180,9 +180,16 @@ private struct LibraryShellView: View {
 private struct StorageRootList: View {
     @ObservedObject var library: LibraryStore
     @State private var rootToRename: StorageRoot?
+    @State private var showsSnapshotDestinationPicker = false
 
     var body: some View {
         List {
+            Section("Snapshot publishing") {
+                Text(library.snapshotPublishStatus).foregroundStyle(.secondary)
+                if let path = library.snapshotDestinationPath { Text(path).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+                Button("Choose Snapshot Destination") { showsSnapshotDestinationPicker = true }
+                Button("Publish Now") { Task { try? await library.publishSnapshotNow() } }.disabled(library.snapshotDestinationPath == nil)
+            }
             Section("Music Folders") {
                 Button("Verify Asset Fingerprints", systemImage: "checkmark.shield") { Task { try? await library.verifyFingerprints() } }
                 ForEach(library.storageRoots) { root in
@@ -211,6 +218,9 @@ private struct StorageRootList: View {
                 }
             }
             if !library.duplicateAssets.isEmpty { Section("Duplicate fingerprints") { ForEach(library.duplicateAssets) { duplicate in Text("\(duplicate.paths.count) files share fingerprint \(duplicate.contentHash.prefix(12))…") } } }
+        }
+        .fileImporter(isPresented: $showsSnapshotDestinationPicker, allowedContentTypes: [.folder]) { result in
+            if case let .success(url) = result { try? library.setSnapshotDestination(url) }
         }
         .overlay {
             if library.isReady && library.storageRoots.isEmpty { ContentUnavailableView("No music folders", systemImage: "externaldrive", description: Text("Add a local or NAS folder. The app saves access permission, not NAS credentials.")) }

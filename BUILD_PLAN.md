@@ -6,7 +6,7 @@ Detailed coding handoff: [IMPLEMENTATION_SPEC.md](IMPLEMENTATION_SPEC.md)
 
 Operational continuation guide: [HANDOFF.md](HANDOFF.md)
 
-Implementation baseline (22 July 2026): the macOS catalogue foundation, retained local/NAS authorization, Import Inbox, assets, playback, recovery, snapshot publisher utility, verified read-only cache, security-scoped snapshot/SMB selection, iPad browsing/playback, foreground update indication, and a generated Xcode iPad project are complete and covered by thirty-five automated tests. The Mac publisher is not yet wired into destination settings, automatic publication, retention, or status UI; device deployment needs a Development Team selected in Xcode. See [HANDOFF.md](HANDOFF.md) for the current Git baseline and next implementation slice.
+Implementation baseline (22 July 2026): the macOS catalogue foundation, retained local/NAS authorization, Import Inbox, assets, playback, recovery, destination-configured manual/debounced snapshot publication with revision retention, verified read-only cache, iPad browsing/playback, foreground update indication, and a generated Xcode iPad project are complete and covered by thirty-six automated tests. Publication scheduling is currently reload-based rather than mutation-specific; device deployment needs a Development Team selected in Xcode. See [HANDOFF.md](HANDOFF.md) for the current Git baseline and next implementation slice.
 
 ## 1. Recommendation
 
