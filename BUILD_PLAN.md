@@ -4,6 +4,8 @@ Date: 22 July 2026
 
 Detailed coding handoff: [IMPLEMENTATION_SPEC.md](IMPLEMENTATION_SPEC.md)
 
+Implementation baseline (22 July 2026): the macOS catalogue foundation, persistent SQLite schema, album/location/box-set creation UI, and ten automated tests are complete in Git commit `2d02f10`. The next implementation slice is album editing and box-set membership management.
+
 ## 1. Recommendation
 
 Build this as a **local-first macOS music catalog and lossless player**, with iPad support designed in from the start. Treat Android, network sync, AI cover recognition, and AI music generation as later modules.

@@ -5,6 +5,28 @@ Companion document: [BUILD_PLAN.md](BUILD_PLAN.md)
 
 This document turns the product plan into implementation-level guidance. It intentionally specifies the complicated logic so a coding agent does not have to infer core behaviour while writing the application.
 
+## Implementation status
+
+Repository: `https://github.com/timetochilltoo/musiclibrary.git`  
+Current baseline: `2d02f10` on `main` (22 July 2026)
+
+Completed and verified:
+
+- Swift package structure with macOS SwiftUI executable and separate Domain, Persistence, Application, and UI modules.
+- Domain identifiers, album/edition model, physical locations, box sets, contributor roles, and derived digital-availability logic.
+- SQLite schema migration 1, foreign keys, catalogue revision tracking, and core repositories.
+- Persistent Mac catalogue stored in the user's Application Support directory.
+- Catalogue UI: browse/search albums; add albums; create/rename locations; create box sets; show basic album details.
+- Atomic album creation inside a box set, including inherited physical-location behaviour.
+- Ten automated domain/persistence tests, last verified with `swift test` on 22 July 2026.
+
+Not yet implemented:
+
+- Album editing, deletion/recovery, box-member browsing/reordering/removal, contributors, discs, tracks, aliases, and artwork.
+- Folder access, scanning, metadata services, import inbox, file relocation, duplicate detection, playback, playlists, snapshots, iPad, SMB mapping, tag write-back, lyrics, and AI.
+
+The next coding slice is **album editing and box-set membership management**, followed by contributors, discs, and tracks. Do not start file scanning or playback until those core catalogue relationships are complete and tested.
+
 ## 1. Fixed decisions
 
 These decisions are requirements unless the user explicitly changes them:
