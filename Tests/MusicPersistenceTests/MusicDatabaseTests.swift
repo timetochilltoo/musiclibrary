@@ -9,7 +9,7 @@ struct MusicDatabaseTests {
     func migrationCreatesSchema() async throws {
         let database = try MusicDatabase(url: temporaryDatabaseURL())
         try await database.migrate()
-        #expect(try await database.schemaVersion() == 4)
+        #expect(try await database.schemaVersion() == 5)
         #expect(try await database.currentRevision() == 0)
     }
 
@@ -182,6 +182,24 @@ struct MusicDatabaseTests {
         #expect(loaded.candidateCount == 1)
         #expect(loaded.errorCount == 1)
         #expect(try await database.importCandidates(batchID: batch.id).first?.payload == payload)
+        #expect(try await database.albums().isEmpty)
+        #expect(try await database.currentRevision() == 1)
+    }
+
+    @Test("Metadata proposals persist approval without creating catalogue records")
+    func metadataProposalReview() async throws {
+        let database = try MusicDatabase(url: temporaryDatabaseURL())
+        try await database.migrate()
+        let root = try await database.createStorageRoot(.init(displayName: "Music", lastKnownPath: "/Music", bookmarkData: Data([1])))
+        let batch = try await database.createImportBatch(storageRootID: root.id, sourceDescription: "/Music")
+        try await database.recordImportCandidate(batchID: batch.id, payload: .init(relativePath: "Album/song.mp3", fileName: "song.mp3", contentTypeIdentifier: "public.mp3", fileSize: 123, modifiedAt: nil))
+        let candidate = try #require(await database.importCandidates(batchID: batch.id).first)
+        try await database.saveEmbeddedMetadata(.init(title: "Song", albumTitle: "Album", artist: "Artist", albumArtist: nil, discNumber: 1, trackNumber: 1, durationMilliseconds: 1000, rawTags: ["album": "Album"]), for: candidate.id)
+        try await database.rebuildImportReleaseProposals(batchID: batch.id, drafts: [.init(title: "Album", artist: "Artist", discCount: 1, confidence: 0.9, candidateIDs: [candidate.id])])
+        let proposal = try #require(await database.importReleaseProposals(batchID: batch.id).first)
+        #expect(proposal.status == .proposed)
+        try await database.updateImportReleaseProposal(proposal.id, status: .approved)
+        #expect(try await database.importReleaseProposals(batchID: batch.id).first?.status == .approved)
         #expect(try await database.albums().isEmpty)
         #expect(try await database.currentRevision() == 1)
     }

@@ -151,7 +151,7 @@ Implemented and tested:
 - `NewAlbum` validation: nonblank title, disc count at least one, valid years, rating range, and no direct physical location when no CD is marked.
 - Album display title combining title and optional edition label.
 - Derived digital availability state model: `none`, `complete`, `partial`, `offline`, and `broken`.
-- SQLite migrations 1 through 4 with foreign keys, catalogue revision state, album, aliases, locations, box sets, discs, tracks, contributors, storage roots, digital assets, playlists, import batches/candidates, edit events, and FTS table placeholders.
+- SQLite migrations 1 through 5 with foreign keys, catalogue revision state, album, aliases, locations, box sets, discs, tracks, contributors, storage roots, digital assets, playlists, import batches/candidates/release proposals, edit events, and FTS table placeholders.
 - SQLite WAL mode and foreign-key enforcement on database open.
 - Persist/create/query albums; search title, edition label, and catalogue number.
 - Persist/create/list/rename physical locations.
@@ -167,6 +167,7 @@ Implemented and tested:
 - Storage roots persist a display name, last-known path, security-scoped bookmark data, volume identifier, availability state, and bookmark-refresh flag. Root access is checked without scanning files.
 - The Settings UI lets the user choose a local/NAS folder, rename it, recheck access, or remove it when it has no digital assets. It labels roots as Available, Offline, or Permission required.
 - A cancellable Import Inbox scan creates batches and audio-file candidates only. It uses system content-type probing, skips hidden/package content, retains file-level errors, supports cancellation/retry, and recovers an interrupted scan as cancelled on relaunch. It never creates catalogue records or modifies audio files.
+- Embedded common tags and duration are read locally through AVFoundation, preserved with `embedded-tags` provenance, and grouped deterministically into release proposals. Review can approve-for-later or dismiss a proposal; neither action creates catalogue records, changes catalogue revision, contacts external services, nor writes audio tags.
 - Increment catalogue revision once per successful high-level write operation.
 
 ### macOS UI
@@ -179,7 +180,7 @@ Implemented:
 - Location list, create-location form with optional parent selection, and rename context menu.
 - Box-set list and create-box-set form.
 - Basic album detail view showing edition fields, CD status, and direct location or box/unknown state.
-- Import Inbox list/detail with scan progress, cancellation, retry, candidate paths/types, and retained error summaries.
+- Import Inbox list/detail with scan progress, cancellation, retry, candidate paths/types, embedded tag values, grouped release proposals, confidence/provenance, and explicit approve-for-later/dismiss controls.
 - Error alerts and initial database-opening progress UI.
 
 Runtime database location on the Mac:
@@ -192,7 +193,7 @@ This database is user data. Do not remove it during development. If a destructiv
 
 ## 8. Current tests and verification baseline
 
-The last verified baseline contains 19 tests in 3 suites. Run `swift test`; do not rely on this handoff alone.
+The last verified baseline contains 21 tests in 3 suites. Run `swift test`; do not rely on this handoff alone.
 
 `MusicDomainTests/AlbumTests.swift` verifies:
 
@@ -204,7 +205,7 @@ The last verified baseline contains 19 tests in 3 suites. Run `swift test`; do n
 
 `MusicPersistenceTests/MusicDatabaseTests.swift` verifies:
 
-- Schema migration 4 and initial catalogue revision.
+- Schema migration 5 and initial catalogue revision.
 - Album persistence and revision increment.
 - Box membership clears direct location while retaining CD availability.
 - Location list and rename.
@@ -214,8 +215,9 @@ The last verified baseline contains 19 tests in 3 suites. Run `swift test`; do n
 - Ordered discs/tracks, aliases, contributor roles at both album and track levels, selected artwork provenance, and safe content removal persist correctly.
 - Storage-root bookmark round-trip, offline state retention, rename/removal, and revision behaviour.
 - Import Inbox batch/candidate persistence and proof that scanning does not mutate albums or catalogue revision.
+- Metadata-proposal persistence, approval state, and proof that review does not create catalogue records or alter catalogue revision.
 
-`MusicApplicationTests/ImportScannerTests.swift` verifies content-type audio discovery, hidden-file exclusion, and cancellation before enumeration.
+`MusicApplicationTests/ImportScannerTests.swift` verifies content-type audio discovery, hidden-file exclusion, cancellation before enumeration, and Unicode/multi-disc proposal grouping.
 
 There are no UI automation or visual snapshot tests yet. Building via `swift test` compiles the macOS executable, but does not exercise a real UI session. Add targeted tests before making core data behaviour more complex.
 
@@ -253,7 +255,7 @@ Album edits and box membership workflows are available. Album detail supports ma
 
 ### Digital media
 
-Storage-root authorization and discovery-only Import Inbox scanning are implemented, but no audio metadata is extracted and no files are indexed as digital assets. No playback, playlists, SMB audio access, snapshots, iPad app, lyrics, tag write-back, or AI is implemented. Existing strings/enums/schema tables beyond these slices are scaffolding, not completed features.
+Storage-root authorization, discovery-only Import Inbox scanning, and embedded common-tag proposal review are implemented, but no file is indexed as a digital asset. No external metadata lookup, playback, playlists, SMB audio access, snapshots, iPad app, lyrics, tag write-back, or AI is implemented. Existing strings/enums/schema tables beyond these slices are scaffolding, not completed features.
 
 ## 10. Non-negotiable invariants to preserve
 
@@ -274,36 +276,36 @@ Enforce these with transactions, validation, constraints, and tests where possib
 
 If an invariant needs to change, stop and document the proposed migration and user-facing impact before implementing it.
 
-## 11. Exact next slice: metadata proposals and review
+## 11. Exact next slice: confirmed digital assets and library health
 
-Discovery-only scanning is complete. Do not start playback or iPad work until proposed metadata can be reviewed without silently changing the catalogue or audio files.
+Embedded metadata proposals/review is complete. Do not start playback or iPad work until explicitly approved proposals can create traceable digital assets and availability health is correct.
 
 ### Goal
 
-Turn Import Inbox candidates into reviewable, provenance-labelled metadata proposals. The user must explicitly confirm every catalogue change.
+Convert only explicitly approved release proposals into albums/tracks/digital assets, with path provenance, availability health, and safe handling of offline/missing roots.
 
 ### Required persistence work
 
-1. Read embedded tags and technical properties from a candidate without modifying the file.
-2. Group candidate files into proposed releases with explicit confidence and provenance.
-3. Present field-by-field differences and require explicit user confirmation before any album/track/asset write.
-4. Preserve failed/unknown metadata as reviewable states rather than guessing.
-5. Do not contact external metadata services or write tags in this slice.
+1. Make confirmation idempotent using proposal/candidate linkage; never create duplicate assets on retry.
+2. Create albums/tracks/assets only from an approved proposal and retain embedded-tag provenance.
+3. Derive album digital status from expected tracks/assets and root availability; never add a stored `hasDigital` Boolean.
+4. Detect duplicate path assignments and report missing/offline files without destructive repair.
+5. Do not add playback, external lookups, or tag write-back.
 
 ### Required UI work
 
-1. Add a proposal detail screen with source values, proposed values, confidence, and confirmation controls.
-2. Make it obvious that no source file will be changed.
+1. Add an explicit “Create catalogue records” confirmation with a clear summary of albums/tracks/assets to be created.
+2. Add Library Health statuses for missing, offline, duplicate, and partial digital albums.
 3. Do not add playback or automatic metadata correction.
 
 ### Required tests
 
 Add persistence tests for at least:
 
-- Embedded-tag and technical-property extraction across representative file types.
-- Grouping and confidence rules with Unicode/multi-disc fixtures.
-- Explicit confirmation/rollback semantics and no tag write-back.
-- Offline/permission-required root behaviour without writes or deletions.
+- Idempotent approved-proposal confirmation and rollback on invalid input.
+- Digital asset path uniqueness, root availability, and derived album status.
+- Duplicate/missing/offline health cases with no destructive repair.
+- No playback or tag write-back.
 
 Run `swift test` after the slice. Update this document's completed/not-implemented sections, tests, limitations, and next task before committing.
 
@@ -311,7 +313,7 @@ Run `swift test` after the slice. Update this document's completed/not-implement
 
 Do not implement all of this at once. Complete and test one vertical slice per commit group.
 
-1. Metadata proposals/review and artwork; no write-back.
+1. Confirmed digital assets, availability health, duplicate detection, and relocation.
 5. Digital assets, availability health, duplicate detection, and relocation.
 6. Lossless playback engine, queue, and playlists.
 7. Library Health, soft delete/recovery, edit history, JSON/CSV export.

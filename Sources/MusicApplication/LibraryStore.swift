@@ -147,6 +147,36 @@ public final class LibraryStore: ObservableObject {
         return try await database.importCandidates(batchID: batchID)
     }
 
+    public func importReleaseProposals(batchID: ImportBatchID) async throws -> [ImportReleaseProposal] {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        return try await database.importReleaseProposals(batchID: batchID)
+    }
+
+    public func analyzeImportBatch(_ batchID: ImportBatchID) async throws {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        try await refreshStorageRootAccess()
+        guard let batch = importBatches.first(where: { $0.id == batchID }), let rootID = batch.storageRootID, let root = storageRoots.first(where: { $0.id == rootID }) else { throw DatabaseError.notFound("Storage root for import batch") }
+        let resolved = resolveSecurityScopedBookmark(root)
+        guard resolved.status == .available, let rootURL = resolved.url else { throw DatabaseError.invalidOperation("The source storage root is not available.") }
+        let accessed = rootURL.startAccessingSecurityScopedResource()
+        defer { if accessed { rootURL.stopAccessingSecurityScopedResource() } }
+        guard accessed else { throw DatabaseError.invalidOperation("Permission to access the source storage root was not available.") }
+        let candidates = try await database.importCandidates(batchID: batchID)
+        let extractor = EmbeddedMetadataExtractor()
+        for candidate in candidates where candidate.status != .failed {
+            guard let payload = candidate.payload else { continue }
+            let metadata = await extractor.extract(url: rootURL.appending(path: payload.relativePath))
+            try await database.saveEmbeddedMetadata(metadata, for: candidate.id)
+        }
+        let extracted = try await database.importCandidates(batchID: batchID)
+        try await database.rebuildImportReleaseProposals(batchID: batchID, drafts: MetadataProposalGrouper().group(candidates: extracted))
+    }
+
+    public func setImportReleaseProposal(_ id: UUID, status: ImportProposalStatus) async throws {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        try await database.updateImportReleaseProposal(id, status: status)
+    }
+
     public func startImportScan(rootID: StorageRootID) async throws {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
         try await refreshStorageRootAccess()

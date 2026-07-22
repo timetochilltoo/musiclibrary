@@ -5,7 +5,11 @@ public enum ImportBatchStatus: String, Codable, CaseIterable, Sendable {
 }
 
 public enum ImportCandidateStatus: String, Codable, CaseIterable, Sendable {
-    case pending, failed
+    case pending, proposed, failed
+}
+
+public enum ImportProposalStatus: String, Codable, CaseIterable, Sendable {
+    case proposed, approved, dismissed
 }
 
 public struct ImportBatch: Identifiable, Equatable, Sendable {
@@ -43,8 +47,55 @@ public struct ImportCandidate: Identifiable, Equatable, Sendable {
     public let status: ImportCandidateStatus
     public let payload: ImportCandidatePayload?
     public let errorMessage: String?
+    public let metadata: EmbeddedMetadataPayload?
+    public let proposalID: UUID?
 
-    public init(id: ImportCandidateID, batchID: ImportBatchID, status: ImportCandidateStatus, payload: ImportCandidatePayload?, errorMessage: String?) {
-        self.id = id; self.batchID = batchID; self.status = status; self.payload = payload; self.errorMessage = errorMessage
+    public init(id: ImportCandidateID, batchID: ImportBatchID, status: ImportCandidateStatus, payload: ImportCandidatePayload?, errorMessage: String?, metadata: EmbeddedMetadataPayload? = nil, proposalID: UUID? = nil) {
+        self.id = id; self.batchID = batchID; self.status = status; self.payload = payload; self.errorMessage = errorMessage; self.metadata = metadata; self.proposalID = proposalID
+    }
+}
+
+public struct EmbeddedMetadataPayload: Codable, Equatable, Sendable {
+    public let title: String?
+    public let albumTitle: String?
+    public let artist: String?
+    public let albumArtist: String?
+    public let discNumber: Int?
+    public let trackNumber: Int?
+    public let durationMilliseconds: Int?
+    public let rawTags: [String: String]
+    public let provenance: String
+
+    public init(title: String?, albumTitle: String?, artist: String?, albumArtist: String?, discNumber: Int?, trackNumber: Int?, durationMilliseconds: Int?, rawTags: [String: String], provenance: String = "embedded-tags") {
+        self.title = title; self.albumTitle = albumTitle; self.artist = artist; self.albumArtist = albumArtist; self.discNumber = discNumber; self.trackNumber = trackNumber; self.durationMilliseconds = durationMilliseconds; self.rawTags = rawTags; self.provenance = provenance
+    }
+}
+
+public struct ImportReleaseProposal: Identifiable, Equatable, Sendable {
+    public let id: UUID
+    public let batchID: ImportBatchID
+    public let title: String
+    public let artist: String?
+    public let discCount: Int
+    public let trackCount: Int
+    public let confidence: Double
+    public let provenance: String
+    public let status: ImportProposalStatus
+
+    public init(id: UUID, batchID: ImportBatchID, title: String, artist: String?, discCount: Int, trackCount: Int, confidence: Double, provenance: String, status: ImportProposalStatus) {
+        self.id = id; self.batchID = batchID; self.title = title; self.artist = artist; self.discCount = discCount; self.trackCount = trackCount; self.confidence = confidence; self.provenance = provenance; self.status = status
+    }
+}
+
+public struct ImportReleaseProposalDraft: Equatable, Sendable {
+    public let title: String
+    public let artist: String?
+    public let discCount: Int
+    public let confidence: Double
+    public let candidateIDs: [ImportCandidateID]
+    public let provenance: String
+
+    public init(title: String, artist: String?, discCount: Int, confidence: Double, candidateIDs: [ImportCandidateID], provenance: String = "embedded-tags") {
+        self.title = title; self.artist = artist; self.discCount = discCount; self.confidence = confidence; self.candidateIDs = candidateIDs; self.provenance = provenance
     }
 }

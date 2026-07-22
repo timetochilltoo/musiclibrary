@@ -2,7 +2,7 @@ import Foundation
 import SQLite3
 
 enum SchemaMigrator {
-    static let currentVersion = 4
+    static let currentVersion = 5
 
     static func migrate(_ connection: OpaquePointer) throws {
         var statement: OpaquePointer?
@@ -19,7 +19,8 @@ enum SchemaMigrator {
         }
         if version == 1 { try migrateToVersion2(connection); version = 2 }
         if version == 2 { try migrateToVersion3(connection); version = 3 }
-        if version == 3 { try migrateToVersion4(connection) }
+        if version == 3 { try migrateToVersion4(connection); version = 4 }
+        if version == 4 { try migrateToVersion5(connection) }
     }
 
     private static func migrateToVersion1(_ connection: OpaquePointer) throws {
@@ -310,6 +311,36 @@ enum SchemaMigrator {
         CREATE INDEX IF NOT EXISTS import_batch_root_index ON import_batch(storage_root_id, started_at DESC);
         PRAGMA user_version = 4;
         UPDATE catalogue_state SET schema_version = 4 WHERE singleton_id = 1;
+        COMMIT;
+        """
+        var error: UnsafeMutablePointer<CChar>?
+        guard sqlite3_exec(connection, sql, nil, nil, &error) == SQLITE_OK else {
+            defer { sqlite3_free(error) }
+            throw DatabaseError.sqlite(message: error.map { String(cString: $0) } ?? String(cString: sqlite3_errmsg(connection)))
+        }
+    }
+
+    private static func migrateToVersion5(_ connection: OpaquePointer) throws {
+        let sql = """
+        BEGIN IMMEDIATE;
+        CREATE TABLE IF NOT EXISTS import_release_proposal (
+            id TEXT PRIMARY KEY,
+            batch_id TEXT NOT NULL REFERENCES import_batch(id) ON DELETE CASCADE,
+            title TEXT NOT NULL,
+            artist TEXT,
+            disc_count INTEGER NOT NULL,
+            track_count INTEGER NOT NULL,
+            confidence REAL NOT NULL,
+            provenance TEXT NOT NULL,
+            status TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+        ALTER TABLE import_candidate ADD COLUMN metadata_payload BLOB;
+        ALTER TABLE import_candidate ADD COLUMN proposal_id TEXT REFERENCES import_release_proposal(id) ON DELETE SET NULL;
+        CREATE INDEX IF NOT EXISTS import_candidate_proposal_index ON import_candidate(proposal_id);
+        PRAGMA user_version = 5;
+        UPDATE catalogue_state SET schema_version = 5 WHERE singleton_id = 1;
         COMMIT;
         """
         var error: UnsafeMutablePointer<CChar>?

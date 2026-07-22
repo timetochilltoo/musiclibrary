@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import MusicApplication
+@testable import MusicDomain
 
 @Suite("Import scanner")
 struct ImportScannerTests {
@@ -30,6 +31,18 @@ struct ImportScannerTests {
         let result = ImportScanner().scan(rootURL: root, isCancelled: { true })
         #expect(result.wasCancelled)
         #expect(result.candidates.isEmpty)
+    }
+
+    @Test("Metadata grouping keeps Unicode multi-disc candidates in one proposal")
+    func groupsMetadata() {
+        let batchID = ImportBatchID()
+        let first = ImportCandidate(id: ImportCandidateID(), batchID: batchID, status: .proposed, payload: .init(relativePath: "宇多田/アルバム/01.mp3", fileName: "01.mp3", contentTypeIdentifier: "public.mp3", fileSize: 1, modifiedAt: nil), errorMessage: nil, metadata: .init(title: "曲一", albumTitle: "アルバム", artist: "宇多田", albumArtist: nil, discNumber: 1, trackNumber: 1, durationMilliseconds: nil, rawTags: [:]))
+        let second = ImportCandidate(id: ImportCandidateID(), batchID: batchID, status: .proposed, payload: .init(relativePath: "宇多田/アルバム/02.mp3", fileName: "02.mp3", contentTypeIdentifier: "public.mp3", fileSize: 1, modifiedAt: nil), errorMessage: nil, metadata: .init(title: "曲二", albumTitle: "アルバム", artist: "宇多田", albumArtist: nil, discNumber: 2, trackNumber: 1, durationMilliseconds: nil, rawTags: [:]))
+        let proposals = MetadataProposalGrouper().group(candidates: [first, second])
+        #expect(proposals.count == 1)
+        #expect(proposals.first?.title == "アルバム")
+        #expect(proposals.first?.discCount == 2)
+        #expect(proposals.first?.candidateIDs.count == 2)
     }
 
     private func temporaryDirectory() -> URL {

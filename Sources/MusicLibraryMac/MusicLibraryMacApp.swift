@@ -236,6 +236,7 @@ private struct ImportBatchDetail: View {
     @ObservedObject var library: LibraryStore
     let batch: ImportBatch
     @State private var candidates: [ImportCandidate] = []
+    @State private var proposals: [ImportReleaseProposal] = []
 
     var body: some View {
         List {
@@ -247,16 +248,33 @@ private struct ImportBatchDetail: View {
                 if let error = batch.errorSummary { Text(error).foregroundStyle(.secondary) }
                 if batch.status == .scanning { Button("Cancel Scan", role: .destructive) { Task { await library.cancelImportScan(batch.id) } } }
                 if batch.status != .scanning { Button("Retry Scan", systemImage: "arrow.clockwise") { Task { try? await library.retryImportScan(batch.id) } } }
+                if batch.status != .scanning { Button("Read Embedded Metadata", systemImage: "text.magnifyingglass") { Task { try? await library.analyzeImportBatch(batch.id); await load() } } }
+            }
+            Section("Release Proposals") {
+                if proposals.isEmpty { Text("Read embedded metadata to create local proposals. No catalogue records or source files will be changed.").foregroundStyle(.secondary) }
+                ForEach(proposals) { proposal in
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack { Text(proposal.title).font(.headline); Spacer(); Text(proposal.status.rawValue.capitalized).font(.caption).foregroundStyle(.secondary) }
+                        Text("\(proposal.artist ?? "Unknown artist") · \(proposal.discCount) disc(s) · \(proposal.trackCount) files · \(Int((proposal.confidence * 100).rounded()))% confidence").font(.caption).foregroundStyle(.secondary)
+                        Text("Source: \(proposal.provenance). Approval only marks this proposal for later catalogue creation.").font(.caption2).foregroundStyle(.secondary)
+                        if proposal.status == .proposed { HStack { Button("Approve for Later") { Task { try? await library.setImportReleaseProposal(proposal.id, status: .approved); await load() } }; Button("Dismiss", role: .destructive) { Task { try? await library.setImportReleaseProposal(proposal.id, status: .dismissed); await load() } } } }
+                    }
+                }
             }
             Section("Candidates") {
                 ForEach(candidates) { candidate in
-                    if let payload = candidate.payload { VStack(alignment: .leading) { Text(payload.relativePath); Text(payload.contentTypeIdentifier).font(.caption).foregroundStyle(.secondary) } }
+                    if let payload = candidate.payload { VStack(alignment: .leading) { Text(payload.relativePath); Text(candidate.metadata?.rawTags.map { "\($0.key): \($0.value)" }.sorted().joined(separator: " · ") ?? payload.contentTypeIdentifier).font(.caption).foregroundStyle(.secondary) } }
                     else { Text(candidate.errorMessage ?? "Unreadable item").foregroundStyle(.secondary) }
                 }
             }
         }
         .navigationTitle("Import Batch")
-        .task(id: batch.id) { candidates = (try? await library.importCandidates(batchID: batch.id)) ?? [] }
+        .task(id: batch.id) { await load() }
+    }
+
+    private func load() async {
+        candidates = (try? await library.importCandidates(batchID: batch.id)) ?? []
+        proposals = (try? await library.importReleaseProposals(batchID: batch.id)) ?? []
     }
 }
 

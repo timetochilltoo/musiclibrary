@@ -134,12 +134,13 @@ public actor MusicDatabase {
     }
 
     public func importCandidates(batchID: ImportBatchID) throws -> [ImportCandidate] {
-        let statement = try Self.prepare("SELECT id, status, proposed_payload, error_message FROM import_candidate WHERE batch_id = ? ORDER BY rowid;", on: connection)
+        let statement = try Self.prepare("SELECT id, status, proposed_payload, error_message, metadata_payload, proposal_id FROM import_candidate WHERE batch_id = ? ORDER BY rowid;", on: connection)
         defer { sqlite3_finalize(statement) }; try Self.bind(batchID.description, at: 1, to: statement); var values: [ImportCandidate] = []
         while sqlite3_step(statement) == SQLITE_ROW {
             guard let rawID = Self.text(at: 0, from: statement), let uuid = UUID(uuidString: rawID), let rawStatus = Self.text(at: 1, from: statement), let status = ImportCandidateStatus(rawValue: rawStatus) else { throw DatabaseError.invalidIdentifier("import_candidate") }
             let payload = Self.data(at: 2, from: statement).flatMap { try? JSONDecoder().decode(ImportCandidatePayload.self, from: $0) }
-            values.append(.init(id: .init(rawValue: uuid), batchID: batchID, status: status, payload: payload, errorMessage: Self.text(at: 3, from: statement)))
+            let metadata = Self.data(at: 4, from: statement).flatMap { try? JSONDecoder().decode(EmbeddedMetadataPayload.self, from: $0) }
+            values.append(.init(id: .init(rawValue: uuid), batchID: batchID, status: status, payload: payload, errorMessage: Self.text(at: 3, from: statement), metadata: metadata, proposalID: Self.text(at: 5, from: statement).flatMap(UUID.init(uuidString:))))
         }
         return values
     }
@@ -159,6 +160,52 @@ public actor MusicDatabase {
             let statement = try Self.prepare("INSERT INTO import_candidate (id, batch_id, status, proposed_payload, error_message) VALUES (?, ?, ?, ?, ?);", on: connection)
             defer { sqlite3_finalize(statement) }; try Self.bind(id.description, at: 1, to: statement); try Self.bind(batchID.description, at: 2, to: statement); try Self.bind(ImportCandidateStatus.failed.rawValue, at: 3, to: statement); try Self.bind(Data(), at: 4, to: statement); try Self.bind(message, at: 5, to: statement); try Self.stepDone(statement, connection: connection)
             try incrementImportProgress(batchID: batchID, candidates: 0, errors: 1)
+        }
+    }
+
+    public func saveEmbeddedMetadata(_ metadata: EmbeddedMetadataPayload, for candidateID: ImportCandidateID) throws {
+        let data = try JSONEncoder().encode(metadata)
+        try transaction {
+            let statement = try Self.prepare("UPDATE import_candidate SET status = 'proposed', metadata_payload = ?, error_message = NULL WHERE id = ? AND status IN ('pending', 'proposed');", on: connection)
+            defer { sqlite3_finalize(statement) }; try Self.bind(data, at: 1, to: statement); try Self.bind(candidateID.description, at: 2, to: statement); try Self.stepDone(statement, connection: connection)
+            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Import candidate") }
+        }
+    }
+
+    public func importReleaseProposals(batchID: ImportBatchID) throws -> [ImportReleaseProposal] {
+        let statement = try Self.prepare("SELECT id, title, artist, disc_count, track_count, confidence, provenance, status FROM import_release_proposal WHERE batch_id = ? ORDER BY title COLLATE NOCASE;", on: connection)
+        defer { sqlite3_finalize(statement) }; try Self.bind(batchID.description, at: 1, to: statement); var values: [ImportReleaseProposal] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let rawID = Self.text(at: 0, from: statement), let id = UUID(uuidString: rawID), let rawStatus = Self.text(at: 7, from: statement), let status = ImportProposalStatus(rawValue: rawStatus) else { throw DatabaseError.invalidIdentifier("import_release_proposal") }
+            values.append(.init(id: id, batchID: batchID, title: Self.text(at: 1, from: statement) ?? "", artist: Self.text(at: 2, from: statement), discCount: Int(Self.int(at: 3, from: statement) ?? 1), trackCount: Int(Self.int(at: 4, from: statement) ?? 0), confidence: sqlite3_column_double(statement, 5), provenance: Self.text(at: 6, from: statement) ?? "", status: status))
+        }
+        return values
+    }
+
+    public func rebuildImportReleaseProposals(batchID: ImportBatchID, drafts: [ImportReleaseProposalDraft]) throws {
+        try transaction {
+            let clear = try Self.prepare("UPDATE import_candidate SET proposal_id = NULL WHERE batch_id = ?;", on: connection)
+            defer { sqlite3_finalize(clear) }; try Self.bind(batchID.description, at: 1, to: clear); try Self.stepDone(clear, connection: connection)
+            let delete = try Self.prepare("DELETE FROM import_release_proposal WHERE batch_id = ?;", on: connection)
+            defer { sqlite3_finalize(delete) }; try Self.bind(batchID.description, at: 1, to: delete); try Self.stepDone(delete, connection: connection)
+            let now = Self.milliseconds(Date())
+            for draft in drafts {
+                let proposalID = UUID()
+                let insert = try Self.prepare("INSERT INTO import_release_proposal (id, batch_id, title, artist, disc_count, track_count, confidence, provenance, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'proposed', ?, ?);", on: connection)
+                defer { sqlite3_finalize(insert) }; try Self.bind(proposalID.uuidString.lowercased(), at: 1, to: insert); try Self.bind(batchID.description, at: 2, to: insert); try Self.bind(draft.title, at: 3, to: insert); try Self.bind(draft.artist, at: 4, to: insert); try Self.bind(Int64(draft.discCount), at: 5, to: insert); try Self.bind(Int64(draft.candidateIDs.count), at: 6, to: insert); try Self.bind(draft.confidence, at: 7, to: insert); try Self.bind(draft.provenance, at: 8, to: insert); try Self.bind(now, at: 9, to: insert); try Self.bind(now, at: 10, to: insert); try Self.stepDone(insert, connection: connection)
+                for candidateID in draft.candidateIDs {
+                    let attach = try Self.prepare("UPDATE import_candidate SET proposal_id = ? WHERE id = ? AND batch_id = ?;", on: connection)
+                    defer { sqlite3_finalize(attach) }; try Self.bind(proposalID.uuidString.lowercased(), at: 1, to: attach); try Self.bind(candidateID.description, at: 2, to: attach); try Self.bind(batchID.description, at: 3, to: attach); try Self.stepDone(attach, connection: connection)
+                }
+            }
+        }
+    }
+
+    public func updateImportReleaseProposal(_ id: UUID, status: ImportProposalStatus) throws {
+        try transaction {
+            let statement = try Self.prepare("UPDATE import_release_proposal SET status = ?, updated_at = ? WHERE id = ?;", on: connection)
+            defer { sqlite3_finalize(statement) }; try Self.bind(status.rawValue, at: 1, to: statement); try Self.bind(Self.milliseconds(Date()), at: 2, to: statement); try Self.bind(id.uuidString.lowercased(), at: 3, to: statement); try Self.stepDone(statement, connection: connection)
+            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Import release proposal") }
         }
     }
 
@@ -781,6 +828,10 @@ public actor MusicDatabase {
     private static func bind(_ value: Int64?, at index: Int32, to statement: OpaquePointer) throws {
         let result = value.map { sqlite3_bind_int64(statement, index, $0) } ?? sqlite3_bind_null(statement, index)
         guard result == SQLITE_OK else { throw DatabaseError.sqlite(message: "Unable to bind SQLite integer value.") }
+    }
+
+    private static func bind(_ value: Double, at index: Int32, to statement: OpaquePointer) throws {
+        guard sqlite3_bind_double(statement, index, value) == SQLITE_OK else { throw DatabaseError.sqlite(message: "Unable to bind SQLite decimal value.") }
     }
 
     private static func bind(_ value: Data?, at index: Int32, to statement: OpaquePointer) throws {
