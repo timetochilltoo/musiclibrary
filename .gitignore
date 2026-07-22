@@ -3,4 +3,4 @@ DerivedData/
 *.xcuserstate
 .build/
 .DS_Store
-*.xcuserdata/
+xcuserdata/

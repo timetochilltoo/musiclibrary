@@ -40,6 +40,7 @@ Completed and verified:
 - iPad lifecycle/deployment preparation complete: the companion repeats the source-date check on scene activation, and `project.yml` reproducibly generates `MusicLibraryPad.xcodeproj` with automatic signing configuration. The Xcode project builds the shared iPad modules directly to avoid local package-resolution cache failures; an unsigned iOS Simulator build succeeded on 22 July 2026. Select a Development Team for device deployment.
 - Mac publication integration complete: Settings chooses a security-scoped destination, supports explicit publish, shows a status string, debounces automatic publication, and retains the two newest revision payloads after manifest-last publication.
 - Mac publication observability complete: the store tracks observed catalogue and last-published revisions, schedules after an observed revision change, and attempts a best-effort scene-background publish without treating it as a hard quit blocker.
+- Mac publication pending-state handling complete: Settings shows pending work and automatic/background publication skips a revision already known to be published.
 
 Not yet implemented:
 

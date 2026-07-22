@@ -20,6 +20,7 @@ public final class LibraryStore: ObservableObject {
     @Published public private(set) var snapshotPublishStatus = "Snapshot destination not configured"
     @Published public private(set) var catalogueRevision: Int64 = 0
     @Published public private(set) var lastPublishedRevision: Int64?
+    @Published public private(set) var isSnapshotPublishPending = false
 
     private var database: MusicDatabase?
     private var hasStarted = false
@@ -246,6 +247,12 @@ public final class LibraryStore: ObservableObject {
         lastPublishedRevision = manifest.revision
         UserDefaults.standard.set(manifest.revision, forKey: lastPublishedRevisionKey)
         snapshotPublishStatus = "Published revision \(manifest.revision)"
+        isSnapshotPublishPending = false
+    }
+    public func publishPendingSnapshotBeforeBackground() async {
+        guard lastPublishedRevision != catalogueRevision else { return }
+        do { try await publishSnapshotNow() }
+        catch { snapshotPublishStatus = "Background publish deferred: \(error.localizedDescription)" }
     }
     public func verifyFingerprints() async throws {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await refreshStorageRootAccess()
@@ -338,11 +345,12 @@ public final class LibraryStore: ObservableObject {
     private func scheduleSnapshotPublication() {
         guard resolvedSnapshotDestination() != nil else { return }
         snapshotPublishTask?.cancel()
+        isSnapshotPublishPending = true
         snapshotPublishTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(2))
             guard !Task.isCancelled, let self else { return }
-            do { try await self.publishSnapshotNow() }
-            catch { self.snapshotPublishStatus = "Automatic publish failed: \(error.localizedDescription)" }
+            do { if self.lastPublishedRevision != self.catalogueRevision { try await self.publishSnapshotNow() } else { self.isSnapshotPublishPending = false } }
+            catch { self.isSnapshotPublishPending = false; self.snapshotPublishStatus = "Automatic publish failed: \(error.localizedDescription)" }
         }
     }
 
