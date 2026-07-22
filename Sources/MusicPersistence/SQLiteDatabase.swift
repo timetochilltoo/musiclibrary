@@ -393,6 +393,17 @@ public actor MusicDatabase {
         return .init(id: id, albumID: albumID, name: name, locale: locale, kind: kind)
     }
 
+    public func albumAliases(albumID: AlbumID) throws -> [AlbumAlias] {
+        let statement = try Self.prepare("SELECT id, name, locale, kind FROM album_alias WHERE album_id = ? ORDER BY kind, name COLLATE NOCASE;", on: connection)
+        defer { sqlite3_finalize(statement) }; try Self.bind(albumID.description, at: 1, to: statement)
+        var values: [AlbumAlias] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let raw = Self.text(at: 0, from: statement), let id = UUID(uuidString: raw), let kindRaw = Self.text(at: 3, from: statement), let kind = AlbumAliasKind(rawValue: kindRaw) else { throw DatabaseError.invalidIdentifier("album_alias") }
+            values.append(.init(id: id, albumID: albumID, name: Self.text(at: 1, from: statement) ?? "", locale: Self.text(at: 2, from: statement), kind: kind))
+        }
+        return values
+    }
+
     public func addAlbum(_ albumID: AlbumID, to boxSetID: BoxSetID, at position: Int) throws {
         try transaction {
             guard try Self.exists("SELECT 1 FROM album WHERE id = ? AND deleted_at IS NULL;", value: albumID.description, on: connection) else { throw DatabaseError.notFound("Album") }

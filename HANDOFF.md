@@ -161,6 +161,7 @@ Implemented and tested:
 - Edit albums; browse, confirm moves into, remove from, and reorder box-set members.
 - Distinguish standalone unknown physical location from boxed placement with `physical_location_unknown`.
 - Begin the catalogue-content persistence layer: ordered discs/tracks, aliases, contributors, and album-level contributor roles.
+- Album detail displays discs, tracks, aliases, and album contributor credits; discs and tracks can be added from the UI.
 - Increment catalogue revision once per successful high-level write operation.
 
 ### macOS UI
@@ -269,11 +270,11 @@ This is the next task. Complete it before scanning, playback, metadata services,
 
 ### Goal
 
-Make each edition accurately represent its contents and credits:
+Continue making each edition accurately represent its contents and credits:
 
-- Add ordered discs and tracks.
-- Add album-level and track-level contributors with roles.
-- Add searchable aliases for original, translated, and romanized titles.
+- Add editing/reordering for ordered discs and tracks.
+- Add UI management for album-level and track-level contributors with roles.
+- Add UI management for searchable aliases for original, translated, and romanized titles.
 - Add selected front artwork with provenance.
 
 ### Required persistence work
