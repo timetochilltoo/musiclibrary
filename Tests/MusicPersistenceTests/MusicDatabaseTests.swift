@@ -9,7 +9,7 @@ struct MusicDatabaseTests {
     func migrationCreatesSchema() async throws {
         let database = try MusicDatabase(url: temporaryDatabaseURL())
         try await database.migrate()
-        #expect(try await database.schemaVersion() == 1)
+        #expect(try await database.schemaVersion() == 2)
         #expect(try await database.currentRevision() == 0)
     }
 
@@ -58,6 +58,53 @@ struct MusicDatabaseTests {
         }
         #expect(try await database.albums().isEmpty)
         #expect(try await database.currentRevision() == 0)
+    }
+
+    @Test("Editing an album preserves identity and increments revision once")
+    func albumEditing() async throws {
+        let database = try MusicDatabase(url: temporaryDatabaseURL())
+        try await database.migrate()
+        let album = try await database.createAlbum(.init(title: "Original", editionLabel: "1980 pressing"))
+        var draft = album.draft
+        draft.title = "Corrected"
+        draft.editionLabel = "Japan version"
+        let updated = try await database.updateAlbum(album.id, with: draft)
+        #expect(updated.id == album.id)
+        #expect(updated.displayTitle == "Corrected — Japan version")
+        #expect(try await database.currentRevision() == 2)
+    }
+
+    @Test("Moving, reordering, and removing box members preserves placement rules")
+    func boxMembershipManagement() async throws {
+        let database = try MusicDatabase(url: temporaryDatabaseURL())
+        try await database.migrate()
+        let shelf = try await database.createLocation(.init(name: "Shelf"))
+        let box = try await database.createBoxSet(.init(title: "Collection", physicalLocationID: shelf.id))
+        let first = try await database.createAlbum(.init(title: "First", hasCD: true), in: box.id)
+        let second = try await database.createAlbum(.init(title: "Second", hasCD: true))
+        try await database.moveAlbum(second.id, to: box.id)
+        #expect(try await database.boxMembers(of: box.id).map(\.album.id) == [first.id, second.id])
+        try await database.reorderAlbum(second.id, in: box.id, to: 1)
+        #expect(try await database.boxMembers(of: box.id).map(\.album.id) == [second.id, first.id])
+        try await database.removeAlbum(second.id, from: box.id, assigning: nil, locationUnknown: true)
+        let removed = try #require(await database.album(id: second.id))
+        #expect(removed.hasCD)
+        #expect(removed.physicalLocationID == nil)
+        #expect(removed.isPhysicalLocationUnknown)
+        #expect(try await database.boxMembers(of: box.id).map(\.album.id) == [first.id])
+    }
+
+    @Test("Removing a box member without a location rolls back")
+    func invalidBoxRemovalRollsBack() async throws {
+        let database = try MusicDatabase(url: temporaryDatabaseURL())
+        try await database.migrate()
+        let shelf = try await database.createLocation(.init(name: "Shelf"))
+        let box = try await database.createBoxSet(.init(title: "Collection", physicalLocationID: shelf.id))
+        let album = try await database.createAlbum(.init(title: "Album", hasCD: true), in: box.id)
+        await #expect(throws: DatabaseError.invalidOperation("Choose a physical location or explicitly mark the location unknown before removing an album from its box.")) {
+            try await database.removeAlbum(album.id, from: box.id, assigning: nil, locationUnknown: false)
+        }
+        #expect(try await database.boxMembers(of: box.id).map(\.album.id) == [album.id])
     }
 
     private func temporaryDatabaseURL() -> URL {

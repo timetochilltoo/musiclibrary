@@ -22,6 +22,7 @@ public enum ValidationError: Error, Equatable, LocalizedError, Sendable {
     case invalidReleaseYear
     case invalidRating
     case invalidLocationPlacement
+    case invalidUnknownLocationPlacement
 
     public var errorDescription: String? {
         switch self {
@@ -30,6 +31,7 @@ public enum ValidationError: Error, Equatable, LocalizedError, Sendable {
         case .invalidReleaseYear: "Release year must be between 1000 and 9999."
         case .invalidRating: "Rating must be between 1 and 5."
         case .invalidLocationPlacement: "A boxed album cannot also have a direct physical location."
+        case .invalidUnknownLocationPlacement: "Unknown physical location is only valid for a standalone CD without a selected location."
         }
     }
 }
@@ -47,6 +49,7 @@ public struct NewAlbum: Sendable, Equatable {
     public var discCount: Int
     public var hasCD: Bool
     public var physicalLocationID: PhysicalLocationID?
+    public var isPhysicalLocationUnknown: Bool
     public var physicalNote: String?
     public var notes: String?
     public var rating: Int?
@@ -65,6 +68,7 @@ public struct NewAlbum: Sendable, Equatable {
         discCount: Int = 1,
         hasCD: Bool = false,
         physicalLocationID: PhysicalLocationID? = nil,
+        isPhysicalLocationUnknown: Bool = false,
         physicalNote: String? = nil,
         notes: String? = nil,
         rating: Int? = nil,
@@ -82,6 +86,7 @@ public struct NewAlbum: Sendable, Equatable {
         self.discCount = discCount
         self.hasCD = hasCD
         self.physicalLocationID = physicalLocationID
+        self.isPhysicalLocationUnknown = isPhysicalLocationUnknown
         self.physicalNote = physicalNote
         self.notes = notes
         self.rating = rating
@@ -94,7 +99,8 @@ public struct NewAlbum: Sendable, Equatable {
         if let releaseYear, !(1000...9999).contains(releaseYear) { throw ValidationError.invalidReleaseYear }
         if let remasterYear, !(1000...9999).contains(remasterYear) { throw ValidationError.invalidReleaseYear }
         if let rating, !(1...5).contains(rating) { throw ValidationError.invalidRating }
-        if !hasCD && physicalLocationID != nil { throw ValidationError.invalidLocationPlacement }
+        if !hasCD && (physicalLocationID != nil || isPhysicalLocationUnknown) { throw ValidationError.invalidLocationPlacement }
+        if physicalLocationID != nil && isPhysicalLocationUnknown { throw ValidationError.invalidUnknownLocationPlacement }
         return self
     }
 }
@@ -106,9 +112,17 @@ public struct Album: Identifiable, Equatable, Sendable {
     public var releaseYear: Int?
     public var countryCode: String?
     public var catalogueNumber: String?
+    public var labelName: String?
+    public var barcode: String?
+    public var remasterYear: Int?
+    public var mediaFormat: String?
     public var discCount: Int
     public var hasCD: Bool
     public var physicalLocationID: PhysicalLocationID?
+    public var isPhysicalLocationUnknown: Bool
+    public var physicalNote: String?
+    public var notes: String?
+    public var rating: Int?
     public var isFavourite: Bool
     public var createdAt: Date
     public var updatedAt: Date
@@ -120,10 +134,18 @@ public struct Album: Identifiable, Equatable, Sendable {
         editionLabel = draft.editionLabel
         releaseYear = draft.releaseYear
         countryCode = draft.countryCode
+        labelName = draft.labelName
         catalogueNumber = draft.catalogueNumber
+        barcode = draft.barcode
+        remasterYear = draft.remasterYear
+        mediaFormat = draft.mediaFormat
         discCount = draft.discCount
         hasCD = draft.hasCD
         physicalLocationID = draft.physicalLocationID
+        isPhysicalLocationUnknown = draft.isPhysicalLocationUnknown
+        physicalNote = draft.physicalNote
+        notes = draft.notes
+        rating = draft.rating
         isFavourite = draft.isFavourite
         self.createdAt = createdAt
         self.updatedAt = updatedAt
@@ -133,6 +155,28 @@ public struct Album: Identifiable, Equatable, Sendable {
     public var displayTitle: String {
         guard let editionLabel, !editionLabel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return title }
         return "\(title) — \(editionLabel)"
+    }
+
+    public var draft: NewAlbum {
+        .init(
+            title: title,
+            editionLabel: editionLabel,
+            releaseYear: releaseYear,
+            countryCode: countryCode,
+            labelName: labelName,
+            catalogueNumber: catalogueNumber,
+            barcode: barcode,
+            remasterYear: remasterYear,
+            mediaFormat: mediaFormat,
+            discCount: discCount,
+            hasCD: hasCD,
+            physicalLocationID: physicalLocationID,
+            isPhysicalLocationUnknown: isPhysicalLocationUnknown,
+            physicalNote: physicalNote,
+            notes: notes,
+            rating: rating,
+            isFavourite: isFavourite
+        )
     }
 }
 

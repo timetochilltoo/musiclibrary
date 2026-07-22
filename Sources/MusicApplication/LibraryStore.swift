@@ -52,6 +52,40 @@ public final class LibraryStore: ObservableObject {
         try await reload()
     }
 
+    public func updateAlbum(_ id: AlbumID, with draft: NewAlbum) async throws {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        _ = try await database.updateAlbum(id, with: draft)
+        try await reload()
+    }
+
+    public func boxMembers(of boxSetID: BoxSetID) async throws -> [BoxSetMembership] {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        return try await database.boxMembers(of: boxSetID)
+    }
+
+    public func boxPlacement(for albumID: AlbumID) async throws -> AlbumBoxPlacement? {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        return try await database.boxPlacement(for: albumID)
+    }
+
+    public func moveAlbum(_ albumID: AlbumID, to boxSetID: BoxSetID) async throws {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        try await database.moveAlbum(albumID, to: boxSetID)
+        try await reload()
+    }
+
+    public func removeAlbum(_ albumID: AlbumID, from boxSetID: BoxSetID, assigning locationID: PhysicalLocationID?, locationUnknown: Bool) async throws {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        try await database.removeAlbum(albumID, from: boxSetID, assigning: locationID, locationUnknown: locationUnknown)
+        try await reload()
+    }
+
+    public func reorderAlbum(_ albumID: AlbumID, in boxSetID: BoxSetID, to position: Int) async throws {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        try await database.reorderAlbum(albumID, in: boxSetID, to: position)
+        try await reload()
+    }
+
     public func addLocation(_ draft: NewPhysicalLocation) async throws {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
         _ = try await database.createLocation(draft)

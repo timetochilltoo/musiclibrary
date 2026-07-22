@@ -122,7 +122,7 @@ Sources/
     Album.swift                  Album draft/entity, validation, availability enums
     PhysicalCollection.swift     Locations and box-set domain types
   MusicPersistence/
-    SchemaMigrator.swift         SQLite schema migration 1
+    SchemaMigrator.swift         SQLite schema migrations 1 and 2
     SQLiteDatabase.swift         Actor-backed database operations
     Repositories.swift           Initial repository protocol
   MusicApplication/
@@ -151,13 +151,15 @@ Implemented and tested:
 - `NewAlbum` validation: nonblank title, disc count at least one, valid years, rating range, and no direct physical location when no CD is marked.
 - Album display title combining title and optional edition label.
 - Derived digital availability state model: `none`, `complete`, `partial`, `offline`, and `broken`.
-- SQLite migration 1 with foreign keys, catalogue revision state, album, aliases, locations, box sets, discs, tracks, contributors, digital assets, playlists, import records, edit events, and FTS table placeholders.
+- SQLite migrations 1 and 2 with foreign keys, catalogue revision state, album, aliases, locations, box sets, discs, tracks, contributors, digital assets, playlists, import records, edit events, and FTS table placeholders.
 - SQLite WAL mode and foreign-key enforcement on database open.
 - Persist/create/query albums; search title, edition label, and catalogue number.
 - Persist/create/list/rename physical locations.
 - Persist/create/list box sets.
 - Add an existing album to a box set, clearing its direct location and ensuring CD availability.
 - Create a new album directly in a box set atomically; failure to find the box rolls back album creation.
+- Edit albums; browse, confirm moves into, remove from, and reorder box-set members.
+- Distinguish standalone unknown physical location from boxed placement with `physical_location_unknown`.
 - Increment catalogue revision once per successful high-level write operation.
 
 ### macOS UI
@@ -182,7 +184,7 @@ This database is user data. Do not remove it during development. If a destructiv
 
 ## 8. Current tests and verification baseline
 
-The last verified baseline contains 10 tests in 2 suites. Run `swift test`; do not rely on this handoff alone.
+The last verified baseline contains 13 tests in 2 suites. Run `swift test`; do not rely on this handoff alone.
 
 `MusicDomainTests/AlbumTests.swift` verifies:
 
@@ -194,11 +196,13 @@ The last verified baseline contains 10 tests in 2 suites. Run `swift test`; do n
 
 `MusicPersistenceTests/MusicDatabaseTests.swift` verifies:
 
-- Schema migration 1 and initial catalogue revision.
+- Schema migration 2 and initial catalogue revision.
 - Album persistence and revision increment.
 - Box membership clears direct location while retaining CD availability.
 - Location list and rename.
 - Failed creation in a nonexistent box set rolls back the album and revision.
+- Album editing preserves identity and revision semantics.
+- Member moves, reordering, removal, and invalid removal rollback preserve placement rules.
 
 There are no UI automation or visual snapshot tests yet. Building via `swift test` compiles the macOS executable, but does not exercise a real UI session. Add targeted tests before making core data behaviour more complex.
 
@@ -226,9 +230,9 @@ Parent links are stored. The UI permits choosing a parent when creating a locati
 
 ### Box sets
 
-Creating a new album inside a selected box set is atomic. The underlying `addAlbum(_:to:at:)` method also exists for a future membership-management UI.
+Creating a new album inside a selected box set is atomic. Box detail lists ordered members, supports explicit confirmed moves, safe removal, and reordering.
 
-The UI does not yet list box members, show inherited box location in a rich way, add an existing album to a box, remove an album from a box, or reorder membership. Do not create a second path that bypasses the database transaction/invariants.
+Schema version 2 adds `physical_location_unknown`. A boxed album has no direct location and this flag is false; a standalone CD with an unknown location has this flag true. Preserve this distinction in future code and migrations.
 
 ### Album detail and editing
 
@@ -257,50 +261,45 @@ Enforce these with transactions, validation, constraints, and tests where possib
 
 If an invariant needs to change, stop and document the proposed migration and user-facing impact before implementing it.
 
-## 11. Exact next slice: edit albums and manage box membership
+## 11. Exact next slice: contributors, discs, tracks, aliases, and artwork
 
 This is the next task. Complete it before scanning, playback, metadata services, or iPad work.
 
 ### Goal
 
-Make the manually entered physical catalogue genuinely maintainable after creation:
+Make each edition accurately represent its contents and credits:
 
-- Edit an album's metadata and physical CD placement.
-- Browse every box set's member albums.
-- Add an existing album to a box set.
-- Remove a member from a box set only after collecting a direct location or explicit unknown-location state.
-- Reorder members in a box set.
+- Add ordered discs and tracks.
+- Add album-level and track-level contributors with roles.
+- Add searchable aliases for original, translated, and romanized titles.
+- Add selected front artwork with provenance.
 
 ### Required persistence work
 
-1. Add explicit `updateAlbum` use case(s) accepting a validated `NewAlbum` or dedicated update value. Preserve identity, timestamps, revision semantics, and box invariant.
-2. Add box-set membership query returning ordered member albums and enough placement information for the UI.
-3. Add transactional operations for:
-   - adding an existing album to a box at a valid position;
-   - removing an album from a box while assigning a standalone location or explicit unknown state;
-   - moving/reordering a member without delete/reinsert identity churn.
-4. Decide and model the explicit `location unknown` representation before implementing remove-from-box. Do not overload `nil` because `nil` already means “currently boxed” in the existing model. A small migration may be needed, for example an `is_physical_location_unknown` Boolean constrained with `has_cd`.
-5. Add edit-event records for user-visible metadata changes if introducing the edit-history behaviour now; otherwise document that edit history remains deferred and do not claim it exists.
-6. Ensure each successful high-level operation increments the revision exactly once.
+1. Add domain entities/drafts and persistence repositories for discs, tracks, contributors, aliases, and artwork.
+2. Preserve uniqueness of disc numbers within an album and track numbers within a disc.
+3. Use the existing contributor join tables for album and track roles; do not introduce one authoritative artist string.
+4. Add transactional create/edit/reorder operations and revision increment semantics.
+5. Add artwork provenance and selected-state rules without automatic external downloading or source-file mutation.
+6. Populate/use FTS only when its synchronization and search behaviour are tested.
 
 ### Required UI work
 
-1. Add an Edit Album action from the album detail view, reusing one form for create/edit where practical.
-2. Show box-set membership and inherited location clearly in album detail.
-3. Add a box-set detail screen with ordered members and actions to add/remove/reorder.
-4. Do not silently move albums between boxes. Confirm the operation and show the location consequence.
+1. Add a disc/track editor from album detail.
+2. Add contributor selection/creation with role labels and ordering.
+3. Add alias and artwork management surfaces with clear source labels.
+4. Show discs, tracks, and contributors in album detail.
 5. Handle errors in the existing non-blocking alert pattern.
 
 ### Required tests
 
 Add persistence tests for at least:
 
-- Editing an album preserves its ID and increments revision once.
-- Adding an existing album to a box clears direct location and increments revision once.
-- Removing a boxed album with a direct location assigns that location and increments revision once.
-- Invalid removal (no direct location and no explicit unknown state) rolls back fully.
-- Reordering preserves membership and has unique sequential positions.
-- A box cannot contain the same album twice or an album from another box without explicit move semantics.
+- Disc/track uniqueness and ordering.
+- Contributor role relationships at album and track level.
+- Alias persistence and future-search index behaviour.
+- Artwork selected-state rules and provenance.
+- Revision increments once for each successful high-level operation and rolls back on invalid input.
 
 Run `swift test` after the slice. Update this document's completed/not-implemented sections, tests, limitations, and next task before committing.
 
@@ -308,18 +307,17 @@ Run `swift test` after the slice. Update this document's completed/not-implement
 
 Do not implement all of this at once. Complete and test one vertical slice per commit group.
 
-1. Edit albums and manage box-set membership.
-2. Contributors, discs, tracks, aliases, and artwork selection.
-3. Storage root selection and security-scoped bookmark persistence on macOS.
-4. Cancellable recursive scanner, embedded metadata extraction, grouping, and persistent Import Inbox.
-5. External metadata proposals/review and artwork; no write-back.
-6. Digital assets, availability health, duplicate detection, and relocation.
-7. Lossless playback engine, queue, and playlists.
-8. Library Health, soft delete/recovery, edit history, JSON/CSV export.
-9. Safe tag write-back and lyrics only after robust backup/recovery work.
-10. Mac snapshot publisher and validation harness.
-11. Read-only iPad client, manifest check, snapshot replacement, and SMB root mapping.
-12. AI/OCR/music generation last and behind provider protocols.
+1. Contributors, discs, tracks, aliases, and artwork selection.
+2. Storage root selection and security-scoped bookmark persistence on macOS.
+3. Cancellable recursive scanner, embedded metadata extraction, grouping, and persistent Import Inbox.
+4. External metadata proposals/review and artwork; no write-back.
+5. Digital assets, availability health, duplicate detection, and relocation.
+6. Lossless playback engine, queue, and playlists.
+7. Library Health, soft delete/recovery, edit history, JSON/CSV export.
+8. Safe tag write-back and lyrics only after robust backup/recovery work.
+9. Mac snapshot publisher and validation harness.
+10. Read-only iPad client, manifest check, snapshot replacement, and SMB root mapping.
+11. AI/OCR/music generation last and behind provider protocols.
 
 The detailed acceptance criteria and algorithms for later phases are in `IMPLEMENTATION_SPEC.md`.
 

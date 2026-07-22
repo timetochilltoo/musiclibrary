@@ -2,7 +2,7 @@ import Foundation
 import SQLite3
 
 enum SchemaMigrator {
-    static let currentVersion = 1
+    static let currentVersion = 2
 
     static func migrate(_ connection: OpaquePointer) throws {
         var statement: OpaquePointer?
@@ -11,9 +11,13 @@ enum SchemaMigrator {
         }
         defer { sqlite3_finalize(statement) }
         guard sqlite3_step(statement) == SQLITE_ROW else { throw DatabaseError.sqlite(message: "Unable to read schema version.") }
-        let version = Int(sqlite3_column_int64(statement, 0))
+        var version = Int(sqlite3_column_int64(statement, 0))
         guard version <= currentVersion else { throw DatabaseError.sqlite(message: "Database schema \(version) is newer than this app supports.") }
-        if version == 0 { try migrateToVersion1(connection) }
+        if version == 0 {
+            try migrateToVersion1(connection)
+            version = 1
+        }
+        if version == 1 { try migrateToVersion2(connection) }
     }
 
     private static func migrateToVersion1(_ connection: OpaquePointer) throws {
@@ -255,6 +259,21 @@ enum SchemaMigrator {
         );
         CREATE VIRTUAL TABLE IF NOT EXISTS catalogue_search USING fts5(owner_type UNINDEXED, owner_id UNINDEXED, content);
         PRAGMA user_version = 1;
+        COMMIT;
+        """
+        var error: UnsafeMutablePointer<CChar>?
+        guard sqlite3_exec(connection, sql, nil, nil, &error) == SQLITE_OK else {
+            defer { sqlite3_free(error) }
+            throw DatabaseError.sqlite(message: error.map { String(cString: $0) } ?? String(cString: sqlite3_errmsg(connection)))
+        }
+    }
+
+    private static func migrateToVersion2(_ connection: OpaquePointer) throws {
+        let sql = """
+        BEGIN IMMEDIATE;
+        ALTER TABLE album ADD COLUMN physical_location_unknown INTEGER NOT NULL DEFAULT 0 CHECK (physical_location_unknown IN (0, 1));
+        PRAGMA user_version = 2;
+        UPDATE catalogue_state SET schema_version = 2 WHERE singleton_id = 1;
         COMMIT;
         """
         var error: UnsafeMutablePointer<CChar>?

@@ -45,10 +45,12 @@ private struct LibraryShellView: View {
     @ObservedObject var library: LibraryStore
     @State private var section: Section? = .albums
     @State private var selectedAlbumID: AlbumID?
+    @State private var selectedBoxSetID: BoxSetID?
     @State private var searchText = ""
     @State private var showsAlbumEditor = false
     @State private var showsLocationEditor = false
     @State private var showsBoxSetEditor = false
+    @State private var albumToEdit: Album?
 
     var body: some View {
         NavigationSplitView {
@@ -71,6 +73,7 @@ private struct LibraryShellView: View {
         .sheet(isPresented: $showsAlbumEditor) { AlbumEditor(library: library) }
         .sheet(isPresented: $showsLocationEditor) { LocationEditor(library: library) }
         .sheet(isPresented: $showsBoxSetEditor) { BoxSetEditor(library: library) }
+        .sheet(item: $albumToEdit) { album in EditAlbumEditor(library: library, album: album) }
         .alert("Music Library", isPresented: Binding(
             get: { library.errorMessage != nil },
             set: { if !$0 { library.dismissError() } }
@@ -97,11 +100,11 @@ private struct LibraryShellView: View {
         case .locations:
             LocationList(library: library)
         case .boxSets:
-            List(library.boxSets) { box in
+            List(library.boxSets, selection: $selectedBoxSetID) { box in
                 VStack(alignment: .leading) {
                     Text(box.title).font(.headline)
                     if let edition = box.editionLabel, !edition.isEmpty { Text(edition).foregroundStyle(.secondary) }
-                }
+                }.tag(box.id)
             }
             .overlay {
                 if library.isReady && library.boxSets.isEmpty {
@@ -114,8 +117,10 @@ private struct LibraryShellView: View {
     }
 
     @ViewBuilder private var detail: some View {
-        if let selectedAlbumID, let album = library.albums.first(where: { $0.id == selectedAlbumID }) {
-            AlbumDetail(album: album, locations: library.locations)
+        if section == .boxSets, let selectedBoxSetID, let box = library.boxSets.first(where: { $0.id == selectedBoxSetID }) {
+            BoxSetDetail(library: library, boxSet: box)
+        } else if let selectedAlbumID, let album = library.albums.first(where: { $0.id == selectedAlbumID }) {
+            AlbumDetail(library: library, album: album, locations: library.locations, onEdit: { albumToEdit = album })
         } else {
             ContentUnavailableView("Select an album", systemImage: "opticaldisc", description: Text("Album details will appear here."))
         }
@@ -135,8 +140,11 @@ private struct LibraryShellView: View {
 }
 
 private struct AlbumDetail: View {
+    @ObservedObject var library: LibraryStore
     let album: Album
     let locations: [PhysicalLocation]
+    let onEdit: () -> Void
+    @State private var placement: AlbumBoxPlacement?
 
     var body: some View {
         Form {
@@ -146,6 +154,7 @@ private struct AlbumDetail: View {
                 if let year = album.releaseYear { LabeledContent("Release year", value: String(year)) }
                 if let country = album.countryCode { LabeledContent("Country", value: country) }
                 if let catalogueNumber = album.catalogueNumber { LabeledContent("Catalogue no.", value: catalogueNumber) }
+                if let labelName = album.labelName { LabeledContent("Label", value: labelName) }
                 LabeledContent("Discs", value: String(album.discCount))
             }
             Section("Availability") {
@@ -160,10 +169,16 @@ private struct AlbumDetail: View {
         }
         .formStyle(.grouped)
         .navigationTitle(album.displayTitle)
+        .toolbar { Button("Edit", action: onEdit) }
+        .task(id: album.id) {
+            placement = try? await library.boxPlacement(for: album.id)
+        }
     }
 
     private var locationName: String {
-        guard let id = album.physicalLocationID else { return "In a box set or not recorded" }
+        if let placement { return "In box set: \(placement.boxSetTitle)" }
+        if album.isPhysicalLocationUnknown { return "Unknown" }
+        guard let id = album.physicalLocationID else { return "Not recorded" }
         return locations.first(where: { $0.id == id })?.name ?? "Unknown location"
     }
 }
@@ -363,6 +378,243 @@ private struct BoxSetEditor: View {
         guard let locationID else { return }
         Task {
             do { try await library.addBoxSet(.init(title: title, editionLabel: editionLabel.nilIfBlank, physicalLocationID: locationID)); dismiss() }
+            catch { errorMessage = error.localizedDescription }
+        }
+    }
+}
+
+private struct EditAlbumEditor: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var library: LibraryStore
+    let album: Album
+    @State private var title: String
+    @State private var editionLabel: String
+    @State private var releaseYear: String
+    @State private var countryCode: String
+    @State private var catalogueNumber: String
+    @State private var discCount: Int
+    @State private var hasCD: Bool
+    @State private var locationID: PhysicalLocationID?
+    @State private var locationUnknown: Bool
+    @State private var placement: AlbumBoxPlacement?
+    @State private var errorMessage: String?
+
+    init(library: LibraryStore, album: Album) {
+        self.library = library
+        self.album = album
+        _title = State(initialValue: album.title)
+        _editionLabel = State(initialValue: album.editionLabel ?? "")
+        _releaseYear = State(initialValue: album.releaseYear.map(String.init) ?? "")
+        _countryCode = State(initialValue: album.countryCode ?? "")
+        _catalogueNumber = State(initialValue: album.catalogueNumber ?? "")
+        _discCount = State(initialValue: album.discCount)
+        _hasCD = State(initialValue: album.hasCD)
+        _locationID = State(initialValue: album.physicalLocationID)
+        _locationUnknown = State(initialValue: album.isPhysicalLocationUnknown)
+    }
+
+    var body: some View {
+        Form {
+            Section("Album") {
+                TextField("Title", text: $title)
+                TextField("Edition label", text: $editionLabel)
+                TextField("Release year", text: $releaseYear)
+                TextField("Country/region", text: $countryCode)
+                TextField("Catalogue number", text: $catalogueNumber)
+                Stepper("Discs: \(discCount)", value: $discCount, in: 1...99)
+            }
+            Section("Physical CD") {
+                if let placement {
+                    LabeledContent("Box set", value: placement.boxSetTitle)
+                    Text("Remove this album from its box set before changing CD availability or physical location.")
+                        .font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Toggle("CD is available", isOn: $hasCD)
+                    if hasCD {
+                        Picker("Location", selection: $locationID) {
+                            Text("Choose a location").tag(PhysicalLocationID?.none)
+                            ForEach(library.locations) { location in Text(location.name).tag(Optional(location.id)) }
+                        }
+                        Toggle("Physical location is unknown", isOn: $locationUnknown)
+                            .onChange(of: locationUnknown) { _, unknown in if unknown { locationID = nil } }
+                    }
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .frame(width: 460)
+        .task { placement = try? await library.boxPlacement(for: album.id) }
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+            ToolbarItem(placement: .confirmationAction) { Button("Save") { save() }.keyboardShortcut(.defaultAction) }
+        }
+        .alert("Unable to update album", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
+            Button("OK", role: .cancel) { errorMessage = nil }
+        } message: { Text(errorMessage ?? "") }
+    }
+
+    private func save() {
+        Task {
+            do {
+                var draft = album.draft
+                draft.title = title
+                draft.editionLabel = editionLabel.nilIfBlank
+                draft.releaseYear = Int(releaseYear)
+                draft.countryCode = countryCode.nilIfBlank
+                draft.catalogueNumber = catalogueNumber.nilIfBlank
+                draft.discCount = discCount
+                if placement == nil {
+                    draft.hasCD = hasCD
+                    draft.physicalLocationID = hasCD && !locationUnknown ? locationID : nil
+                    draft.isPhysicalLocationUnknown = hasCD && locationUnknown
+                }
+                try await library.updateAlbum(album.id, with: draft)
+                dismiss()
+            } catch { errorMessage = error.localizedDescription }
+        }
+    }
+}
+
+private struct BoxSetDetail: View {
+    @ObservedObject var library: LibraryStore
+    let boxSet: BoxSet
+    @State private var members: [BoxSetMembership] = []
+    @State private var memberToRemove: BoxSetMembership?
+    @State private var showsAddMember = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        List {
+            Section("Albums") {
+                ForEach(members) { member in
+                    HStack {
+                        Text("\(member.position). \(member.album.displayTitle)")
+                        Spacer()
+                        Button("Up", systemImage: "arrow.up") { reorder(member, to: member.position - 1) }.disabled(member.position == 1)
+                        Button("Down", systemImage: "arrow.down") { reorder(member, to: member.position + 1) }.disabled(member.position == members.count)
+                        Button("Remove", systemImage: "minus.circle", role: .destructive) { memberToRemove = member }
+                    }
+                }
+            }
+        }
+        .navigationTitle(boxSet.title)
+        .toolbar { Button("Add Existing Album", systemImage: "plus") { showsAddMember = true } }
+        .task(id: boxSet.id) { await reloadMembers() }
+        .sheet(isPresented: $showsAddMember) { AddBoxMemberEditor(library: library, boxSet: boxSet, onAdded: { await reloadMembers() }) }
+        .sheet(item: $memberToRemove) { member in RemoveBoxMemberEditor(library: library, boxSet: boxSet, member: member, onRemoved: { await reloadMembers() }) }
+        .alert("Unable to update box set", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
+            Button("OK", role: .cancel) { errorMessage = nil }
+        } message: { Text(errorMessage ?? "") }
+    }
+
+    private func reloadMembers() async {
+        do { members = try await library.boxMembers(of: boxSet.id) }
+        catch { errorMessage = error.localizedDescription }
+    }
+
+    private func reorder(_ member: BoxSetMembership, to position: Int) {
+        Task {
+            do { try await library.reorderAlbum(member.album.id, in: boxSet.id, to: position); await reloadMembers() }
+            catch { errorMessage = error.localizedDescription }
+        }
+    }
+}
+
+private struct AddBoxMemberEditor: View {
+    private struct PendingMove: Identifiable {
+        let albumID: AlbumID
+        let sourceBoxTitle: String
+        var id: AlbumID { albumID }
+    }
+
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var library: LibraryStore
+    let boxSet: BoxSet
+    let onAdded: () async -> Void
+    @State private var selectedAlbumID: AlbumID?
+    @State private var pendingMove: PendingMove?
+    @State private var errorMessage: String?
+
+    var body: some View {
+        VStack {
+            Text("Choose an album to add or move into \(boxSet.title).")
+                .font(.headline).padding()
+            List(library.albums, selection: $selectedAlbumID) { album in Text(album.displayTitle).tag(album.id) }
+        }
+        .frame(width: 440, height: 420)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+            ToolbarItem(placement: .confirmationAction) { Button("Add or Move") { requestAdd() }.disabled(selectedAlbumID == nil) }
+        }
+        .alert("Unable to add album", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
+            Button("OK", role: .cancel) { errorMessage = nil }
+        } message: { Text(errorMessage ?? "") }
+        .confirmationDialog("Move album to this box set?", isPresented: Binding(get: { pendingMove != nil }, set: { if !$0 { pendingMove = nil } })) {
+            Button("Move Album", role: .destructive) {
+                if let pendingMove { performMove(pendingMove.albumID) }
+            }
+            Button("Cancel", role: .cancel) { pendingMove = nil }
+        } message: {
+            Text("This album is currently in \(pendingMove?.sourceBoxTitle ?? "another box set"). It will be removed there and added to \(boxSet.title).")
+        }
+    }
+
+    private func requestAdd() {
+        guard let selectedAlbumID else { return }
+        Task {
+            do {
+                if let existing = try await library.boxPlacement(for: selectedAlbumID), existing.boxSetID != boxSet.id {
+                    pendingMove = .init(albumID: selectedAlbumID, sourceBoxTitle: existing.boxSetTitle)
+                } else {
+                    performMove(selectedAlbumID)
+                }
+            }
+            catch { errorMessage = error.localizedDescription }
+        }
+    }
+
+    private func performMove(_ albumID: AlbumID) {
+        Task {
+            do { try await library.moveAlbum(albumID, to: boxSet.id); await onAdded(); dismiss() }
+            catch { errorMessage = error.localizedDescription }
+        }
+    }
+}
+
+private struct RemoveBoxMemberEditor: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var library: LibraryStore
+    let boxSet: BoxSet
+    let member: BoxSetMembership
+    let onRemoved: () async -> Void
+    @State private var locationID: PhysicalLocationID?
+    @State private var locationUnknown = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        Form {
+            Text("Choose where to place \(member.album.displayTitle) after it is removed from this box.")
+            Picker("Location", selection: $locationID) {
+                Text("Choose a location").tag(PhysicalLocationID?.none)
+                ForEach(library.locations) { location in Text(location.name).tag(Optional(location.id)) }
+            }
+            Toggle("Physical location is unknown", isOn: $locationUnknown)
+                .onChange(of: locationUnknown) { _, unknown in if unknown { locationID = nil } }
+        }
+        .padding()
+        .frame(width: 440)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+            ToolbarItem(placement: .confirmationAction) { Button("Remove from Box", role: .destructive) { remove() }.disabled(locationID == nil && !locationUnknown) }
+        }
+        .alert("Unable to remove album", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
+            Button("OK", role: .cancel) { errorMessage = nil }
+        } message: { Text(errorMessage ?? "") }
+    }
+
+    private func remove() {
+        Task {
+            do { try await library.removeAlbum(member.album.id, from: boxSet.id, assigning: locationID, locationUnknown: locationUnknown); await onRemoved(); dismiss() }
             catch { errorMessage = error.localizedDescription }
         }
     }

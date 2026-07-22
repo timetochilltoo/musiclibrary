@@ -67,3 +67,29 @@ public struct BoxSet: Identifiable, Equatable, Sendable {
         self.physicalLocationID = physicalLocationID
     }
 }
+
+public struct BoxSetMembership: Identifiable, Equatable, Sendable {
+    public let album: Album
+    public let boxSetID: BoxSetID
+    public let position: Int
+
+    public var id: AlbumID { album.id }
+
+    public init(album: Album, boxSetID: BoxSetID, position: Int) {
+        self.album = album
+        self.boxSetID = boxSetID
+        self.position = position
+    }
+}
+
+public struct AlbumBoxPlacement: Equatable, Sendable {
+    public let boxSetID: BoxSetID
+    public let boxSetTitle: String
+    public let position: Int
+
+    public init(boxSetID: BoxSetID, boxSetTitle: String, position: Int) {
+        self.boxSetID = boxSetID
+        self.boxSetTitle = boxSetTitle
+        self.position = position
+    }
+}
