@@ -78,8 +78,48 @@ public actor MusicDatabase {
         return .init(id: id, name: valid.name, parentID: valid.parentID, sortOrder: valid.sortOrder, notes: valid.notes)
     }
 
+    public func locations() throws -> [PhysicalLocation] {
+        let statement = try Self.prepare("SELECT id, parent_id, name, sort_order, notes FROM physical_location ORDER BY sort_order, name COLLATE NOCASE;", on: connection)
+        defer { sqlite3_finalize(statement) }
+        var results: [PhysicalLocation] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let rawID = Self.text(at: 0, from: statement), let uuid = UUID(uuidString: rawID) else { throw DatabaseError.invalidIdentifier("physical_location.id") }
+            let parentID = Self.text(at: 1, from: statement).flatMap(UUID.init(uuidString:)).map(PhysicalLocationID.init(rawValue:))
+            results.append(.init(
+                id: .init(rawValue: uuid),
+                name: Self.text(at: 2, from: statement) ?? "",
+                parentID: parentID,
+                sortOrder: Int(Self.int(at: 3, from: statement) ?? 0),
+                notes: Self.text(at: 4, from: statement)
+            ))
+        }
+        return results
+    }
+
+    public func renameLocation(_ id: PhysicalLocationID, to name: String) throws {
+        let draft = try NewPhysicalLocation(name: name).validated()
+        try transaction {
+            let statement = try Self.prepare("UPDATE physical_location SET name = ? WHERE id = ?;", on: connection)
+            defer { sqlite3_finalize(statement) }
+            try Self.bind(draft.name, at: 1, to: statement)
+            try Self.bind(id.description, at: 2, to: statement)
+            try Self.stepDone(statement, connection: connection)
+            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Physical location") }
+            try incrementRevision()
+        }
+    }
+
     public func createAlbum(_ draft: NewAlbum) throws -> Album {
-        let valid = try draft.validated()
+        try createAlbum(draft, in: nil, at: nil)
+    }
+
+    public func createAlbum(_ draft: NewAlbum, in boxSetID: BoxSetID?, at position: Int? = nil) throws -> Album {
+        var valid = try draft.validated()
+        if boxSetID != nil {
+            valid.hasCD = true
+            valid.physicalLocationID = nil
+            valid = try valid.validated()
+        }
         let id = AlbumID()
         let now = Date()
         try transaction {
@@ -112,6 +152,18 @@ public actor MusicDatabase {
             try Self.bind(Self.milliseconds(now), at: 18, to: statement)
             try Self.bind(Self.milliseconds(now), at: 19, to: statement)
             try Self.stepDone(statement, connection: connection)
+            if let boxSetID {
+                guard try Self.exists("SELECT 1 FROM box_set WHERE id = ? AND deleted_at IS NULL;", value: boxSetID.description, on: connection) else { throw DatabaseError.notFound("Box set") }
+                let membership = try Self.prepare("INSERT INTO box_set_album (box_set_id, album_id, position) VALUES (?, ?, ?);", on: connection)
+                defer { sqlite3_finalize(membership) }
+                try Self.bind(boxSetID.description, at: 1, to: membership)
+                try Self.bind(id.description, at: 2, to: membership)
+                let resolvedPosition: Int
+                if let position { resolvedPosition = position }
+                else { resolvedPosition = try Self.nextBoxPosition(for: boxSetID, on: connection) }
+                try Self.bind(Int64(resolvedPosition), at: 3, to: membership)
+                try Self.stepDone(membership, connection: connection)
+            }
             try incrementRevision()
         }
         return .init(id: id, from: valid, createdAt: now, updatedAt: now)
@@ -166,6 +218,20 @@ public actor MusicDatabase {
             try incrementRevision()
         }
         return .init(id: id, title: valid.title, editionLabel: valid.editionLabel, physicalLocationID: valid.physicalLocationID)
+    }
+
+    public func boxSets() throws -> [BoxSet] {
+        let statement = try Self.prepare("SELECT id, title, edition_label, physical_location_id FROM box_set WHERE deleted_at IS NULL ORDER BY title COLLATE NOCASE, edition_label COLLATE NOCASE;", on: connection)
+        defer { sqlite3_finalize(statement) }
+        var results: [BoxSet] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard
+                let rawID = Self.text(at: 0, from: statement), let id = UUID(uuidString: rawID),
+                let rawLocationID = Self.text(at: 3, from: statement), let locationID = UUID(uuidString: rawLocationID)
+            else { throw DatabaseError.invalidIdentifier("box_set") }
+            results.append(.init(id: .init(rawValue: id), title: Self.text(at: 1, from: statement) ?? "", editionLabel: Self.text(at: 2, from: statement), physicalLocationID: .init(rawValue: locationID)))
+        }
+        return results
     }
 
     public func addAlbum(_ albumID: AlbumID, to boxSetID: BoxSetID, at position: Int) throws {
@@ -272,6 +338,14 @@ public actor MusicDatabase {
         defer { sqlite3_finalize(statement) }
         try bind(value, at: 1, to: statement)
         return sqlite3_step(statement) == SQLITE_ROW
+    }
+
+    private static func nextBoxPosition(for boxSetID: BoxSetID, on connection: OpaquePointer) throws -> Int {
+        let statement = try prepare("SELECT COALESCE(MAX(position), 0) + 1 FROM box_set_album WHERE box_set_id = ?;", on: connection)
+        defer { sqlite3_finalize(statement) }
+        try bind(boxSetID.description, at: 1, to: statement)
+        guard sqlite3_step(statement) == SQLITE_ROW else { throw DatabaseError.sqlite(message: "Unable to determine the next box-set position.") }
+        return Int(sqlite3_column_int64(statement, 0))
     }
 
     private static func text(at column: Int32, from statement: OpaquePointer) -> String? {

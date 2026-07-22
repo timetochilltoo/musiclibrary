@@ -38,6 +38,28 @@ struct MusicDatabaseTests {
         #expect(try await database.currentRevision() == 4)
     }
 
+    @Test("Locations can be listed and renamed")
+    func locationManagement() async throws {
+        let database = try MusicDatabase(url: temporaryDatabaseURL())
+        try await database.migrate()
+        let location = try await database.createLocation(.init(name: "Shelf 2"))
+        try await database.renameLocation(location.id, to: "Shelf 3")
+        let locations = try await database.locations()
+        #expect(locations.map(\.name) == ["Shelf 3"])
+        #expect(try await database.currentRevision() == 2)
+    }
+
+    @Test("An invalid box set leaves album creation atomic")
+    func invalidBoxSetRollsBackAlbum() async throws {
+        let database = try MusicDatabase(url: temporaryDatabaseURL())
+        try await database.migrate()
+        await #expect(throws: DatabaseError.notFound("Box set")) {
+            _ = try await database.createAlbum(.init(title: "Album", hasCD: true), in: BoxSetID())
+        }
+        #expect(try await database.albums().isEmpty)
+        #expect(try await database.currentRevision() == 0)
+    }
+
     private func temporaryDatabaseURL() -> URL {
         FileManager.default.temporaryDirectory.appending(path: "MusicDatabaseTests-\(UUID().uuidString).sqlite")
     }
