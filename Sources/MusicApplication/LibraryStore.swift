@@ -248,10 +248,21 @@ public final class LibraryStore: ObservableObject {
         snapshotPublishStatus = "Published revision \(manifest.revision)"
         isSnapshotPublishPending = false
     }
-    public func publishPendingSnapshotBeforeBackground() async {
+    public func flushPendingSnapshotPublication(maximumWait: Duration = .seconds(3)) async {
         guard publicationSchedule.needsPublication else { return }
-        do { try await publishSnapshotNow() }
-        catch { snapshotPublishStatus = "Background publish deferred: \(error.localizedDescription)" }
+        let publication = Task { @MainActor [weak self] in
+            guard let self else { return }
+            do { try await self.publishSnapshotNow() }
+            catch { self.isSnapshotPublishPending = false; self.snapshotPublishStatus = "Background publish deferred: \(error.localizedDescription)" }
+        }
+        let completed = await withTaskGroup(of: Bool.self) { group in
+            group.addTask { await publication.value; return true }
+            group.addTask { try? await Task.sleep(for: maximumWait); return false }
+            let result = await group.next() ?? false
+            group.cancelAll()
+            return result
+        }
+        if !completed { snapshotPublishStatus = "Publish continues in the background." }
     }
     public func verifyFingerprints() async throws {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await refreshStorageRootAccess()

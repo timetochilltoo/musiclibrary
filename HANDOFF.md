@@ -310,9 +310,9 @@ Enforce these with transactions, validation, constraints, and tests where possib
 
 If an invariant needs to change, stop and document the proposed migration and user-facing impact before implementing it.
 
-## 11. Exact next slice: bounded Mac quit flush
+## 11. Exact next slice: publication recovery and status polish
 
-The Mac now uses a tested scheduler: initial/read-only observations do not publish, while a changed unpublished revision does. The remaining slice is an explicitly bounded quit flush.
+The Mac now uses a tested scheduler and performs a bounded three-second background flush for pending publication; if time expires, the safe writer continues independently and Settings reports that state. Next, improve recovery/status presentation rather than changing publishing protocol.
 
 ### Goal
 

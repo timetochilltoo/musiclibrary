@@ -15,7 +15,7 @@ struct MusicLibraryMacApp: App {
                 .frame(minWidth: 980, minHeight: 640)
                 .task { await library.start() }
                 .onChange(of: scenePhase) { _, phase in
-                    if phase == .background { Task { await library.publishPendingSnapshotBeforeBackground() } }
+                    if phase == .background { Task { await library.flushPendingSnapshotPublication() } }
                 }
         }
     }
