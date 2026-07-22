@@ -7,22 +7,76 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		3438F8DEB9A8360E8BBF7ACE /* SnapshotClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4920C53336EBCE7A88644BAB /* SnapshotClient.swift */; };
+		3B2F2325D2450A6007A68095 /* SnapshotSourceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B62A24938336427C3F1E85D /* SnapshotSourceStore.swift */; };
+		45641128E2AC8382386EE46F /* SMBRootMappings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5640DB9CD4A8206555966A5D /* SMBRootMappings.swift */; };
+		63B3FC43303DB7A06E27CF2D /* MusicLibraryPadShell.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 1067564D050237B95ADA60D4 /* MusicLibraryPadShell.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		777A31DBCF18118DD6810D66 /* MusicLibraryPadApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8214D0D6CE18C6FC1E82DD32 /* MusicLibraryPadApp.swift */; };
-		F57D1A0DE4F097E77AB051EB /* MusicLibraryPadShell in Frameworks */ = {isa = PBXBuildFile; productRef = E0713AE87D256D476489727B /* MusicLibraryPadShell */; };
+		973FC85CA525DDF25BC5DC8D /* PadLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2D3A5718D9655919CB9BC53 /* PadLibraryView.swift */; };
+		A84CD86FA09B35A691C15E4E /* MusicReadOnlyClient.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 966A650DEE7F65D5BD9D30C3 /* MusicReadOnlyClient.framework */; };
+		B6740F106BC83E13C2C27298 /* MusicLibraryPadShell.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1067564D050237B95ADA60D4 /* MusicLibraryPadShell.framework */; };
+		BCD00014D8C3F1A6458CB6B1 /* CompanionPlaybackController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D95555BF709C6731FFBFD2F6 /* CompanionPlaybackController.swift */; };
+		D9F18D7D054B01D1752CB785 /* ReadOnlyCatalogue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 985F4F8C651162F82D6FBB40 /* ReadOnlyCatalogue.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		783B472527F82EBE860A6ECB /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 84290C1C10A33A75ACE85C57 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 1884C707D8A244BF9F869EFB;
+			remoteInfo = MusicReadOnlyClient;
+		};
+		F022C0D514CCE540A202F108 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 84290C1C10A33A75ACE85C57 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 909AA06D2186EDCD548A06E9;
+			remoteInfo = MusicLibraryPadShell;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		21A8FB650679968BACBB451E /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				63B3FC43303DB7A06E27CF2D /* MusicLibraryPadShell.framework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
-		5FDDE9CC3F905579BA53D6CA /* Music Library */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "Music Library"; path = .; sourceTree = SOURCE_ROOT; };
+		1067564D050237B95ADA60D4 /* MusicLibraryPadShell.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = MusicLibraryPadShell.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		4920C53336EBCE7A88644BAB /* SnapshotClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotClient.swift; sourceTree = "<group>"; };
+		4B62A24938336427C3F1E85D /* SnapshotSourceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotSourceStore.swift; sourceTree = "<group>"; };
+		5640DB9CD4A8206555966A5D /* SMBRootMappings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SMBRootMappings.swift; sourceTree = "<group>"; };
 		660958B805C72089ED4275C5 /* MusicLibraryPad.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = MusicLibraryPad.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		8214D0D6CE18C6FC1E82DD32 /* MusicLibraryPadApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicLibraryPadApp.swift; sourceTree = "<group>"; };
+		966A650DEE7F65D5BD9D30C3 /* MusicReadOnlyClient.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = MusicReadOnlyClient.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		985F4F8C651162F82D6FBB40 /* ReadOnlyCatalogue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadOnlyCatalogue.swift; sourceTree = "<group>"; };
+		C2D3A5718D9655919CB9BC53 /* PadLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PadLibraryView.swift; sourceTree = "<group>"; };
+		D95555BF709C6731FFBFD2F6 /* CompanionPlaybackController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionPlaybackController.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		1FC9D801A8A7D637DF00CFBA /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A84CD86FA09B35A691C15E4E /* MusicReadOnlyClient.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		3D1CDAD3DAE74FA37A687A90 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				F57D1A0DE4F097E77AB051EB /* MusicLibraryPadShell in Frameworks */,
+				B6740F106BC83E13C2C27298 /* MusicLibraryPadShell.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -38,10 +92,24 @@
 			path = Sources/MusicLibraryPad;
 			sourceTree = "<group>";
 		};
+		4EB04DD56789382083A6EEFF /* MusicReadOnlyClient */ = {
+			isa = PBXGroup;
+			children = (
+				985F4F8C651162F82D6FBB40 /* ReadOnlyCatalogue.swift */,
+				5640DB9CD4A8206555966A5D /* SMBRootMappings.swift */,
+				4920C53336EBCE7A88644BAB /* SnapshotClient.swift */,
+				4B62A24938336427C3F1E85D /* SnapshotSourceStore.swift */,
+			);
+			name = MusicReadOnlyClient;
+			path = Sources/MusicReadOnlyClient;
+			sourceTree = "<group>";
+		};
 		79882E70A22D0979B92BE35B /* Products */ = {
 			isa = PBXGroup;
 			children = (
 				660958B805C72089ED4275C5 /* MusicLibraryPad.app */,
+				1067564D050237B95ADA60D4 /* MusicLibraryPadShell.framework */,
+				966A650DEE7F65D5BD9D30C3 /* MusicReadOnlyClient.framework */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -50,40 +118,80 @@
 			isa = PBXGroup;
 			children = (
 				09041A9CB73DC811DDCF8E50 /* MusicLibraryPad */,
-				A3F89F9A7E26B0CDACD03C95 /* Packages */,
+				E6C77A4C38C5B50BBFA5758F /* MusicLibraryPadShell */,
+				4EB04DD56789382083A6EEFF /* MusicReadOnlyClient */,
 				79882E70A22D0979B92BE35B /* Products */,
 			);
 			sourceTree = "<group>";
 		};
-		A3F89F9A7E26B0CDACD03C95 /* Packages */ = {
+		E6C77A4C38C5B50BBFA5758F /* MusicLibraryPadShell */ = {
 			isa = PBXGroup;
 			children = (
-				5FDDE9CC3F905579BA53D6CA /* Music Library */,
+				D95555BF709C6731FFBFD2F6 /* CompanionPlaybackController.swift */,
+				C2D3A5718D9655919CB9BC53 /* PadLibraryView.swift */,
 			);
-			name = Packages;
+			name = MusicLibraryPadShell;
+			path = Sources/MusicLibraryPadShell;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		1884C707D8A244BF9F869EFB /* MusicReadOnlyClient */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = DEABB2377D44925B175BD4A7 /* Build configuration list for PBXNativeTarget "MusicReadOnlyClient" */;
+			buildPhases = (
+				2AA4E2C358F7B0D0540C86C6 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = MusicReadOnlyClient;
+			packageProductDependencies = (
+			);
+			productName = MusicReadOnlyClient;
+			productReference = 966A650DEE7F65D5BD9D30C3 /* MusicReadOnlyClient.framework */;
+			productType = "com.apple.product-type.framework";
+		};
 		323C837CF52AC17FF504A8B5 /* MusicLibraryPad */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 9E6C03FEF49A5E2A968035F4 /* Build configuration list for PBXNativeTarget "MusicLibraryPad" */;
 			buildPhases = (
 				2DA8BAA3C3EED0A5B7321FBA /* Sources */,
 				3D1CDAD3DAE74FA37A687A90 /* Frameworks */,
+				21A8FB650679968BACBB451E /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				0498B7FE931307003C9EBBFF /* PBXTargetDependency */,
 			);
 			name = MusicLibraryPad;
 			packageProductDependencies = (
-				E0713AE87D256D476489727B /* MusicLibraryPadShell */,
 			);
 			productName = MusicLibraryPad;
 			productReference = 660958B805C72089ED4275C5 /* MusicLibraryPad.app */;
 			productType = "com.apple.product-type.application";
+		};
+		909AA06D2186EDCD548A06E9 /* MusicLibraryPadShell */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 515614BC17DBC1E98E97D25D /* Build configuration list for PBXNativeTarget "MusicLibraryPadShell" */;
+			buildPhases = (
+				A3103E03034C6011FA8092E1 /* Sources */,
+				1FC9D801A8A7D637DF00CFBA /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				8C63BFA6B8AADD8658175B65 /* PBXTargetDependency */,
+			);
+			name = MusicLibraryPadShell;
+			packageProductDependencies = (
+			);
+			productName = MusicLibraryPadShell;
+			productReference = 1067564D050237B95ADA60D4 /* MusicLibraryPadShell.framework */;
+			productType = "com.apple.product-type.framework";
 		};
 /* End PBXNativeTarget section */
 
@@ -108,20 +216,30 @@
 			);
 			mainGroup = 99BB3397D95DF81EDA480334;
 			minimizedProjectReferenceProxies = 1;
-			packageReferences = (
-				3930ECF7F1DB4613645F7977 /* XCLocalSwiftPackageReference "." */,
-			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 79882E70A22D0979B92BE35B /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
 				323C837CF52AC17FF504A8B5 /* MusicLibraryPad */,
+				909AA06D2186EDCD548A06E9 /* MusicLibraryPadShell */,
+				1884C707D8A244BF9F869EFB /* MusicReadOnlyClient */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXSourcesBuildPhase section */
+		2AA4E2C358F7B0D0540C86C6 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D9F18D7D054B01D1752CB785 /* ReadOnlyCatalogue.swift in Sources */,
+				45641128E2AC8382386EE46F /* SMBRootMappings.swift in Sources */,
+				3438F8DEB9A8360E8BBF7ACE /* SnapshotClient.swift in Sources */,
+				3B2F2325D2450A6007A68095 /* SnapshotSourceStore.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		2DA8BAA3C3EED0A5B7321FBA /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -130,7 +248,29 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A3103E03034C6011FA8092E1 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BCD00014D8C3F1A6458CB6B1 /* CompanionPlaybackController.swift in Sources */,
+				973FC85CA525DDF25BC5DC8D /* PadLibraryView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		0498B7FE931307003C9EBBFF /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 909AA06D2186EDCD548A06E9 /* MusicLibraryPadShell */;
+			targetProxy = F022C0D514CCE540A202F108 /* PBXContainerItemProxy */;
+		};
+		8C63BFA6B8AADD8658175B65 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 1884C707D8A244BF9F869EFB /* MusicReadOnlyClient */;
+			targetProxy = 783B472527F82EBE860A6ECB /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		32E6B3EA1C8071F3674E75C7 /* Release */ = {
@@ -188,6 +328,31 @@
 			};
 			name = Release;
 		};
+		4849F5E56BC9DD3DDA92AC3A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "";
+				CURRENT_PROJECT_VERSION = 1;
+				DEFINES_MODULE = YES;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				GENERATE_INFOPLIST_FILE = YES;
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.timetochilltoo.MusicReadOnlyClient;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VERSIONING_SYSTEM = "apple-generic";
+			};
+			name = Release;
+		};
 		4D6A06BA19084C7DCB070816 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -204,6 +369,81 @@
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		50DCEE53563C49BE747AB4E9 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "";
+				CURRENT_PROJECT_VERSION = 1;
+				DEFINES_MODULE = YES;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				GENERATE_INFOPLIST_FILE = YES;
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.timetochilltoo.MusicLibraryPadShell;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VERSIONING_SYSTEM = "apple-generic";
+			};
+			name = Release;
+		};
+		885F39C87703BD908F659E85 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "";
+				CURRENT_PROJECT_VERSION = 1;
+				DEFINES_MODULE = YES;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				GENERATE_INFOPLIST_FILE = YES;
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.timetochilltoo.MusicLibraryPadShell;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VERSIONING_SYSTEM = "apple-generic";
+			};
+			name = Debug;
+		};
+		986A1E97411BE98FE3B473D5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "";
+				CURRENT_PROJECT_VERSION = 1;
+				DEFINES_MODULE = YES;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				GENERATE_INFOPLIST_FILE = YES;
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.timetochilltoo.MusicReadOnlyClient;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VERSIONING_SYSTEM = "apple-generic";
 			};
 			name = Debug;
 		};
@@ -291,11 +531,29 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		515614BC17DBC1E98E97D25D /* Build configuration list for PBXNativeTarget "MusicLibraryPadShell" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				885F39C87703BD908F659E85 /* Debug */,
+				50DCEE53563C49BE747AB4E9 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		9E6C03FEF49A5E2A968035F4 /* Build configuration list for PBXNativeTarget "MusicLibraryPad" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				4D6A06BA19084C7DCB070816 /* Debug */,
 				FAE42412B272AE027DC190ED /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		DEABB2377D44925B175BD4A7 /* Build configuration list for PBXNativeTarget "MusicReadOnlyClient" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				986A1E97411BE98FE3B473D5 /* Debug */,
+				4849F5E56BC9DD3DDA92AC3A /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
@@ -310,20 +568,6 @@
 			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
-
-/* Begin XCLocalSwiftPackageReference section */
-		3930ECF7F1DB4613645F7977 /* XCLocalSwiftPackageReference "." */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = .;
-		};
-/* End XCLocalSwiftPackageReference section */
-
-/* Begin XCSwiftPackageProductDependency section */
-		E0713AE87D256D476489727B /* MusicLibraryPadShell */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = MusicLibraryPadShell;
-		};
-/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 84290C1C10A33A75ACE85C57 /* Project object */;
 }

@@ -1,10 +1,29 @@
 name: MusicLibraryPad
 options:
   bundleIdPrefix: com.timetochilltoo
-packages:
-  MusicLibrary:
-    path: .
 targets:
+  MusicReadOnlyClient:
+    type: framework
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - Sources/MusicReadOnlyClient
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "6.0"
+  MusicLibraryPadShell:
+    type: framework
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - Sources/MusicLibraryPadShell
+    dependencies:
+      - target: MusicReadOnlyClient
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "6.0"
   MusicLibraryPad:
     type: application
     platform: iOS
@@ -12,8 +31,7 @@ targets:
     sources:
       - Sources/MusicLibraryPad
     dependencies:
-      - package: MusicLibrary
-        product: MusicLibraryPadShell
+      - target: MusicLibraryPadShell
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.timetochilltoo.MusicLibraryPad
