@@ -1,7 +1,7 @@
 # Music Library — Project Handoff
 
-Last updated: 22 July 2026  
-Repository: `https://github.com/timetochilltoo/musiclibrary.git`  
+Last updated: 22 July 2026
+Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
 This is the operational handoff document for a new agent or developer. Read it first when resuming the project after context loss. It describes what is currently implemented, how to verify it, what must not be changed casually, and the exact next slice of work.
@@ -363,4 +363,3 @@ Do not silently choose these when their implementation becomes necessary:
 - Which metadata provider(s), lyrics provider(s), and AI provider(s) will be used after their adapter boundaries are implemented.
 
 The user has already decided: iPad first, SMB for companion audio access, no CD ripping, and both manual and automatic Mac snapshot publishing.
-
