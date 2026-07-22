@@ -166,21 +166,32 @@ private struct StorageRootList: View {
     @State private var rootToRename: StorageRoot?
 
     var body: some View {
-        List(library.storageRoots) { root in
-            HStack {
-                Image(systemName: symbol(for: root.status)).foregroundStyle(color(for: root.status))
-                VStack(alignment: .leading) {
-                    Text(root.displayName).font(.headline)
-                    Text(root.lastKnownPath).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+        List {
+            Section("Music Folders") {
+                ForEach(library.storageRoots) { root in
+                    HStack {
+                        Image(systemName: symbol(for: root.status)).foregroundStyle(color(for: root.status))
+                        VStack(alignment: .leading) {
+                            Text(root.displayName).font(.headline)
+                            Text(root.lastKnownPath).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        }
+                        Spacer()
+                        Text(label(for: root.status)).font(.caption).foregroundStyle(color(for: root.status))
+                    }
+                    .contextMenu {
+                        Button("Rename") { rootToRename = root }
+                        Button("Check Access") { Task { try? await library.refreshStorageRootAccess() } }
+                        Divider()
+                        Button("Remove", role: .destructive) { Task { try? await library.deleteStorageRoot(root.id) } }
+                    }
                 }
-                Spacer()
-                Text(label(for: root.status)).font(.caption).foregroundStyle(color(for: root.status))
             }
-            .contextMenu {
-                Button("Rename") { rootToRename = root }
-                Button("Check Access") { Task { try? await library.refreshStorageRootAccess() } }
-                Divider()
-                Button("Remove", role: .destructive) { Task { try? await library.deleteStorageRoot(root.id) } }
+            if !library.libraryHealthIssues.isEmpty {
+                Section("Library Health") {
+                    ForEach(library.libraryHealthIssues) { issue in
+                        VStack(alignment: .leading) { Label(issue.albumTitle, systemImage: issue.kind == .offline ? "externaldrive.badge.exclamationmark" : "exclamationmark.triangle"); Text(issue.detail).font(.caption).foregroundStyle(.secondary) }
+                    }
+                }
             }
         }
         .overlay {
@@ -237,6 +248,7 @@ private struct ImportBatchDetail: View {
     let batch: ImportBatch
     @State private var candidates: [ImportCandidate] = []
     @State private var proposals: [ImportReleaseProposal] = []
+    @State private var proposalToConfirm: ImportReleaseProposal?
 
     var body: some View {
         List {
@@ -258,6 +270,8 @@ private struct ImportBatchDetail: View {
                         Text("\(proposal.artist ?? "Unknown artist") · \(proposal.discCount) disc(s) · \(proposal.trackCount) files · \(Int((proposal.confidence * 100).rounded()))% confidence").font(.caption).foregroundStyle(.secondary)
                         Text("Source: \(proposal.provenance). Approval only marks this proposal for later catalogue creation.").font(.caption2).foregroundStyle(.secondary)
                         if proposal.status == .proposed { HStack { Button("Approve for Later") { Task { try? await library.setImportReleaseProposal(proposal.id, status: .approved); await load() } }; Button("Dismiss", role: .destructive) { Task { try? await library.setImportReleaseProposal(proposal.id, status: .dismissed); await load() } } } }
+                        if proposal.status == .approved && proposal.createdAlbumID == nil { Button("Create Catalogue Records…", systemImage: "checkmark.seal") { proposalToConfirm = proposal } }
+                        if let albumID = proposal.createdAlbumID { Text("Created catalogue album: \(albumID.description)").font(.caption).foregroundStyle(.green) }
                     }
                 }
             }
@@ -270,6 +284,11 @@ private struct ImportBatchDetail: View {
         }
         .navigationTitle("Import Batch")
         .task(id: batch.id) { await load() }
+        .confirmationDialog("Create catalogue records?", item: $proposalToConfirm, titleVisibility: .visible) { proposal in
+            Button("Create Album, Tracks, and Assets") { Task { _ = try? await library.confirmImportReleaseProposal(proposal.id); await load() } }
+        } message: { proposal in
+            Text("This will create one album, \(proposal.trackCount) tracks, and root-relative digital asset records. It will not copy, move, or modify any audio files.")
+        }
     }
 
     private func load() async {

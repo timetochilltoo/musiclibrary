@@ -81,10 +81,22 @@ public struct ImportReleaseProposal: Identifiable, Equatable, Sendable {
     public let confidence: Double
     public let provenance: String
     public let status: ImportProposalStatus
+    public let createdAlbumID: AlbumID?
 
-    public init(id: UUID, batchID: ImportBatchID, title: String, artist: String?, discCount: Int, trackCount: Int, confidence: Double, provenance: String, status: ImportProposalStatus) {
-        self.id = id; self.batchID = batchID; self.title = title; self.artist = artist; self.discCount = discCount; self.trackCount = trackCount; self.confidence = confidence; self.provenance = provenance; self.status = status
+    public init(id: UUID, batchID: ImportBatchID, title: String, artist: String?, discCount: Int, trackCount: Int, confidence: Double, provenance: String, status: ImportProposalStatus, createdAlbumID: AlbumID? = nil) {
+        self.id = id; self.batchID = batchID; self.title = title; self.artist = artist; self.discCount = discCount; self.trackCount = trackCount; self.confidence = confidence; self.provenance = provenance; self.status = status; self.createdAlbumID = createdAlbumID
     }
+}
+
+public enum LibraryHealthKind: String, Codable, CaseIterable, Sendable { case missing, offline, partial, duplicate }
+
+public struct LibraryHealthIssue: Identifiable, Equatable, Sendable {
+    public let id: String
+    public let kind: LibraryHealthKind
+    public let albumID: AlbumID
+    public let albumTitle: String
+    public let detail: String
+    public init(kind: LibraryHealthKind, albumID: AlbumID, albumTitle: String, detail: String) { self.id = "\(kind.rawValue)-\(albumID.description)"; self.kind = kind; self.albumID = albumID; self.albumTitle = albumTitle; self.detail = detail }
 }
 
 public struct ImportReleaseProposalDraft: Equatable, Sendable {

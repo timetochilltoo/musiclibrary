@@ -173,11 +173,11 @@ public actor MusicDatabase {
     }
 
     public func importReleaseProposals(batchID: ImportBatchID) throws -> [ImportReleaseProposal] {
-        let statement = try Self.prepare("SELECT id, title, artist, disc_count, track_count, confidence, provenance, status FROM import_release_proposal WHERE batch_id = ? ORDER BY title COLLATE NOCASE;", on: connection)
+        let statement = try Self.prepare("SELECT id, title, artist, disc_count, track_count, confidence, provenance, status, created_album_id FROM import_release_proposal WHERE batch_id = ? ORDER BY title COLLATE NOCASE;", on: connection)
         defer { sqlite3_finalize(statement) }; try Self.bind(batchID.description, at: 1, to: statement); var values: [ImportReleaseProposal] = []
         while sqlite3_step(statement) == SQLITE_ROW {
             guard let rawID = Self.text(at: 0, from: statement), let id = UUID(uuidString: rawID), let rawStatus = Self.text(at: 7, from: statement), let status = ImportProposalStatus(rawValue: rawStatus) else { throw DatabaseError.invalidIdentifier("import_release_proposal") }
-            values.append(.init(id: id, batchID: batchID, title: Self.text(at: 1, from: statement) ?? "", artist: Self.text(at: 2, from: statement), discCount: Int(Self.int(at: 3, from: statement) ?? 1), trackCount: Int(Self.int(at: 4, from: statement) ?? 0), confidence: sqlite3_column_double(statement, 5), provenance: Self.text(at: 6, from: statement) ?? "", status: status))
+            values.append(.init(id: id, batchID: batchID, title: Self.text(at: 1, from: statement) ?? "", artist: Self.text(at: 2, from: statement), discCount: Int(Self.int(at: 3, from: statement) ?? 1), trackCount: Int(Self.int(at: 4, from: statement) ?? 0), confidence: sqlite3_column_double(statement, 5), provenance: Self.text(at: 6, from: statement) ?? "", status: status, createdAlbumID: Self.text(at: 8, from: statement).flatMap(UUID.init(uuidString:)).map(AlbumID.init(rawValue:))))
         }
         return values
     }
@@ -207,6 +207,80 @@ public actor MusicDatabase {
             defer { sqlite3_finalize(statement) }; try Self.bind(status.rawValue, at: 1, to: statement); try Self.bind(Self.milliseconds(Date()), at: 2, to: statement); try Self.bind(id.uuidString.lowercased(), at: 3, to: statement); try Self.stepDone(statement, connection: connection)
             guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Import release proposal") }
         }
+    }
+
+    public func confirmImportReleaseProposal(_ proposalID: UUID) throws -> AlbumID {
+        var result: AlbumID?
+        try transaction {
+            let proposal = try Self.prepare("SELECT proposal.batch_id, proposal.title, proposal.disc_count, proposal.status, proposal.created_album_id, batch.storage_root_id FROM import_release_proposal proposal JOIN import_batch batch ON batch.id = proposal.batch_id WHERE proposal.id = ?;", on: connection)
+            defer { sqlite3_finalize(proposal) }; try Self.bind(proposalID.uuidString.lowercased(), at: 1, to: proposal)
+            guard sqlite3_step(proposal) == SQLITE_ROW, let rawBatch = Self.text(at: 0, from: proposal), let batchUUID = UUID(uuidString: rawBatch), let title = Self.text(at: 1, from: proposal), let rawStatus = Self.text(at: 3, from: proposal) else { throw DatabaseError.notFound("Import release proposal") }
+            if let rawAlbum = Self.text(at: 4, from: proposal), let albumUUID = UUID(uuidString: rawAlbum) { result = .init(rawValue: albumUUID); return }
+            guard rawStatus == ImportProposalStatus.approved.rawValue else { throw DatabaseError.invalidOperation("Approve the proposal before creating catalogue records.") }
+            guard let rawRoot = Self.text(at: 5, from: proposal), let rootUUID = UUID(uuidString: rawRoot) else { throw DatabaseError.notFound("Storage root") }
+            let batchID = ImportBatchID(rawValue: batchUUID); let rootID = StorageRootID(rawValue: rootUUID); let albumID = AlbumID(); let now = Self.milliseconds(Date())
+            let album = try Self.prepare("INSERT INTO album (id, title, disc_count, has_cd, created_at, updated_at) VALUES (?, ?, ?, 0, ?, ?);", on: connection)
+            defer { sqlite3_finalize(album) }; try Self.bind(albumID.description, at: 1, to: album); try Self.bind(title, at: 2, to: album); try Self.bind(Self.int(at: 2, from: proposal) ?? 1, at: 3, to: album); try Self.bind(now, at: 4, to: album); try Self.bind(now, at: 5, to: album); try Self.stepDone(album, connection: connection)
+            let candidates = try Self.prepare("SELECT id, proposed_payload, metadata_payload FROM import_candidate WHERE batch_id = ? AND proposal_id = ? ORDER BY rowid;", on: connection)
+            defer { sqlite3_finalize(candidates) }; try Self.bind(batchID.description, at: 1, to: candidates); try Self.bind(proposalID.uuidString.lowercased(), at: 2, to: candidates)
+            var discs: [Int: DiscID] = [:]
+            while sqlite3_step(candidates) == SQLITE_ROW {
+                guard let payloadData = Self.data(at: 1, from: candidates), let payload = try? JSONDecoder().decode(ImportCandidatePayload.self, from: payloadData), let metadataData = Self.data(at: 2, from: candidates), let metadata = try? JSONDecoder().decode(EmbeddedMetadataPayload.self, from: metadataData) else { continue }
+                let discNumber = max(1, metadata.discNumber ?? 1)
+                let discID: DiscID
+                if let existing = discs[discNumber] { discID = existing }
+                else {
+                    discID = DiscID(); discs[discNumber] = discID
+                    let insertDisc = try Self.prepare("INSERT INTO disc (id, album_id, number) VALUES (?, ?, ?);", on: connection)
+                    defer { sqlite3_finalize(insertDisc) }; try Self.bind(discID.description, at: 1, to: insertDisc); try Self.bind(albumID.description, at: 2, to: insertDisc); try Self.bind(Int64(discNumber), at: 3, to: insertDisc); try Self.stepDone(insertDisc, connection: connection)
+                }
+                let trackID = TrackID()
+                let trackNumber: Int
+                if let explicitNumber = metadata.trackNumber { trackNumber = explicitNumber }
+                else { trackNumber = try Self.nextNumber("SELECT COALESCE(MAX(number), 0) + 1 FROM track WHERE disc_id = ?;", ownerID: discID.description, on: connection) }
+                let insertTrack = try Self.prepare("INSERT INTO track (id, disc_id, number, title, duration_ms) VALUES (?, ?, ?, ?, ?);", on: connection)
+                defer { sqlite3_finalize(insertTrack) }; try Self.bind(trackID.description, at: 1, to: insertTrack); try Self.bind(discID.description, at: 2, to: insertTrack); try Self.bind(Int64(trackNumber), at: 3, to: insertTrack); try Self.bind(metadata.title ?? payload.fileName, at: 4, to: insertTrack); try Self.bind(metadata.durationMilliseconds.map(Int64.init), at: 5, to: insertTrack); try Self.stepDone(insertTrack, connection: connection)
+                let rootStatus = try Self.prepare("SELECT status FROM storage_root WHERE id = ?;", on: connection)
+                defer { sqlite3_finalize(rootStatus) }; try Self.bind(rootID.description, at: 1, to: rootStatus); guard sqlite3_step(rootStatus) == SQLITE_ROW else { throw DatabaseError.notFound("Storage root") }
+                let availability = Self.text(at: 0, from: rootStatus) == StorageRootStatus.available.rawValue ? DigitalAssetAvailability.available.rawValue : DigitalAssetAvailability.rootOffline.rawValue
+                let asset = try Self.prepare("INSERT INTO digital_asset (id, track_id, storage_root_id, relative_path, file_size, modified_at, duration_ms, origin, availability) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);", on: connection)
+                defer { sqlite3_finalize(asset) }; try Self.bind(DigitalAssetID().description, at: 1, to: asset); try Self.bind(trackID.description, at: 2, to: asset); try Self.bind(rootID.description, at: 3, to: asset); try Self.bind(payload.relativePath, at: 4, to: asset); try Self.bind(payload.fileSize, at: 5, to: asset); try Self.bind(payload.modifiedAt.map(Self.milliseconds), at: 6, to: asset); try Self.bind(metadata.durationMilliseconds.map(Int64.init), at: 7, to: asset); try Self.bind(metadata.provenance, at: 8, to: asset); try Self.bind(availability, at: 9, to: asset); try Self.stepDone(asset, connection: connection)
+            }
+            guard !discs.isEmpty else { throw DatabaseError.invalidOperation("The proposal has no readable metadata candidates.") }
+            let confirm = try Self.prepare("UPDATE import_release_proposal SET created_album_id = ?, confirmed_at = ?, updated_at = ? WHERE id = ?;", on: connection)
+            defer { sqlite3_finalize(confirm) }; try Self.bind(albumID.description, at: 1, to: confirm); try Self.bind(now, at: 2, to: confirm); try Self.bind(now, at: 3, to: confirm); try Self.bind(proposalID.uuidString.lowercased(), at: 4, to: confirm); try Self.stepDone(confirm, connection: connection)
+            try incrementRevision(); result = albumID
+        }
+        guard let result else { throw DatabaseError.notFound("Import release proposal") }
+        return result
+    }
+
+    public func libraryHealthIssues() throws -> [LibraryHealthIssue] {
+        let statement = try Self.prepare("SELECT album.id, album.title, track.id, digital_asset.availability, storage_root.status FROM album JOIN disc ON disc.album_id = album.id JOIN track ON track.disc_id = disc.id LEFT JOIN digital_asset ON digital_asset.track_id = track.id LEFT JOIN storage_root ON storage_root.id = digital_asset.storage_root_id WHERE album.deleted_at IS NULL ORDER BY album.title;", on: connection)
+        defer { sqlite3_finalize(statement) }
+        struct HealthRow { var title: String; var assets: [TrackID: [DigitalAssetAvailability]] }
+        var albums: [AlbumID: HealthRow] = [:]
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let rawAlbum = Self.text(at: 0, from: statement), let albumUUID = UUID(uuidString: rawAlbum), let rawTrack = Self.text(at: 2, from: statement), let trackUUID = UUID(uuidString: rawTrack) else { throw DatabaseError.invalidIdentifier("Library health") }
+            let albumID = AlbumID(rawValue: albumUUID); let trackID = TrackID(rawValue: trackUUID)
+            var row = albums[albumID] ?? .init(title: Self.text(at: 1, from: statement) ?? "", assets: [:])
+            if let rawAvailability = Self.text(at: 3, from: statement), let stored = DigitalAssetAvailability(rawValue: rawAvailability) {
+                let rootOffline = Self.text(at: 4, from: statement).flatMap(StorageRootStatus.init(rawValue:)) != .available
+                row.assets[trackID, default: []].append(rootOffline ? .rootOffline : stored)
+            } else { row.assets[trackID, default: []] = [] }
+            albums[albumID] = row
+        }
+        var issues: [LibraryHealthIssue] = []
+        for (albumID, row) in albums {
+            let summary = DigitalAvailabilitySummary.derive(expectedTrackCount: row.assets.count, assetsByTrack: Array(row.assets.values))
+            switch summary.status {
+            case .broken: issues.append(.init(kind: .missing, albumID: albumID, albumTitle: row.title, detail: "One or more tracks have no usable file."))
+            case .offline: issues.append(.init(kind: .offline, albumID: albumID, albumTitle: row.title, detail: "The storage root is currently offline."))
+            case .partial: issues.append(.init(kind: .partial, albumID: albumID, albumTitle: row.title, detail: "\(summary.availableTrackCount) of \(summary.expectedTrackCount) tracks are available."))
+            default: break
+            }
+        }
+        return issues.sorted { $0.albumTitle.localizedCaseInsensitiveCompare($1.albumTitle) == .orderedAscending }
     }
 
     public func finishImportBatch(_ batchID: ImportBatchID, status: ImportBatchStatus, errorSummary: String? = nil) throws {

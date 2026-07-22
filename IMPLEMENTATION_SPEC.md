@@ -16,24 +16,25 @@ Completed and verified:
 
 - Swift package structure with macOS SwiftUI executable and separate Domain, Persistence, Application, and UI modules.
 - Domain identifiers, album/edition model, physical locations, box sets, contributor roles, and derived digital-availability logic.
-- SQLite schema migrations 1 through 5, foreign keys, catalogue revision tracking, and core repositories.
+- SQLite schema migrations 1 through 6, foreign keys, catalogue revision tracking, and core repositories.
 - Persistent Mac catalogue stored in the user's Application Support directory.
 - Catalogue UI: browse/search albums; add albums; create/rename locations; create box sets; show basic album details.
 - Atomic album creation inside a box set, including inherited physical-location behaviour.
 - Album editing plus box-member browse, confirmed move, removal with a standalone placement, and reorder workflows.
 - Schema migration 2 adds `physical_location_unknown`, removing ambiguity between a boxed album and a standalone CD whose location is unknown.
-- Twenty-one automated domain/persistence tests across three suites, last verified with `swift test` on 22 July 2026.
+- Twenty-two automated domain/persistence tests across three suites, last verified with `swift test` on 22 July 2026.
 - Catalogue-content foundation complete: ordered discs/tracks, aliases, contributor roles at album and track level, selected album artwork with local-path provenance, and safe track/alias removal. Album detail supports manual creation of each of these relationships and user-selected front artwork without modifying source files.
 - Storage-root foundation complete: migration 3, persisted root records, security-scoped bookmark creation/resolution, availability checks, and Settings management. Offline and authorization-required roots are retained rather than removed.
 - Import Inbox foundation complete: migration 4, cancellable system-content-type scanning of available authorized roots, persistent batches/candidates/errors, recovery of interrupted scans, and Inbox cancellation/retry UI. Scans never create albums, tracks, or digital assets.
 - Metadata proposal/review foundation complete: migration 5, local AVFoundation common-tag/duration extraction, provenance-labelled grouping, and explicit approve-for-later/dismiss states. No review action creates a catalogue record, changes an audio file, or contacts an external service.
+- Confirmed digital-asset foundation complete: migration 6, explicit idempotent creation of albums/discs/tracks/assets from approved proposals, root-relative embedded-tag provenance, and calculated missing/offline/partial Library Health. No asset is copied, moved, relinked, or deleted.
 
 Not yet implemented:
 
-- General deletion/recovery, disc reordering/deletion, contributor-credit maintenance, full track-editor UI, confirmed digital assets, file relocation, duplicate detection, playback, playlists, snapshots, iPad, SMB mapping, tag write-back, lyrics, and AI.
+- General deletion/recovery, disc reordering/deletion, contributor-credit maintenance, full track-editor UI, file relocation, duplicate-content detection, playback, playlists, snapshots, iPad, SMB mapping, tag write-back, lyrics, and AI.
 - Folder access, scanning, metadata services, import inbox, file relocation, duplicate detection, playback, playlists, snapshots, iPad, SMB mapping, tag write-back, lyrics, and AI.
 
-The next coding slice is **confirmed digital assets and library health**. Do not start playback until approved-proposal confirmation, availability derivation, and asset health boundaries are complete and tested.
+The next coding slice is **local playback queue**. Do not start iPad playback or remote streaming until Mac asset resolution and queue/transport boundaries are complete and tested.
 
 ## 1. Fixed decisions
 

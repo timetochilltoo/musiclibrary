@@ -10,6 +10,7 @@ public final class LibraryStore: ObservableObject {
     @Published public private(set) var boxSets: [BoxSet] = []
     @Published public private(set) var storageRoots: [StorageRoot] = []
     @Published public private(set) var importBatches: [ImportBatch] = []
+    @Published public private(set) var libraryHealthIssues: [LibraryHealthIssue] = []
     @Published public private(set) var isReady = false
     @Published public private(set) var errorMessage: String?
 
@@ -43,11 +44,13 @@ public final class LibraryStore: ObservableObject {
         async let loadedBoxSets = database.boxSets()
         async let loadedStorageRoots = database.storageRoots()
         async let loadedImportBatches = database.importBatches()
+        async let loadedHealth = database.libraryHealthIssues()
         albums = try await loadedAlbums
         locations = try await loadedLocations
         boxSets = try await loadedBoxSets
         storageRoots = try await loadedStorageRoots
         importBatches = try await loadedImportBatches
+        libraryHealthIssues = try await loadedHealth
     }
 
     public func search(_ term: String) async {
@@ -175,6 +178,13 @@ public final class LibraryStore: ObservableObject {
     public func setImportReleaseProposal(_ id: UUID, status: ImportProposalStatus) async throws {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
         try await database.updateImportReleaseProposal(id, status: status)
+    }
+
+    public func confirmImportReleaseProposal(_ id: UUID) async throws -> AlbumID {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        let albumID = try await database.confirmImportReleaseProposal(id)
+        try await reload()
+        return albumID
     }
 
     public func startImportScan(rootID: StorageRootID) async throws {

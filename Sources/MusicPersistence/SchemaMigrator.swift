@@ -2,7 +2,7 @@ import Foundation
 import SQLite3
 
 enum SchemaMigrator {
-    static let currentVersion = 5
+    static let currentVersion = 6
 
     static func migrate(_ connection: OpaquePointer) throws {
         var statement: OpaquePointer?
@@ -20,7 +20,8 @@ enum SchemaMigrator {
         if version == 1 { try migrateToVersion2(connection); version = 2 }
         if version == 2 { try migrateToVersion3(connection); version = 3 }
         if version == 3 { try migrateToVersion4(connection); version = 4 }
-        if version == 4 { try migrateToVersion5(connection) }
+        if version == 4 { try migrateToVersion5(connection); version = 5 }
+        if version == 5 { try migrateToVersion6(connection) }
     }
 
     private static func migrateToVersion1(_ connection: OpaquePointer) throws {
@@ -341,6 +342,22 @@ enum SchemaMigrator {
         CREATE INDEX IF NOT EXISTS import_candidate_proposal_index ON import_candidate(proposal_id);
         PRAGMA user_version = 5;
         UPDATE catalogue_state SET schema_version = 5 WHERE singleton_id = 1;
+        COMMIT;
+        """
+        var error: UnsafeMutablePointer<CChar>?
+        guard sqlite3_exec(connection, sql, nil, nil, &error) == SQLITE_OK else {
+            defer { sqlite3_free(error) }
+            throw DatabaseError.sqlite(message: error.map { String(cString: $0) } ?? String(cString: sqlite3_errmsg(connection)))
+        }
+    }
+
+    private static func migrateToVersion6(_ connection: OpaquePointer) throws {
+        let sql = """
+        BEGIN IMMEDIATE;
+        ALTER TABLE import_release_proposal ADD COLUMN created_album_id TEXT REFERENCES album(id) ON DELETE SET NULL;
+        ALTER TABLE import_release_proposal ADD COLUMN confirmed_at INTEGER;
+        PRAGMA user_version = 6;
+        UPDATE catalogue_state SET schema_version = 6 WHERE singleton_id = 1;
         COMMIT;
         """
         var error: UnsafeMutablePointer<CChar>?
