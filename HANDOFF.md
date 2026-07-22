@@ -285,9 +285,9 @@ Enforce these with transactions, validation, constraints, and tests where possib
 
 If an invariant needs to change, stop and document the proposed migration and user-facing impact before implementing it.
 
-## 11. Exact next slice: snapshot publisher
+## 11. Exact next slice: read-only iPad client foundation
 
-Recovery/export is complete: albums can be soft-deleted and restored without touching media, and the Mac can write a JSON catalogue export with format, schema, revision, and album metadata. Next, prepare versioned read-only snapshots before iPad work.
+Snapshot publishing is complete: the Mac writes sanitized revision-named JSON snapshots and atomically commits a SHA-256 manifest. The live SQLite database and bookmark data are never published. Next, build the iPad read-only snapshot consumer and device-local SMB mapping.
 
 ### Goal
 

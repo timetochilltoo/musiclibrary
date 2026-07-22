@@ -45,6 +45,17 @@ struct ImportScannerTests {
         #expect(proposals.first?.candidateIDs.count == 2)
     }
 
+    @Test("Snapshot publisher writes a checksummed manifest after the revision file")
+    func publishesSnapshot() throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let manifest = try SnapshotPublisher.publish(json: "{\"format\":\"music-library-json\"}", revision: 42, to: directory)
+        #expect(manifest.fileName == "catalogue-42.json")
+        #expect(FileManager.default.fileExists(atPath: directory.appending(path: manifest.fileName).path))
+        let decoded = try JSONDecoder().decode(SnapshotManifest.self, from: Data(contentsOf: directory.appending(path: "manifest.json")))
+        #expect(decoded.sha256 == manifest.sha256)
+    }
+
     private func temporaryDirectory() -> URL {
         FileManager.default.temporaryDirectory.appending(path: "ImportScannerTests-\(UUID().uuidString)", directoryHint: .isDirectory)
     }

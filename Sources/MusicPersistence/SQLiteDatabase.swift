@@ -301,6 +301,7 @@ public actor MusicDatabase {
         let albums = try self.albums(); let rows = albums.map { ["id": $0.id.description, "title": $0.title, "edition": $0.editionLabel ?? "", "releaseYear": $0.releaseYear.map(String.init) ?? ""] }
         let data = try JSONSerialization.data(withJSONObject: ["format": "music-library-json", "schemaVersion": try schemaVersion(), "catalogueRevision": try currentRevision(), "albums": rows], options: [.prettyPrinted, .sortedKeys]); return String(decoding: data, as: UTF8.self)
     }
+    public func publicationRevisionAndJSON() throws -> (Int64, String) { (try currentRevision(), try catalogueExportJSON()) }
 
     public func recordAssetFingerprint(_ assetID: DigitalAssetID, contentHash: String, quickSignature: String) throws {
         try transaction { let statement = try Self.prepare("UPDATE digital_asset SET content_hash = ?, quick_signature = ? WHERE id = ?;", on: connection); defer { sqlite3_finalize(statement) }; try Self.bind(contentHash, at: 1, to: statement); try Self.bind(quickSignature, at: 2, to: statement); try Self.bind(assetID.description, at: 3, to: statement); try Self.stepDone(statement, connection: connection); guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Digital asset") } }
