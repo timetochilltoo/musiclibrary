@@ -4,7 +4,9 @@ Date: 22 July 2026
 
 Detailed coding handoff: [IMPLEMENTATION_SPEC.md](IMPLEMENTATION_SPEC.md)
 
-Implementation baseline (22 July 2026): the macOS catalogue foundation, persistent SQLite schema, album/location/box-set creation UI, and ten automated tests are complete in Git commit `2d02f10`. The next implementation slice is album editing and box-set membership management.
+Operational continuation guide: [HANDOFF.md](HANDOFF.md)
+
+Implementation baseline (22 July 2026): the macOS catalogue foundation, persistent SQLite schema, album/location/box-set creation UI, and ten automated tests are complete. See [HANDOFF.md](HANDOFF.md) for the current Git baseline and next implementation slice.
 
 ## 1. Recommendation
 

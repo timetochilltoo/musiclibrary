@@ -3,12 +3,14 @@
 Date: 22 July 2026
 Companion document: [BUILD_PLAN.md](BUILD_PLAN.md)
 
+Operational continuation guide: [HANDOFF.md](HANDOFF.md)
+
 This document turns the product plan into implementation-level guidance. It intentionally specifies the complicated logic so a coding agent does not have to infer core behaviour while writing the application.
 
 ## Implementation status
 
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
-Current baseline: `2d02f10` on `main` (22 July 2026)
+Current baseline: inspect `main` with `git log --oneline -5`; [HANDOFF.md](HANDOFF.md) is the operational status record.
 
 Completed and verified:
 
