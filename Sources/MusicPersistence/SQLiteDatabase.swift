@@ -60,6 +60,55 @@ public actor MusicDatabase {
         try Self.scalarInt("SELECT catalogue_revision FROM catalogue_state WHERE singleton_id = 1;", on: connection)
     }
 
+    public func createStorageRoot(_ draft: NewStorageRoot) throws -> StorageRoot {
+        let valid = try draft.validated()
+        let id = StorageRootID(); let now = Date()
+        try transaction {
+            let statement = try Self.prepare("INSERT INTO storage_root (id, display_name, last_known_path, bookmark_data, volume_identifier, status, last_seen_at, bookmark_needs_refresh) VALUES (?, ?, ?, ?, ?, ?, ?, 0);", on: connection)
+            defer { sqlite3_finalize(statement) }
+            try Self.bind(id.description, at: 1, to: statement); try Self.bind(valid.displayName, at: 2, to: statement); try Self.bind(valid.lastKnownPath, at: 3, to: statement); try Self.bind(valid.bookmarkData, at: 4, to: statement); try Self.bind(valid.volumeIdentifier, at: 5, to: statement); try Self.bind(valid.status.rawValue, at: 6, to: statement); try Self.bind(valid.status == .available ? Self.milliseconds(now) : nil, at: 7, to: statement); try Self.stepDone(statement, connection: connection)
+            try incrementRevision()
+        }
+        return .init(id: id, displayName: valid.displayName, lastKnownPath: valid.lastKnownPath, bookmarkData: valid.bookmarkData, volumeIdentifier: valid.volumeIdentifier, status: valid.status, bookmarkNeedsRefresh: false, lastSeenAt: valid.status == .available ? now : nil)
+    }
+
+    public func storageRoots() throws -> [StorageRoot] {
+        let statement = try Self.prepare("SELECT id, display_name, last_known_path, bookmark_data, volume_identifier, status, bookmark_needs_refresh, last_seen_at FROM storage_root ORDER BY display_name COLLATE NOCASE;", on: connection)
+        defer { sqlite3_finalize(statement) }
+        var values: [StorageRoot] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let rawID = Self.text(at: 0, from: statement), let uuid = UUID(uuidString: rawID), let rawStatus = Self.text(at: 5, from: statement), let status = StorageRootStatus(rawValue: rawStatus) else { throw DatabaseError.invalidIdentifier("storage_root") }
+            values.append(.init(id: .init(rawValue: uuid), displayName: Self.text(at: 1, from: statement) ?? "", lastKnownPath: Self.text(at: 2, from: statement) ?? "", bookmarkData: Self.data(at: 3, from: statement), volumeIdentifier: Self.text(at: 4, from: statement), status: status, bookmarkNeedsRefresh: Self.int(at: 6, from: statement) == 1, lastSeenAt: Self.int(at: 7, from: statement).map(Self.date(fromMilliseconds:))))
+        }
+        return values
+    }
+
+    public func renameStorageRoot(_ id: StorageRootID, to displayName: String) throws {
+        guard !displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw ValidationError.requiredField("Storage root name") }
+        try transaction {
+            let statement = try Self.prepare("UPDATE storage_root SET display_name = ? WHERE id = ?;", on: connection)
+            defer { sqlite3_finalize(statement) }; try Self.bind(displayName, at: 1, to: statement); try Self.bind(id.description, at: 2, to: statement); try Self.stepDone(statement, connection: connection)
+            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Storage root") }; try incrementRevision()
+        }
+    }
+
+    public func updateStorageRootAccess(_ id: StorageRootID, status: StorageRootStatus, lastKnownPath: String? = nil, bookmarkData: Data? = nil, bookmarkNeedsRefresh: Bool = false) throws {
+        try transaction {
+            let statement = try Self.prepare("UPDATE storage_root SET status = ?, last_known_path = COALESCE(?, last_known_path), bookmark_data = COALESCE(?, bookmark_data), bookmark_needs_refresh = ?, last_seen_at = ? WHERE id = ?;", on: connection)
+            defer { sqlite3_finalize(statement) }; try Self.bind(status.rawValue, at: 1, to: statement); try Self.bind(lastKnownPath, at: 2, to: statement); try Self.bind(bookmarkData, at: 3, to: statement); try Self.bind(bookmarkNeedsRefresh ? 1 : 0, at: 4, to: statement); try Self.bind(status == .available ? Self.milliseconds(Date()) : nil, at: 5, to: statement); try Self.bind(id.description, at: 6, to: statement); try Self.stepDone(statement, connection: connection)
+            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Storage root") }; try incrementRevision()
+        }
+    }
+
+    public func deleteStorageRoot(_ id: StorageRootID) throws {
+        try transaction {
+            guard !(try Self.exists("SELECT 1 FROM digital_asset WHERE storage_root_id = ? LIMIT 1;", value: id.description, on: connection)) else { throw DatabaseError.invalidOperation("A storage root with digital assets cannot be removed.") }
+            let statement = try Self.prepare("DELETE FROM storage_root WHERE id = ?;", on: connection)
+            defer { sqlite3_finalize(statement) }; try Self.bind(id.description, at: 1, to: statement); try Self.stepDone(statement, connection: connection)
+            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Storage root") }; try incrementRevision()
+        }
+    }
+
     public func createLocation(_ draft: NewPhysicalLocation) throws -> PhysicalLocation {
         let valid = try draft.validated()
         let id = PhysicalLocationID()
@@ -657,6 +706,19 @@ public actor MusicDatabase {
     private static func bind(_ value: Int64?, at index: Int32, to statement: OpaquePointer) throws {
         let result = value.map { sqlite3_bind_int64(statement, index, $0) } ?? sqlite3_bind_null(statement, index)
         guard result == SQLITE_OK else { throw DatabaseError.sqlite(message: "Unable to bind SQLite integer value.") }
+    }
+
+    private static func bind(_ value: Data?, at index: Int32, to statement: OpaquePointer) throws {
+        let result: Int32
+        if let value { result = value.withUnsafeBytes { sqlite3_bind_blob(statement, index, $0.baseAddress, Int32(value.count), sqliteTransient) } }
+        else { result = sqlite3_bind_null(statement, index) }
+        guard result == SQLITE_OK else { throw DatabaseError.sqlite(message: "Unable to bind SQLite data value.") }
+    }
+
+    private static func data(at column: Int32, from statement: OpaquePointer) -> Data? {
+        let count = Int(sqlite3_column_bytes(statement, column))
+        guard count > 0, let pointer = sqlite3_column_blob(statement, column) else { return nil }
+        return Data(bytes: pointer, count: count)
     }
 
     private static func stepDone(_ statement: OpaquePointer, connection: OpaquePointer) throws {

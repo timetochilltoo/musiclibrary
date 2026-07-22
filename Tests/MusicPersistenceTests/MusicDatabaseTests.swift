@@ -5,11 +5,11 @@ import Testing
 
 @Suite("Music database")
 struct MusicDatabaseTests {
-    @Test("Migration creates schema version one")
+    @Test("Migration creates the latest schema")
     func migrationCreatesSchema() async throws {
         let database = try MusicDatabase(url: temporaryDatabaseURL())
         try await database.migrate()
-        #expect(try await database.schemaVersion() == 2)
+        #expect(try await database.schemaVersion() == 3)
         #expect(try await database.currentRevision() == 0)
     }
 
@@ -145,6 +145,25 @@ struct MusicDatabaseTests {
         let alias = try await database.addAlbumAlias(albumID: album.id, name: "Alternate", kind: .alternate)
         try await database.deleteAlbumAlias(alias.id)
         #expect(try await database.albumAliases(albumID: album.id).isEmpty)
+    }
+
+    @Test("Storage roots preserve bookmarks and offline state without deletion")
+    func storageRoots() async throws {
+        let database = try MusicDatabase(url: temporaryDatabaseURL())
+        try await database.migrate()
+        let bookmark = Data([0x01, 0x02, 0x03])
+        let root = try await database.createStorageRoot(.init(displayName: "NAS Music", lastKnownPath: "/Volumes/Music", bookmarkData: bookmark))
+        #expect(try await database.storageRoots().first?.bookmarkData == bookmark)
+        try await database.updateStorageRootAccess(root.id, status: .offline)
+        let offline = try #require(await database.storageRoots().first)
+        #expect(offline.status == .offline)
+        #expect(offline.lastKnownPath == "/Volumes/Music")
+        #expect(offline.bookmarkData == bookmark)
+        try await database.renameStorageRoot(root.id, to: "NAS")
+        #expect(try await database.storageRoots().first?.displayName == "NAS")
+        try await database.deleteStorageRoot(root.id)
+        #expect(try await database.storageRoots().isEmpty)
+        #expect(try await database.currentRevision() == 4)
     }
 
     private func temporaryDatabaseURL() -> URL {

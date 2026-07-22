@@ -51,6 +51,7 @@ private struct LibraryShellView: View {
     @State private var showsAlbumEditor = false
     @State private var showsLocationEditor = false
     @State private var showsBoxSetEditor = false
+    @State private var showsStorageRootPicker = false
     @State private var albumToEdit: Album?
 
     var body: some View {
@@ -75,6 +76,9 @@ private struct LibraryShellView: View {
         .sheet(isPresented: $showsLocationEditor) { LocationEditor(library: library) }
         .sheet(isPresented: $showsBoxSetEditor) { BoxSetEditor(library: library) }
         .sheet(item: $albumToEdit) { album in EditAlbumEditor(library: library, album: album) }
+        .fileImporter(isPresented: $showsStorageRootPicker, allowedContentTypes: [.folder]) { result in
+            if case let .success(url) = result { Task { try? await library.addStorageRoot(url: url) } }
+        }
         .alert("Music Library", isPresented: Binding(
             get: { library.errorMessage != nil },
             set: { if !$0 { library.dismissError() } }
@@ -112,6 +116,8 @@ private struct LibraryShellView: View {
                     ContentUnavailableView("No box sets", systemImage: "shippingbox", description: Text("Create a box set to group its member albums at one location."))
                 }
             }
+        case .settings:
+            StorageRootList(library: library)
         default:
             ContentUnavailableView(section?.title ?? "Music Library", systemImage: section?.symbol ?? "music.note")
         }
@@ -129,15 +135,66 @@ private struct LibraryShellView: View {
 
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
         ToolbarItem(placement: .primaryAction) {
-            Button(section == .locations ? "Add Location" : section == .boxSets ? "Add Box Set" : "Add Album", systemImage: "plus") {
+            Button(section == .locations ? "Add Location" : section == .boxSets ? "Add Box Set" : section == .settings ? "Add Music Folder" : "Add Album", systemImage: "plus") {
                 switch section {
                 case .locations: showsLocationEditor = true
                 case .boxSets: showsBoxSetEditor = true
+                case .settings: showsStorageRootPicker = true
                 default: showsAlbumEditor = true
                 }
             }
         }
     }
+}
+
+private struct StorageRootList: View {
+    @ObservedObject var library: LibraryStore
+    @State private var rootToRename: StorageRoot?
+
+    var body: some View {
+        List(library.storageRoots) { root in
+            HStack {
+                Image(systemName: symbol(for: root.status)).foregroundStyle(color(for: root.status))
+                VStack(alignment: .leading) {
+                    Text(root.displayName).font(.headline)
+                    Text(root.lastKnownPath).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+                Spacer()
+                Text(label(for: root.status)).font(.caption).foregroundStyle(color(for: root.status))
+            }
+            .contextMenu {
+                Button("Rename") { rootToRename = root }
+                Button("Check Access") { Task { try? await library.refreshStorageRootAccess() } }
+                Divider()
+                Button("Remove", role: .destructive) { Task { try? await library.deleteStorageRoot(root.id) } }
+            }
+        }
+        .overlay {
+            if library.isReady && library.storageRoots.isEmpty { ContentUnavailableView("No music folders", systemImage: "externaldrive", description: Text("Add a local or NAS folder. The app saves access permission, not NAS credentials.")) }
+        }
+        .sheet(item: $rootToRename) { root in StorageRootRenameEditor(library: library, root: root) }
+    }
+
+    private func label(for status: StorageRootStatus) -> String { switch status { case .available: "Available"; case .offline: "Offline"; case .permissionRequired: "Permission required" } }
+    private func symbol(for status: StorageRootStatus) -> String { switch status { case .available: "checkmark.circle.fill"; case .offline: "wifi.slash"; case .permissionRequired: "lock.circle" } }
+    private func color(for status: StorageRootStatus) -> Color { switch status { case .available: .green; case .offline: .orange; case .permissionRequired: .red } }
+}
+
+private struct StorageRootRenameEditor: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var library: LibraryStore
+    let root: StorageRoot
+    @State private var name: String
+
+    init(library: LibraryStore, root: StorageRoot) { self.library = library; self.root = root; _name = State(initialValue: root.displayName) }
+
+    var body: some View {
+        Form { TextField("Folder name", text: $name) }
+            .padding().frame(width: 360)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button("Save") { save() }.disabled(name.nilIfBlank == nil) } }
+    }
+
+    private func save() { Task { try? await library.renameStorageRoot(root.id, to: name); dismiss() } }
 }
 
 private struct AlbumDetail: View {

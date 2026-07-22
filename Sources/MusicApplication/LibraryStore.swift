@@ -8,6 +8,7 @@ public final class LibraryStore: ObservableObject {
     @Published public private(set) var albums: [Album] = []
     @Published public private(set) var locations: [PhysicalLocation] = []
     @Published public private(set) var boxSets: [BoxSet] = []
+    @Published public private(set) var storageRoots: [StorageRoot] = []
     @Published public private(set) var isReady = false
     @Published public private(set) var errorMessage: String?
 
@@ -25,6 +26,7 @@ public final class LibraryStore: ObservableObject {
             try await database.migrate()
             self.database = database
             try await reload()
+            try await refreshStorageRootAccess()
             isReady = true
         } catch {
             errorMessage = error.localizedDescription
@@ -36,9 +38,11 @@ public final class LibraryStore: ObservableObject {
         async let loadedAlbums = database.albums(matching: searchTerm)
         async let loadedLocations = database.locations()
         async let loadedBoxSets = database.boxSets()
+        async let loadedStorageRoots = database.storageRoots()
         albums = try await loadedAlbums
         locations = try await loadedLocations
         boxSets = try await loadedBoxSets
+        storageRoots = try await loadedStorageRoots
     }
 
     public func search(_ term: String) async {
@@ -102,6 +106,37 @@ public final class LibraryStore: ObservableObject {
     public func addTrackContributor(trackID: TrackID, name: String, role: ContributorRole, creditedName: String?) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; let contributor = try await database.createContributor(.init(name: name)); try await database.addTrackContributor(contributor.id, to: trackID, role: role, creditedName: creditedName); try await reload() }
     public func addAlbumArtwork(albumID: AlbumID, localPath: String, role: ArtworkRole) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; _ = try await database.addAlbumArtwork(albumID: albumID, localPath: localPath, role: role); try await reload() }
 
+    public func addStorageRoot(url: URL) async throws {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        let bookmarkData = try makeSecurityScopedBookmark(for: url)
+        let values = try? url.resourceValues(forKeys: [.volumeUUIDStringKey])
+        _ = try await database.createStorageRoot(.init(displayName: url.lastPathComponent, lastKnownPath: url.path, bookmarkData: bookmarkData, volumeIdentifier: values?.volumeUUIDString, status: .available))
+        try await reload()
+    }
+
+    public func renameStorageRoot(_ id: StorageRootID, to displayName: String) async throws {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        try await database.renameStorageRoot(id, to: displayName)
+        try await reload()
+    }
+
+    public func deleteStorageRoot(_ id: StorageRootID) async throws {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        try await database.deleteStorageRoot(id)
+        try await reload()
+    }
+
+    public func refreshStorageRootAccess() async throws {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        for root in storageRoots {
+            let state = resolveSecurityScopedBookmark(root)
+            if root.status != state.status || root.bookmarkNeedsRefresh != state.bookmarkNeedsRefresh || state.refreshedBookmarkData != nil || (state.status == .available && root.lastKnownPath != state.url?.path) {
+                try await database.updateStorageRootAccess(root.id, status: state.status, lastKnownPath: state.url?.path, bookmarkData: state.refreshedBookmarkData, bookmarkNeedsRefresh: state.bookmarkNeedsRefresh)
+            }
+        }
+        try await reload()
+    }
+
     public func addLocation(_ draft: NewPhysicalLocation) async throws {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
         _ = try await database.createLocation(draft)
@@ -134,5 +169,27 @@ public final class LibraryStore: ObservableObject {
         let directory = base.appending(path: "MusicLibrary", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory
+    }
+
+    private func makeSecurityScopedBookmark(for url: URL) throws -> Data {
+        let accessed = url.startAccessingSecurityScopedResource()
+        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+        return try url.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil)
+    }
+
+    private func resolveSecurityScopedBookmark(_ root: StorageRoot) -> (status: StorageRootStatus, url: URL?, refreshedBookmarkData: Data?, bookmarkNeedsRefresh: Bool) {
+        guard let bookmarkData = root.bookmarkData else { return (.permissionRequired, nil, nil, false) }
+        var isStale = false
+        do {
+            let url = try URL(resolvingBookmarkData: bookmarkData, options: [.withSecurityScope], relativeTo: nil, bookmarkDataIsStale: &isStale)
+            let accessed = url.startAccessingSecurityScopedResource()
+            defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+            guard accessed else { return (.permissionRequired, nil, nil, isStale) }
+            guard FileManager.default.fileExists(atPath: url.path) else { return (.offline, url, nil, isStale) }
+            let refreshed = isStale ? try? url.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil) : nil
+            return (.available, url, refreshed, isStale && refreshed == nil)
+        } catch {
+            return (.permissionRequired, nil, nil, false)
+        }
     }
 }
