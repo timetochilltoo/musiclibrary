@@ -314,6 +314,7 @@ If an invariant needs to change, stop and document the proposed migration and us
 
 The Mac now persists the latest publication failure, shows it in Settings after relaunch, and changes the manual action to Retry Publish. Settings also provides a safe Library Health recheck: it refreshes root authorization/availability and derived issues without modifying files or stored paths.
 Possible duplicate assets are shown in Settings by shared verified content hash and path list. This is review-only: no duplicate is removed, moved, or relinked automatically.
+Stored relink proposals are also visible with before/after relative paths. They remain review-only; confirmation/apply is deliberately not implemented.
 
 ### Goal
 

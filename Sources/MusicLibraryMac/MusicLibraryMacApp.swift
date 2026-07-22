@@ -235,6 +235,13 @@ private struct StorageRootList: View {
                     }
                 }
             }
+            if !library.relinkProposals.isEmpty {
+                Section("Relink proposals — review only") {
+                    ForEach(library.relinkProposals) { proposal in
+                        VStack(alignment: .leading) { Text(proposal.currentPath).font(.caption); Text("Proposed: \(proposal.proposedPath)").font(.caption).foregroundStyle(.secondary) }
+                    }
+                }
+            }
             if !library.duplicateAssets.isEmpty { Section("Duplicate fingerprints") { ForEach(library.duplicateAssets) { duplicate in Text("\(duplicate.paths.count) files share fingerprint \(duplicate.contentHash.prefix(12))…") } } }
         }
         .fileImporter(isPresented: $showsSnapshotDestinationPicker, allowedContentTypes: [.folder]) { result in

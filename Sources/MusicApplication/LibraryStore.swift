@@ -14,6 +14,7 @@ public final class LibraryStore: ObservableObject {
     @Published public private(set) var libraryHealthIssues: [LibraryHealthIssue] = []
     @Published public private(set) var playlists: [Playlist] = []
     @Published public private(set) var duplicateAssets: [AssetDuplicate] = []
+    @Published public private(set) var relinkProposals: [AssetRelinkProposal] = []
     @Published public private(set) var isReady = false
     @Published public private(set) var errorMessage: String?
     @Published public private(set) var snapshotDestinationPath: String?
@@ -71,6 +72,7 @@ public final class LibraryStore: ObservableObject {
         libraryHealthIssues = try await loadedHealth
         playlists = try await loadedPlaylists
         duplicateAssets = try await database.duplicateAssets()
+        relinkProposals = try await database.relinkProposals()
         let revision = try await database.currentRevision()
         catalogueRevision = revision
         if publicationSchedule.observe(revision) { scheduleSnapshotPublication() }

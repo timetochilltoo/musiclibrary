@@ -370,6 +370,16 @@ public actor MusicDatabase {
         try transaction { let source = try Self.prepare("SELECT relative_path FROM digital_asset WHERE id = ?;", on: connection); defer { sqlite3_finalize(source) }; try Self.bind(assetID.description, at: 1, to: source); guard sqlite3_step(source) == SQLITE_ROW else { throw DatabaseError.notFound("Digital asset") }; current = Self.text(at: 0, from: source) ?? ""; let statement = try Self.prepare("INSERT OR IGNORE INTO asset_relink_proposal (id, asset_id, proposed_relative_path, created_at) VALUES (?, ?, ?, ?);", on: connection); defer { sqlite3_finalize(statement) }; try Self.bind(id.uuidString.lowercased(), at: 1, to: statement); try Self.bind(assetID.description, at: 2, to: statement); try Self.bind(proposedRelativePath, at: 3, to: statement); try Self.bind(Self.milliseconds(Date()), at: 4, to: statement); try Self.stepDone(statement, connection: connection) }
         return .init(id: id, assetID: assetID, currentPath: current, proposedPath: proposedRelativePath)
     }
+    public func relinkProposals() throws -> [AssetRelinkProposal] {
+        let statement = try Self.prepare("SELECT asset_relink_proposal.id, asset_relink_proposal.asset_id, digital_asset.relative_path, asset_relink_proposal.proposed_relative_path FROM asset_relink_proposal JOIN digital_asset ON digital_asset.id = asset_relink_proposal.asset_id ORDER BY asset_relink_proposal.created_at DESC;", on: connection)
+        defer { sqlite3_finalize(statement) }
+        var values: [AssetRelinkProposal] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let rawID = Self.text(at: 0, from: statement), let id = UUID(uuidString: rawID), let rawAsset = Self.text(at: 1, from: statement), let asset = UUID(uuidString: rawAsset) else { continue }
+            values.append(.init(id: id, assetID: .init(rawValue: asset), currentPath: Self.text(at: 2, from: statement) ?? "", proposedPath: Self.text(at: 3, from: statement) ?? ""))
+        }
+        return values
+    }
     public func digitalAssetIDs(albumID: AlbumID) throws -> [DigitalAssetID] {
         let statement = try Self.prepare("SELECT digital_asset.id FROM digital_asset JOIN track ON track.id = digital_asset.track_id JOIN disc ON disc.id = track.disc_id WHERE disc.album_id = ? ORDER BY digital_asset.id;", on: connection); defer { sqlite3_finalize(statement) }; try Self.bind(albumID.description, at: 1, to: statement); var values: [DigitalAssetID] = []
         while sqlite3_step(statement) == SQLITE_ROW { guard let raw = Self.text(at: 0, from: statement), let uuid = UUID(uuidString: raw) else { throw DatabaseError.invalidIdentifier("digital_asset") }; values.append(.init(rawValue: uuid)) }
