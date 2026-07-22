@@ -7,7 +7,7 @@ This document turns the product plan into implementation-level guidance. It inte
 
 ## Implementation status
 
-Repository: `https://github.com/timetochilltoo/musiclibrary.git`  
+Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Current baseline: `2d02f10` on `main` (22 July 2026)
 
 Completed and verified:
