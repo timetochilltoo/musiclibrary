@@ -11,7 +11,8 @@ let package = Package(
         .library(name: "MusicReadOnlyClient", targets: ["MusicReadOnlyClient"]),
         .library(name: "MusicLibraryPadShell", targets: ["MusicLibraryPadShell"]),
         .library(name: "MusicUIComponents", targets: ["MusicUIComponents"]),
-        .executable(name: "MusicLibraryMac", targets: ["MusicLibraryMac"])
+        .executable(name: "MusicLibraryMac", targets: ["MusicLibraryMac"]),
+        .executable(name: "MusicLibraryPad", targets: ["MusicLibraryPad"])
     ],
     targets: [
         .target(name: "MusicDomain"),
@@ -26,6 +27,7 @@ let package = Package(
         ),
         .target(name: "MusicReadOnlyClient"),
         .target(name: "MusicLibraryPadShell", dependencies: ["MusicReadOnlyClient"]),
+        .executableTarget(name: "MusicLibraryPad", dependencies: ["MusicLibraryPadShell"]),
         .target(
             name: "MusicUIComponents",
             dependencies: ["MusicDomain"]

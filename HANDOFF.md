@@ -141,13 +141,15 @@ Sources/
   MusicLibraryPadShell/
     PadLibraryView.swift         Portable read-only SwiftUI companion shell
     CompanionPlaybackController.swift  Device-local resolved-URL playback controller
+  MusicLibraryPad/
+    MusicLibraryPadApp.swift     iPad SwiftUI application composition root
 
 Tests/
   MusicDomainTests/AlbumTests.swift
   MusicPersistenceTests/MusicDatabaseTests.swift
 ```
 
-The package products are `MusicDomain`, `MusicPersistence`, `MusicApplication`, `MusicReadOnlyClient`, `MusicLibraryPadShell`, `MusicUIComponents`, and the `MusicLibraryMac` executable. SQLite is linked with the system `sqlite3` library; there are no third-party dependencies. The package declares macOS 15 and iOS 18 support. `MusicLibraryPadShell` is a reusable SwiftUI library, not yet a separately packaged iPad application target.
+The package products are `MusicDomain`, `MusicPersistence`, `MusicApplication`, `MusicReadOnlyClient`, `MusicLibraryPadShell`, `MusicUIComponents`, and the `MusicLibraryMac` and `MusicLibraryPad` executables. SQLite is linked with the system `sqlite3` library; there are no third-party dependencies. The package declares macOS 15 and iOS 18 support. `MusicLibraryPad` is the SwiftUI iPad application composition target; signing, device deployment, and an Xcode project/archive workflow are still outside this SwiftPM repository.
 
 ## 7. Current implemented behaviour
 
@@ -182,6 +184,7 @@ Implemented and tested:
 - Snapshot publication writes a revisioned sanitized JSON payload and writes the SHA-256-protected manifest last. Its current payload contains a format, schema version, catalogue revision, album rows with ID, edition/year/catalogue/CD/digital data, ordered discs/tracks, and root-relative digital-asset references. It contains no Mac bookmark or absolute path. The read-only client refuses malformed formats, unsafe names, stale revisions, and checksum failures; it atomically retains the last verified cache after any failure.
 - Device-local SMB root mappings are persisted separately from published snapshot content. Replacing a mapping changes only the selected published-root ID.
 - `MusicLibraryPadShell` supplies a read-only SwiftUI navigation view which shows whether the local verified snapshot cache exists, lists the device-local SMB mappings, and browses the verified payload as searchable album list/detail views. Album detail shows tracks and whether their first asset is mapped, unmapped, unavailable, or refused for an unsafe path. A device-local player exposes play/pause/stop only for an existing file under a mapped, available root. It persists a user-selected snapshot folder as a security-scoped bookmark, offers manual verified refresh, and provides user-selected SMB root add/replace/remove controls. It exposes no catalogue edit controls.
+- `MusicLibraryPadApp` keeps all companion state under `Application Support/MusicLibraryPad`: `SnapshotCache`, `SMBRootMappings.json`, and `SnapshotSource.bookmark`. At launch it opens the last verified cache independently of the NAS and checks the selected source manifest modification date, non-blockingly indicating when a refresh is available.
 - Increment catalogue revision once per successful high-level write operation.
 
 ### macOS UI
@@ -210,7 +213,7 @@ This database is user data. Do not remove it during development. If a destructiv
 
 ## 8. Current tests and verification baseline
 
-The last verified baseline contains 34 tests in 4 suites, run with a rebuilt `swift test` followed by `swift test --skip-build` on 22 July 2026. Run `swift test`; do not rely on this handoff alone.
+The last verified baseline contains 35 tests in 4 suites, run with a rebuilt `swift test` followed by `swift test --skip-build` on 22 July 2026. Run `swift test`; do not rely on this handoff alone.
 
 `MusicDomainTests/AlbumTests.swift` verifies:
 
@@ -239,7 +242,7 @@ The last verified baseline contains 34 tests in 4 suites, run with a rebuilt `sw
 
 `MusicApplicationTests/ImportScannerTests.swift` verifies content-type audio discovery, hidden-file exclusion, cancellation before enumeration, and Unicode/multi-disc proposal grouping.
 
-`MusicReadOnlyClientTests/SnapshotClientTests.swift` verifies verified snapshot replacement, checksum-failure fallback to the prior local cache, device-local SMB mapping replacement semantics, snapshot-source bookmark persistence/clear behavior, verified-payload Unicode/search decoding, root-relative asset resolution (including unmapped, unavailable, and traversal-path refusal states), and selection of a playable URL only from a mapped available asset.
+`MusicReadOnlyClientTests/SnapshotClientTests.swift` verifies verified snapshot replacement, checksum-failure fallback to the prior local cache, device-local SMB mapping replacement semantics, snapshot-source bookmark persistence/clear behavior, verified-payload Unicode/search decoding, root-relative asset resolution (including unmapped, unavailable, and traversal-path refusal states), selection of a playable URL only from a mapped available asset, and manifest-date refresh indication without cache mutation.
 
 There are no UI automation or visual snapshot tests yet. Building via `swift test` compiles the macOS executable, but does not exercise a real UI session. Add targeted tests before making core data behaviour more complex.
 
@@ -281,7 +284,7 @@ Storage-root authorization, Import Inbox scanning, embedded common-tag proposal 
 
 ### Read-only companion foundation
 
-`SnapshotClient` reads a published directory supplied by its host, verifies its JSON manifest and payload checksum, and maintains a local cache. `localCatalogue()` validates the cached payload checksum again before decoding it. `SnapshotSourceStore` persists a security-scoped selected source, and `SMBRootMappingStore` remains a separate device-local JSON preference store. `ReadOnlyDigitalAsset.resolve(using:)` only joins a safe relative path to a matching device-local mapped root; it refuses absolute/traversal paths and never falls back to a Mac path. `CompanionPlaybackController` checks for a resolved mapped URL and local file existence before using `AVAudioPlayer`; its transport state is device-local and it never mutates catalogue/mapping data. `PadLibraryView` supplies folder-picker controls, manual refresh, mapping management, Unicode search, track detail, and one-track play/pause controls. There is still no separately packaged iPad application target or automatic manifest-date polling.
+`SnapshotClient` reads a published directory supplied by its host, verifies its JSON manifest and payload checksum, and maintains a local cache. `localCatalogue()` validates the cached payload checksum again before decoding it. `SnapshotSourceStore` persists a security-scoped selected source, and `SMBRootMappingStore` remains a separate device-local JSON preference store. `ReadOnlyDigitalAsset.resolve(using:)` only joins a safe relative path to a matching device-local mapped root; it refuses absolute/traversal paths and never falls back to a Mac path. `CompanionPlaybackController` checks for a resolved mapped URL and local file existence before using `AVAudioPlayer`; its transport state is device-local and it never mutates catalogue/mapping data. `MusicLibraryPadApp` is the SwiftUI composition target. `PadLibraryView` checks a selected manifest's modification date at launch, displays a non-blocking update-available indicator, and retains the existing cache until an explicit refresh. Xcode project generation/signing/device deployment and periodic foreground monitoring are not yet implemented.
 
 ## 10. Non-negotiable invariants to preserve
 
@@ -302,31 +305,31 @@ Enforce these with transactions, validation, constraints, and tests where possib
 
 If an invariant needs to change, stop and document the proposed migration and user-facing impact before implementing it.
 
-## 11. Exact next slice: iPad application composition and refresh monitoring
+## 11. Exact next slice: iPad lifecycle monitoring and deployment preparation
 
-The portable companion can browse and play a single mapped track through the verified snapshot. The next slice should provide a real iPad application composition target with appropriate local Application Support locations and lightweight manifest modification-date monitoring; it must preserve the same read-only/Security Scope boundaries.
+The package now has an iPad SwiftUI application composition target with Application Support paths and launch-time source manifest-date indication. The next slice should monitor when the app becomes active and prepare a reproducible Xcode/iPad deployment workflow, without weakening the read-only or security-scoped boundaries.
 
 ### Goal
 
-Turn the portable SwiftUI library into an installable iPad application entry point and improve refresh awareness without requiring the NAS to be available at launch.
+Ensure a deployed iPad app checks the selected source when returning to the foreground and can be built/signed through a reproducible project workflow.
 
 ### Required persistence work
 
-1. Add an iPad executable/app composition root which derives cache, mapping, and source-preference URLs from Application Support.
-2. Check the selected manifest modification date at launch/foreground and prompt a non-blocking refresh when it is newer.
-3. Retain the verified cache and current browsing state if the selected NAS source is unavailable.
+1. Recheck a selected manifest date when the iPad scene becomes active, while retaining an unavailable-source fallback.
+2. Generate/add an Xcode project and iPad target configuration suitable for signing and simulator/device builds.
+3. Keep the Swift package implementation shared; do not duplicate snapshot, mapping, or playback logic in the app target.
 
 ### Required UI work
 
-1. Supply standard iPad launch composition and refresh-status UI.
+1. Supply foreground refresh-status UI and a documented build/run path.
 2. Do not add upload, automatic metadata correction, tag writes, or catalogue edit controls.
 
 ### Required tests
 
 Add persistence tests for at least:
 
-- Application-support path construction and no-source/offline fallback.
-- Manifest date comparison does not overwrite or invalidate the local verified cache.
+- Scene-active source check remains non-mutating and handles unavailable sources.
+- Build configuration produces the iPad target without changing Mac target behaviour.
 
 Run `swift test` after the slice. Update this document's completed/not-implemented sections, tests, limitations, and next task before committing.
 

@@ -3,6 +3,7 @@ import MusicReadOnlyClient
 
 public struct PadLibraryView: View {
     @State private var snapshotStatus = "No verified snapshot loaded"
+    @State private var updateAvailable = false
     @State private var catalogue: ReadOnlyCatalogue?
     @StateObject private var playback = CompanionPlaybackController()
     @State private var searchText = ""
@@ -37,6 +38,7 @@ public struct PadLibraryView: View {
                     }
                     Button("Choose snapshot source") { isSelectingSnapshotSource = true }
                     Button("Refresh snapshot") { refreshSnapshot() }.disabled(sourceDirectory == nil)
+                    if updateAvailable { Text("A newer published snapshot is available.").font(.caption).foregroundStyle(.orange) }
                 }
                 Section("Albums") {
                     if let catalogue {
@@ -87,6 +89,7 @@ public struct PadLibraryView: View {
         do {
             catalogue = try client.localCatalogue()
             snapshotStatus = catalogue == nil ? "No verified snapshot loaded" : "Verified local snapshot available"
+            checkForNewerSource()
         } catch {
             catalogue = nil
             snapshotStatus = "Verified cache could not be opened"
@@ -99,6 +102,7 @@ public struct PadLibraryView: View {
             let directory = try result.get()
             try sourceStore.set(selectedDirectory: directory)
             sourceDirectory = directory
+            checkForNewerSource()
             message = "Snapshot source saved. Refresh when ready."
         } catch { message = "Could not save snapshot source: \(error.localizedDescription)" }
     }
@@ -118,6 +122,7 @@ public struct PadLibraryView: View {
         defer { if gainedAccess { sourceDirectory.stopAccessingSecurityScopedResource() } }
         do {
             message = try client.update(from: sourceDirectory) ? "Snapshot updated." : "Already using the latest verified snapshot."
+            updateAvailable = false
             loadState()
         } catch { message = "Snapshot refresh failed; the prior verified cache remains in use. \(error.localizedDescription)" }
     }
@@ -127,6 +132,13 @@ public struct PadLibraryView: View {
             for offset in offsets { try mappingStore.remove(publishedRootID: mappings[offset].publishedRootID) }
             mappings = try mappingStore.mappings()
         } catch { message = "Could not remove SMB root: \(error.localizedDescription)" }
+    }
+
+    private func checkForNewerSource() {
+        guard let sourceDirectory else { updateAvailable = false; return }
+        let gainedAccess = sourceDirectory.startAccessingSecurityScopedResource()
+        defer { if gainedAccess { sourceDirectory.stopAccessingSecurityScopedResource() } }
+        updateAvailable = (try? client.sourceManifestIsNewer(from: sourceDirectory)) ?? false
     }
 
     private var filteredAlbums: [ReadOnlyAlbum] {

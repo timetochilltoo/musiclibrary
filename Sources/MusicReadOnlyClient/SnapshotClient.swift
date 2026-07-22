@@ -7,6 +7,17 @@ public enum SnapshotClientError: Error, Equatable { case incompatibleFormat, inc
 public final class SnapshotClient {
     public let cacheDirectory: URL
     public init(cacheDirectory: URL) { self.cacheDirectory = cacheDirectory }
+    public func sourceManifestIsNewer(from directory: URL) throws -> Bool {
+        let sourceManifest = directory.appending(path: "manifest.json")
+        guard FileManager.default.fileExists(atPath: sourceManifest.path) else { return false }
+        let localManifest = cacheDirectory.appending(path: "manifest.json")
+        guard FileManager.default.fileExists(atPath: localManifest.path) else { return true }
+        let sourceDate = try sourceManifest.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+        let localDate = try localManifest.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+        guard let sourceDate else { return false }
+        guard let localDate else { return true }
+        return sourceDate > localDate
+    }
     public func update(from directory: URL) throws -> Bool {
         let manifestURL = directory.appending(path: "manifest.json")
         let manifest = try JSONDecoder().decode(ReadOnlySnapshotManifest.self, from: Data(contentsOf: manifestURL))

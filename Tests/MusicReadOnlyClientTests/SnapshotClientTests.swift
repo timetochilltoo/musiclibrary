@@ -70,3 +70,22 @@ func companionPlayableURL() {
     #expect(track.playableURL(using: mappings) == URL(fileURLWithPath: "/Volumes/Music/Song.flac"))
     #expect(ReadOnlyTrack(id: "offline", number: 2, title: "Offline", assets: [.init(storageRootID: "root-a", relativePath: "Song.flac", availability: "rootOffline")]).playableURL(using: mappings) == nil)
 }
+
+@Test("Source manifest modification date prompts refresh without changing local cache")
+func sourceManifestDateCheck() throws {
+    let source = FileManager.default.temporaryDirectory.appending(path: "date-source-\(UUID().uuidString)")
+    let cache = FileManager.default.temporaryDirectory.appending(path: "date-cache-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: source); try? FileManager.default.removeItem(at: cache) }
+    try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
+    let sourceManifest = source.appending(path: "manifest.json")
+    let cacheManifest = cache.appending(path: "manifest.json")
+    try Data("source".utf8).write(to: sourceManifest)
+    try Data("cache".utf8).write(to: cacheManifest)
+    let now = Date()
+    try FileManager.default.setAttributes([.modificationDate: now.addingTimeInterval(-60)], ofItemAtPath: cacheManifest.path)
+    try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: sourceManifest.path)
+    let client = SnapshotClient(cacheDirectory: cache)
+    #expect(try client.sourceManifestIsNewer(from: source))
+    #expect(try Data(contentsOf: cacheManifest) == Data("cache".utf8))
+}
