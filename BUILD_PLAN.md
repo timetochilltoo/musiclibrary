@@ -6,7 +6,7 @@ Detailed coding handoff: [IMPLEMENTATION_SPEC.md](IMPLEMENTATION_SPEC.md)
 
 Operational continuation guide: [HANDOFF.md](HANDOFF.md)
 
-Implementation baseline (22 July 2026): the macOS catalogue foundation, persistent SQLite schema, album/location/box-set workflows, retained local/NAS folder authorization, Import Inbox scanning/review, digital assets, local playback, playlists, and user-triggered duplicate diagnostics are complete and covered by twenty-five automated tests. See [HANDOFF.md](HANDOFF.md) for the current Git baseline and next implementation slice.
+Implementation baseline (22 July 2026): the macOS catalogue foundation, persistent SQLite schema, retained local/NAS authorization, Import Inbox, digital assets, playback, playlists, duplicate diagnostics, recovery, and JSON export are complete and covered by twenty-six automated tests. See [HANDOFF.md](HANDOFF.md) for the current Git baseline and next implementation slice.
 
 ## 1. Recommendation
 

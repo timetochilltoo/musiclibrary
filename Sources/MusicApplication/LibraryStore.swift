@@ -215,6 +215,8 @@ public final class LibraryStore: ObservableObject {
     public func playlistItems(_ id: PlaylistID) async throws -> [PlaylistItem] { guard let database else { throw DatabaseError.notFound("Catalogue database") }; return try await database.playlistItems(playlistID: id) }
     public func addPlaylist(name: String) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; _ = try await database.createPlaylist(name: name); try await reload() }
     public func addTrack(_ trackID: TrackID, toPlaylist id: PlaylistID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.addTrack(trackID, to: id); try await reload() }
+    public func softDeleteAlbum(_ id: AlbumID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.softDeleteAlbum(id); try await reload() }
+    public func exportCatalogue(to url: URL) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; let json = try await database.catalogueExportJSON(); try json.write(to: url, atomically: true, encoding: .utf8) }
     public func verifyFingerprints() async throws {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await refreshStorageRootAccess()
         for candidate in try await database.assetFingerprintCandidates() {

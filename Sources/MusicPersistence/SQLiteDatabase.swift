@@ -291,6 +291,17 @@ public actor MusicDatabase {
         return .init(trackID: trackID, title: Self.text(at: 0, from: statement) ?? "", storageRootID: .init(rawValue: rootUUID), relativePath: Self.text(at: 2, from: statement) ?? "", availability: availability)
     }
 
+    public func softDeleteAlbum(_ id: AlbumID) throws {
+        try transaction { let statement = try Self.prepare("UPDATE album SET deleted_at = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL;", on: connection); defer { sqlite3_finalize(statement) }; let now = Self.milliseconds(Date()); try Self.bind(now, at: 1, to: statement); try Self.bind(now, at: 2, to: statement); try Self.bind(id.description, at: 3, to: statement); try Self.stepDone(statement, connection: connection); guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Album") }; try incrementRevision() }
+    }
+    public func restoreAlbum(_ id: AlbumID) throws {
+        try transaction { let statement = try Self.prepare("UPDATE album SET deleted_at = NULL, updated_at = ? WHERE id = ? AND deleted_at IS NOT NULL;", on: connection); defer { sqlite3_finalize(statement) }; try Self.bind(Self.milliseconds(Date()), at: 1, to: statement); try Self.bind(id.description, at: 2, to: statement); try Self.stepDone(statement, connection: connection); guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Deleted album") }; try incrementRevision() }
+    }
+    public func catalogueExportJSON() throws -> String {
+        let albums = try self.albums(); let rows = albums.map { ["id": $0.id.description, "title": $0.title, "edition": $0.editionLabel ?? "", "releaseYear": $0.releaseYear.map(String.init) ?? ""] }
+        let data = try JSONSerialization.data(withJSONObject: ["format": "music-library-json", "schemaVersion": try schemaVersion(), "catalogueRevision": try currentRevision(), "albums": rows], options: [.prettyPrinted, .sortedKeys]); return String(decoding: data, as: UTF8.self)
+    }
+
     public func recordAssetFingerprint(_ assetID: DigitalAssetID, contentHash: String, quickSignature: String) throws {
         try transaction { let statement = try Self.prepare("UPDATE digital_asset SET content_hash = ?, quick_signature = ? WHERE id = ?;", on: connection); defer { sqlite3_finalize(statement) }; try Self.bind(contentHash, at: 1, to: statement); try Self.bind(quickSignature, at: 2, to: statement); try Self.bind(assetID.description, at: 3, to: statement); try Self.stepDone(statement, connection: connection); guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Digital asset") } }
     }

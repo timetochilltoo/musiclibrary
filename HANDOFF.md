@@ -285,9 +285,9 @@ Enforce these with transactions, validation, constraints, and tests where possib
 
 If an invariant needs to change, stop and document the proposed migration and user-facing impact before implementing it.
 
-## 11. Exact next slice: library recovery and export
+## 11. Exact next slice: snapshot publisher
 
-Duplicate diagnostics are complete. Add safe recovery/export before snapshot/iPad work.
+Recovery/export is complete: albums can be soft-deleted and restored without touching media, and the Mac can write a JSON catalogue export with format, schema, revision, and album metadata. Next, prepare versioned read-only snapshots before iPad work.
 
 ### Goal
 

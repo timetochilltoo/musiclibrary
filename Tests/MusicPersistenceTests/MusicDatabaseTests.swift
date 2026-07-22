@@ -234,6 +234,11 @@ struct MusicDatabaseTests {
         _ = root; _ = track
     }
 
+    @Test("Albums can be soft-deleted, restored, and exported")
+    func recoveryAndExport() async throws {
+        let database = try MusicDatabase(url: temporaryDatabaseURL()); try await database.migrate(); let album = try await database.createAlbum(.init(title: "Exported")); try await database.softDeleteAlbum(album.id); #expect(try await database.albums().isEmpty); try await database.restoreAlbum(album.id); #expect(try await database.albums().map(\.id) == [album.id]); let object = try JSONSerialization.jsonObject(with: Data((try await database.catalogueExportJSON()).utf8)) as? [String: Any]; #expect(object?["format"] as? String == "music-library-json")
+    }
+
     @Test("Playlists preserve ordered track membership")
     func playlists() async throws {
         let database = try MusicDatabase(url: temporaryDatabaseURL())
