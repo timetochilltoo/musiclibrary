@@ -3,12 +3,13 @@ import PackageDescription
 
 let package = Package(
     name: "MusicLibrary",
-    platforms: [.macOS(.v15)],
+    platforms: [.macOS(.v15), .iOS(.v18)],
     products: [
         .library(name: "MusicDomain", targets: ["MusicDomain"]),
         .library(name: "MusicPersistence", targets: ["MusicPersistence"]),
         .library(name: "MusicApplication", targets: ["MusicApplication"]),
         .library(name: "MusicReadOnlyClient", targets: ["MusicReadOnlyClient"]),
+        .library(name: "MusicLibraryPadShell", targets: ["MusicLibraryPadShell"]),
         .library(name: "MusicUIComponents", targets: ["MusicUIComponents"]),
         .executable(name: "MusicLibraryMac", targets: ["MusicLibraryMac"])
     ],
@@ -24,6 +25,7 @@ let package = Package(
             dependencies: ["MusicDomain", "MusicPersistence"]
         ),
         .target(name: "MusicReadOnlyClient"),
+        .target(name: "MusicLibraryPadShell", dependencies: ["MusicReadOnlyClient"]),
         .target(
             name: "MusicUIComponents",
             dependencies: ["MusicDomain"]
