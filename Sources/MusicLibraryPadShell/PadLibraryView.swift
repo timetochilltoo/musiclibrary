@@ -2,6 +2,7 @@ import SwiftUI
 import MusicReadOnlyClient
 
 public struct PadLibraryView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @State private var snapshotStatus = "No verified snapshot loaded"
     @State private var updateAvailable = false
     @State private var catalogue: ReadOnlyCatalogue?
@@ -68,6 +69,9 @@ public struct PadLibraryView: View {
             .navigationTitle("Music Library")
             .searchable(text: $searchText, prompt: "Search title, edition, catalogue number")
             .task { loadState() }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { checkForNewerSource() }
+            }
             .fileImporter(isPresented: $isSelectingSnapshotSource, allowedContentTypes: [.folder]) { result in
                 selectSnapshotSource(result)
             }

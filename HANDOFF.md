@@ -115,6 +115,8 @@ BUILD_PLAN.md                    Product plan and delivery roadmap
 IMPLEMENTATION_SPEC.md           Technical source of truth
 HANDOFF.md                       This operational handoff
 Package.swift                    SwiftPM package definition
+project.yml                      Reproducible XcodeGen iPad project definition
+MusicLibraryPad.xcodeproj/       Generated Xcode iPad project
 
 Sources/
   MusicDomain/
@@ -149,7 +151,7 @@ Tests/
   MusicPersistenceTests/MusicDatabaseTests.swift
 ```
 
-The package products are `MusicDomain`, `MusicPersistence`, `MusicApplication`, `MusicReadOnlyClient`, `MusicLibraryPadShell`, `MusicUIComponents`, and the `MusicLibraryMac` and `MusicLibraryPad` executables. SQLite is linked with the system `sqlite3` library; there are no third-party dependencies. The package declares macOS 15 and iOS 18 support. `MusicLibraryPad` is the SwiftUI iPad application composition target; signing, device deployment, and an Xcode project/archive workflow are still outside this SwiftPM repository.
+The package products are `MusicDomain`, `MusicPersistence`, `MusicApplication`, `MusicReadOnlyClient`, `MusicLibraryPadShell`, `MusicUIComponents`, and the `MusicLibraryMac` and `MusicLibraryPad` executables. SQLite is linked with the system `sqlite3` library; there are no third-party dependencies. The package declares macOS 15 and iOS 18 support. `MusicLibraryPad` is the SwiftUI iPad application composition target. Run `xcodegen generate` to reproduce `MusicLibraryPad.xcodeproj`; automatic signing is configured, but a Development Team must be selected in Xcode for a physical device/archive.
 
 ## 7. Current implemented behaviour
 
@@ -284,7 +286,7 @@ Storage-root authorization, Import Inbox scanning, embedded common-tag proposal 
 
 ### Read-only companion foundation
 
-`SnapshotClient` reads a published directory supplied by its host, verifies its JSON manifest and payload checksum, and maintains a local cache. `localCatalogue()` validates the cached payload checksum again before decoding it. `SnapshotSourceStore` persists a security-scoped selected source, and `SMBRootMappingStore` remains a separate device-local JSON preference store. `ReadOnlyDigitalAsset.resolve(using:)` only joins a safe relative path to a matching device-local mapped root; it refuses absolute/traversal paths and never falls back to a Mac path. `CompanionPlaybackController` checks for a resolved mapped URL and local file existence before using `AVAudioPlayer`; its transport state is device-local and it never mutates catalogue/mapping data. `MusicLibraryPadApp` is the SwiftUI composition target. `PadLibraryView` checks a selected manifest's modification date at launch, displays a non-blocking update-available indicator, and retains the existing cache until an explicit refresh. Xcode project generation/signing/device deployment and periodic foreground monitoring are not yet implemented.
+`SnapshotClient` reads a published directory supplied by its host, verifies its JSON manifest and payload checksum, and maintains a local cache. `localCatalogue()` validates the cached payload checksum again before decoding it. `SnapshotSourceStore` persists a security-scoped selected source, and `SMBRootMappingStore` remains a separate device-local JSON preference store. `ReadOnlyDigitalAsset.resolve(using:)` only joins a safe relative path to a matching device-local mapped root; it refuses absolute/traversal paths and never falls back to a Mac path. `CompanionPlaybackController` checks for a resolved mapped URL and local file existence before using `AVAudioPlayer`; its transport state is device-local and it never mutates catalogue/mapping data. `MusicLibraryPadApp` is the SwiftUI composition target. `PadLibraryView` checks a selected manifest's modification date at launch and whenever its scene becomes active, displays a non-blocking update-available indicator, and retains the existing cache until an explicit refresh. Run `xcodegen generate`, open `MusicLibraryPad.xcodeproj`, select a Development Team, then build the `MusicLibraryPad` scheme. In this sandbox, `xcodebuild` failed before compilation during local package resolution with a `ManifestLoading` file-cache conflict; `swift test` does compile the iPad executable and run all tests.
 
 ## 10. Non-negotiable invariants to preserve
 
@@ -305,31 +307,31 @@ Enforce these with transactions, validation, constraints, and tests where possib
 
 If an invariant needs to change, stop and document the proposed migration and user-facing impact before implementing it.
 
-## 11. Exact next slice: iPad lifecycle monitoring and deployment preparation
+## 11. Exact next slice: automatic Mac snapshot publication
 
-The package now has an iPad SwiftUI application composition target with Application Support paths and launch-time source manifest-date indication. The next slice should monitor when the app becomes active and prepare a reproducible Xcode/iPad deployment workflow, without weakening the read-only or security-scoped boundaries.
+The iPad companion now has foreground source-date checks and a reproducible generated Xcode project. The next highest-value gap is Mac integration: the tested publisher utility needs destination settings, manual/debounced automatic publication, retention, and status UI.
 
 ### Goal
 
-Ensure a deployed iPad app checks the selected source when returning to the foreground and can be built/signed through a reproducible project workflow.
+Publish verified snapshots from the Mac app on explicit request and after safe debounced catalogue changes, retaining prior revision files for recovery.
 
 ### Required persistence work
 
-1. Recheck a selected manifest date when the iPad scene becomes active, while retaining an unavailable-source fallback.
-2. Generate/add an Xcode project and iPad target configuration suitable for signing and simulator/device builds.
-3. Keep the Swift package implementation shared; do not duplicate snapshot, mapping, or playback logic in the app target.
+1. Add a Mac-configured publication destination, explicit Publish action, status/error display, and a debounced post-write publisher.
+2. Retain a bounded number of revision payloads; update the manifest only after complete successful publication.
+3. Never publish private bookmarks, live SQLite/WAL files, or partially migrated data.
 
 ### Required UI work
 
-1. Supply foreground refresh-status UI and a documented build/run path.
-2. Do not add upload, automatic metadata correction, tag writes, or catalogue edit controls.
+1. Add Mac publication settings and clear last-published/current-revision status.
+2. Do not alter iPad catalogue, mapping, or playback logic in this slice.
 
 ### Required tests
 
 Add persistence tests for at least:
 
-- Scene-active source check remains non-mutating and handles unavailable sources.
-- Build configuration produces the iPad target without changing Mac target behaviour.
+- Debounce/coalescing and manifest-last publication behavior.
+- Failed destination access preserves prior manifest/revisions and exposes a retryable error.
 
 Run `swift test` after the slice. Update this document's completed/not-implemented sections, tests, limitations, and next task before committing.
 

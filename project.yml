@@ -1,0 +1,30 @@
+name: MusicLibraryPad
+options:
+  bundleIdPrefix: com.timetochilltoo
+packages:
+  MusicLibrary:
+    path: .
+targets:
+  MusicLibraryPad:
+    type: application
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - Sources/MusicLibraryPad
+    dependencies:
+      - package: MusicLibrary
+        product: MusicLibraryPadShell
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.timetochilltoo.MusicLibraryPad
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "6.0"
+        CODE_SIGN_STYLE: Automatic
+        TARGETED_DEVICE_FAMILY: "1,2"
+schemes:
+  MusicLibraryPad:
+    build:
+      targets:
+        MusicLibraryPad: all
+    run:
+      config: Debug
