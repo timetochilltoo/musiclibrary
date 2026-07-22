@@ -151,6 +151,8 @@ private struct AlbumDetail: View {
     @State private var aliases: [AlbumAlias] = []
     @State private var showsAddDisc = false
     @State private var discForTrack: Disc?
+    @State private var showsAddAlias = false
+    @State private var showsAddContributor = false
 
     var body: some View {
         Form {
@@ -185,8 +187,14 @@ private struct AlbumDetail: View {
             } else {
                 Section("Tracks") { Button("Add Disc", systemImage: "plus") { showsAddDisc = true } }
             }
-            if !credits.isEmpty { Section("Contributors") { ForEach(credits) { Text("\($0.contributor.name) — \($0.role.rawValue)") } } }
-            if !aliases.isEmpty { Section("Aliases") { ForEach(aliases) { Text("\($0.name) (\($0.kind.rawValue))") } } }
+            Section("Contributors") {
+                ForEach(credits) { Text("\($0.contributor.name) — \($0.role.rawValue)") }
+                Button("Add Contributor", systemImage: "plus") { showsAddContributor = true }
+            }
+            Section("Aliases") {
+                ForEach(aliases) { Text("\($0.name) (\($0.kind.rawValue))") }
+                Button("Add Alias", systemImage: "plus") { showsAddAlias = true }
+            }
         }
         .formStyle(.grouped)
         .navigationTitle(album.displayTitle)
@@ -197,6 +205,8 @@ private struct AlbumDetail: View {
         }
         .sheet(isPresented: $showsAddDisc) { AddDiscEditor(library: library, albumID: album.id, onAdded: { await loadContent() }) }
         .sheet(item: $discForTrack) { disc in AddTrackEditor(library: library, disc: disc, onAdded: { await loadContent() }) }
+        .sheet(isPresented: $showsAddAlias) { AddAliasEditor(library: library, albumID: album.id, onAdded: { await loadContent() }) }
+        .sheet(isPresented: $showsAddContributor) { AddContributorEditor(library: library, albumID: album.id, onAdded: { await loadContent() }) }
     }
 
     private var locationName: String {
@@ -243,6 +253,38 @@ private struct AddTrackEditor: View {
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button("Add") { add() }.disabled(title.nilIfBlank == nil) } }
     }
     private func add() { Task { try? await library.addTrack(discID: disc.id, draft: .init(title: title)); await onAdded(); dismiss() } }
+}
+
+private struct AddAliasEditor: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var library: LibraryStore
+    let albumID: AlbumID
+    let onAdded: () async -> Void
+    @State private var name = ""
+    @State private var kind: AlbumAliasKind = .alternate
+    @State private var locale = ""
+    var body: some View {
+        Form { TextField("Alias", text: $name); Picker("Kind", selection: $kind) { ForEach(AlbumAliasKind.allCases, id: \.self) { Text($0.rawValue).tag($0) } }; TextField("Locale (optional)", text: $locale) }
+            .padding().frame(width: 380)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button("Add") { add() }.disabled(name.nilIfBlank == nil) } }
+    }
+    private func add() { Task { try? await library.addAlbumAlias(albumID: albumID, name: name, kind: kind, locale: locale.nilIfBlank); await onAdded(); dismiss() } }
+}
+
+private struct AddContributorEditor: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var library: LibraryStore
+    let albumID: AlbumID
+    let onAdded: () async -> Void
+    @State private var name = ""
+    @State private var creditedName = ""
+    @State private var role: ContributorRole = .albumArtist
+    var body: some View {
+        Form { TextField("Contributor name", text: $name); Picker("Role", selection: $role) { ForEach(ContributorRole.allCases, id: \.self) { Text($0.rawValue).tag($0) } }; TextField("Credited name (optional)", text: $creditedName) }
+            .padding().frame(width: 400)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button("Add") { add() }.disabled(name.nilIfBlank == nil) } }
+    }
+    private func add() { Task { try? await library.addAlbumContributor(albumID: albumID, name: name, role: role, creditedName: creditedName.nilIfBlank); await onAdded(); dismiss() } }
 }
 
 private struct LocationList: View {

@@ -23,7 +23,7 @@ Completed and verified:
 - Album editing plus box-member browse, confirmed move, removal with a standalone placement, and reorder workflows.
 - Schema migration 2 adds `physical_location_unknown`, removing ambiguity between a boxed album and a standalone CD whose location is unknown.
 - Thirteen automated domain/persistence tests, last verified with `swift test` on 22 July 2026.
-- The catalogue-content phase has begun: domain and persistence support now exists for ordered discs/tracks, album aliases, contributors, and album-level contributor roles. Album detail displays them and can add discs/tracks; UI management for aliases/contributors, track-level roles, and artwork are still pending.
+- The catalogue-content phase has begun: domain and persistence support now exists for ordered discs/tracks, album aliases, contributors, and album-level contributor roles. Album detail can display and add discs, tracks, aliases, and album contributor credits; track-level roles, editing/deletion, and artwork are still pending.
 
 Not yet implemented:
 
