@@ -3,7 +3,7 @@ import Foundation
 import MusicDomain
 
 @MainActor
-public final class PlaybackController: ObservableObject {
+public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayerDelegate {
     @Published public private(set) var queue = PlaybackQueue()
     @Published public private(set) var isPlaying = false
     @Published public private(set) var errorMessage: String?
@@ -13,7 +13,7 @@ public final class PlaybackController: ObservableObject {
     private var items: [(url: URL, trackID: TrackID, title: String)] = []
     private let defaultsKey = "MusicLibrary.playbackQueue"
 
-    public init() { if let data = UserDefaults.standard.data(forKey: defaultsKey), let queue = try? JSONDecoder().decode(PlaybackQueue.self, from: data) { self.queue = queue } }
+    public override init() { if let data = UserDefaults.standard.data(forKey: defaultsKey), let queue = try? JSONDecoder().decode(PlaybackQueue.self, from: data) { self.queue = queue }; super.init() }
     public func play(items: [(url: URL, trackID: TrackID, title: String)], startingAt index: Int) throws {
         guard items.indices.contains(index) else { throw NSError(domain: "MusicLibrary", code: 1, userInfo: [NSLocalizedDescriptionKey: "No playable queue item was selected."]) }
         self.items = items; queue.replace(with: items.map(\.trackID), startingAt: index); persist(); try loadCurrentAndPlay()
@@ -29,5 +29,6 @@ public final class PlaybackController: ObservableObject {
     public func dismissError() { errorMessage = nil }
     private func persist() { if let data = try? JSONEncoder().encode(queue) { UserDefaults.standard.set(data, forKey: defaultsKey) } }
     private func loadCurrentAndPlay() throws { guard let index = queue.currentIndex else { return }; try load(index: index) }
-    private func load(index: Int) throws { guard items.indices.contains(index) else { return }; let item = items[index]; player = try AVAudioPlayer(contentsOf: item.url); player?.prepareToPlay(); player?.play(); currentTitle = item.title; isPlaying = true }
+    private func load(index: Int) throws { guard items.indices.contains(index) else { return }; let item = items[index]; player = try AVAudioPlayer(contentsOf: item.url); player?.delegate = self; player?.prepareToPlay(); player?.play(); currentTitle = item.title; isPlaying = true }
+    nonisolated public func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) { guard flag else { return }; Task { @MainActor [weak self] in self?.next() } }
 }

@@ -291,6 +291,29 @@ public actor MusicDatabase {
         return .init(trackID: trackID, title: Self.text(at: 0, from: statement) ?? "", storageRootID: .init(rawValue: rootUUID), relativePath: Self.text(at: 2, from: statement) ?? "", availability: availability)
     }
 
+    public func createPlaylist(name: String) throws -> Playlist {
+        guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw ValidationError.requiredField("Playlist name") }
+        let id = PlaylistID(); let now = Self.milliseconds(Date())
+        try transaction { let statement = try Self.prepare("INSERT INTO playlist (id, name, created_at, updated_at) VALUES (?, ?, ?, ?);", on: connection); defer { sqlite3_finalize(statement) }; try Self.bind(id.description, at: 1, to: statement); try Self.bind(name, at: 2, to: statement); try Self.bind(now, at: 3, to: statement); try Self.bind(now, at: 4, to: statement); try Self.stepDone(statement, connection: connection); try incrementRevision() }
+        return .init(id: id, name: name)
+    }
+
+    public func playlists() throws -> [Playlist] {
+        let statement = try Self.prepare("SELECT id, name FROM playlist WHERE deleted_at IS NULL ORDER BY name COLLATE NOCASE;", on: connection); defer { sqlite3_finalize(statement) }; var values: [Playlist] = []
+        while sqlite3_step(statement) == SQLITE_ROW { guard let raw = Self.text(at: 0, from: statement), let uuid = UUID(uuidString: raw) else { throw DatabaseError.invalidIdentifier("playlist") }; values.append(.init(id: .init(rawValue: uuid), name: Self.text(at: 1, from: statement) ?? "")) }
+        return values
+    }
+
+    public func addTrack(_ trackID: TrackID, to playlistID: PlaylistID) throws {
+        try transaction { guard try Self.exists("SELECT 1 FROM playlist WHERE id = ? AND deleted_at IS NULL;", value: playlistID.description, on: connection) else { throw DatabaseError.notFound("Playlist") }; guard try Self.exists("SELECT 1 FROM track WHERE id = ?;", value: trackID.description, on: connection) else { throw DatabaseError.notFound("Track") }; let position = try Self.nextNumber("SELECT COALESCE(MAX(position), 0) + 1 FROM playlist_item WHERE playlist_id = ?;", ownerID: playlistID.description, on: connection); let statement = try Self.prepare("INSERT INTO playlist_item (id, playlist_id, track_id, position) VALUES (?, ?, ?, ?);", on: connection); defer { sqlite3_finalize(statement) }; try Self.bind(UUID().uuidString.lowercased(), at: 1, to: statement); try Self.bind(playlistID.description, at: 2, to: statement); try Self.bind(trackID.description, at: 3, to: statement); try Self.bind(Int64(position), at: 4, to: statement); try Self.stepDone(statement, connection: connection); try incrementRevision() }
+    }
+
+    public func playlistItems(playlistID: PlaylistID) throws -> [PlaylistItem] {
+        let statement = try Self.prepare("SELECT playlist_item.id, playlist_item.track_id, playlist_item.position, track.title FROM playlist_item JOIN track ON track.id = playlist_item.track_id WHERE playlist_item.playlist_id = ? ORDER BY playlist_item.position;", on: connection); defer { sqlite3_finalize(statement) }; try Self.bind(playlistID.description, at: 1, to: statement); var values: [PlaylistItem] = []
+        while sqlite3_step(statement) == SQLITE_ROW { guard let raw = Self.text(at: 0, from: statement), let id = UUID(uuidString: raw), let rawTrack = Self.text(at: 1, from: statement), let trackUUID = UUID(uuidString: rawTrack) else { throw DatabaseError.invalidIdentifier("playlist_item") }; values.append(.init(id: id, playlistID: playlistID, trackID: .init(rawValue: trackUUID), position: Int(Self.int(at: 2, from: statement) ?? 0), title: Self.text(at: 3, from: statement) ?? "")) }
+        return values
+    }
+
     public func finishImportBatch(_ batchID: ImportBatchID, status: ImportBatchStatus, errorSummary: String? = nil) throws {
         guard status != .scanning else { throw DatabaseError.invalidOperation("A finished import batch must have a terminal status.") }
         try transaction {

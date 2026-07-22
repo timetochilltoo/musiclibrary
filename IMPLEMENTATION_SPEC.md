@@ -22,20 +22,21 @@ Completed and verified:
 - Atomic album creation inside a box set, including inherited physical-location behaviour.
 - Album editing plus box-member browse, confirmed move, removal with a standalone placement, and reorder workflows.
 - Schema migration 2 adds `physical_location_unknown`, removing ambiguity between a boxed album and a standalone CD whose location is unknown.
-- Twenty-three automated domain/persistence tests across four suites, last verified with `swift test` on 22 July 2026.
+- Twenty-four automated domain/persistence tests across four suites, last verified with `swift test` on 22 July 2026.
 - Catalogue-content foundation complete: ordered discs/tracks, aliases, contributor roles at album and track level, selected album artwork with local-path provenance, and safe track/alias removal. Album detail supports manual creation of each of these relationships and user-selected front artwork without modifying source files.
 - Storage-root foundation complete: migration 3, persisted root records, security-scoped bookmark creation/resolution, availability checks, and Settings management. Offline and authorization-required roots are retained rather than removed.
 - Import Inbox foundation complete: migration 4, cancellable system-content-type scanning of available authorized roots, persistent batches/candidates/errors, recovery of interrupted scans, and Inbox cancellation/retry UI. Scans never create albums, tracks, or digital assets.
 - Metadata proposal/review foundation complete: migration 5, local AVFoundation common-tag/duration extraction, provenance-labelled grouping, and explicit approve-for-later/dismiss states. No review action creates a catalogue record, changes an audio file, or contacts an external service.
 - Confirmed digital-asset foundation complete: migration 6, explicit idempotent creation of albums/discs/tracks/assets from approved proposals, root-relative embedded-tag provenance, and calculated missing/offline/partial Library Health. No asset is copied, moved, relinked, or deleted.
 - Local playback foundation complete: AVFoundation shared-output player, root-authorized/file-verified asset resolution, persisted disc queue, previous/next/repeat/shuffle/volume/pause/stop/seek controls, and a Now Playing surface. Playback failures leave queue and catalogue records unchanged.
+- Playlist/queue refinement complete: ordered playlist persistence and editor surfaces, add-track actions, and normal playback-completion advancement through the resolved local queue.
 
 Not yet implemented:
 
-- General deletion/recovery, disc reordering/deletion, contributor-credit maintenance, full track-editor UI, file relocation, duplicate-content detection, playlists, playback-end advancement, snapshots, iPad, SMB mapping, tag write-back, lyrics, and AI.
+- General deletion/recovery, disc reordering/deletion, contributor-credit maintenance, full track-editor UI, file relocation, duplicate-content detection, snapshots, iPad, SMB mapping, tag write-back, lyrics, and AI.
 - Folder access, scanning, metadata services, import inbox, file relocation, duplicate detection, playback, playlists, snapshots, iPad, SMB mapping, tag write-back, lyrics, and AI.
 
-The next coding slice is **playlists and queue persistence refinement**. Do not start iPad playback or remote streaming until playlist and playback-end queue behavior are complete and tested.
+The next coding slice is **duplicate detection and safe relocation proposals**. Do not move or delete assets automatically.
 
 ## 1. Fixed decisions
 

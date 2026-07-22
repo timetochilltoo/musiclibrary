@@ -170,6 +170,7 @@ Implemented and tested:
 - Embedded common tags and duration are read locally through AVFoundation, preserved with `embedded-tags` provenance, and grouped deterministically into release proposals. Review can approve-for-later or dismiss a proposal; neither action creates catalogue records, changes catalogue revision, contacts external services, nor writes audio tags.
 - Confirming an approved proposal explicitly creates an album, ordered discs/tracks, and root-relative digital assets in one idempotent transaction. A repeated confirmation returns the already created album. Library Health derives missing/offline/partial status from track assets and current root status; it never relocates or deletes a file.
 - Local Mac playback resolves only available, authorized root-relative assets, verifies file existence, and uses normal shared AVFoundation output. Playing a track queues its disc; the persisted queue supports previous/next, repeat, shuffle, volume, pause, stop, and seek API. Missing/offline files fail locally without any catalogue mutation.
+- Playlists use the existing ordered playlist tables. The UI supports playlist creation, listing/detail, and adding album tracks. Normal playback completion advances the resolved local queue; no queue failure changes catalogue data.
 - Increment catalogue revision once per successful high-level write operation.
 
 ### macOS UI
@@ -185,6 +186,7 @@ Implemented:
 - Import Inbox list/detail with scan progress, cancellation, retry, candidate paths/types, embedded tag values, grouped release proposals, confidence/provenance, explicit review controls, and an explicit create-catalogue-records confirmation.
 - Settings shows calculated Library Health issues for missing, offline, and partial digital albums.
 - Album tracks have Play controls; a persistent Now Playing strip provides transport, Queue (shuffle/repeat), volume, and stop controls.
+- Playlist navigation provides playlist creation, membership detail, and add-track actions.
 - Error alerts and initial database-opening progress UI.
 
 Runtime database location on the Mac:
@@ -197,7 +199,7 @@ This database is user data. Do not remove it during development. If a destructiv
 
 ## 8. Current tests and verification baseline
 
-The last verified baseline contains 23 tests in 4 suites. Run `swift test`; do not rely on this handoff alone.
+The last verified baseline contains 24 tests in 4 suites. Run `swift test`; do not rely on this handoff alone.
 
 `MusicDomainTests/AlbumTests.swift` verifies:
 
@@ -222,6 +224,7 @@ The last verified baseline contains 23 tests in 4 suites. Run `swift test`; do n
 - Metadata-proposal persistence, approval state, and proof that review does not create catalogue records or alter catalogue revision.
 - Idempotent approved-proposal confirmation and offline-root Library Health derivation.
 - Queue ordering/repeat and Codable state restoration.
+- Playlist ordered membership persistence.
 
 `MusicApplicationTests/ImportScannerTests.swift` verifies content-type audio discovery, hidden-file exclusion, cancellation before enumeration, and Unicode/multi-disc proposal grouping.
 
@@ -261,7 +264,7 @@ Album edits and box membership workflows are available. Album detail supports ma
 
 ### Digital media
 
-Storage-root authorization, Import Inbox scanning, embedded common-tag proposal review, confirmed digital assets, basic Library Health, and local Mac playback are implemented. No external metadata lookup, playlists, SMB audio access, snapshots, iPad app, lyrics, tag write-back, or AI is implemented. Duplicate-content hashing, relocation, and automatic playback-end advancement remain future work. Existing strings/enums/schema tables beyond these slices are scaffolding, not completed features.
+Storage-root authorization, Import Inbox scanning, embedded common-tag proposal review, confirmed digital assets, basic Library Health, local Mac playback, and basic playlists are implemented. No external metadata lookup, SMB audio access, snapshots, iPad app, lyrics, tag write-back, or AI is implemented. Duplicate-content hashing and relocation remain future work.
 
 ## 10. Non-negotiable invariants to preserve
 
@@ -282,34 +285,31 @@ Enforce these with transactions, validation, constraints, and tests where possib
 
 If an invariant needs to change, stop and document the proposed migration and user-facing impact before implementing it.
 
-## 11. Exact next slice: playlists and queue persistence refinement
+## 11. Exact next slice: duplicate detection and relocation
 
-Local Mac playback is complete. Build playlist management and playback-end advancement before any iPad playback or remote streaming.
+Playlists and local queue refinement are complete. Improve library health before snapshot/iPad work; never move or delete an audio file automatically.
 
 ### Goal
 
-Allow the user to create ordered playlists from catalogue tracks and improve local queue restoration/end-of-track behavior.
+Detect duplicate assets and safely propose relinking after a root/path change.
 
 ### Required persistence work
 
-1. Use existing playlist/playlist_item schema with ordered, duplicate-safe mutations and explicit track/asset choice.
-2. Advance local playback on normal completion according to repeat/shuffle, while preserving failures as local queue errors.
-3. Restore queue state on launch and clearly mark unresolved entries without modifying catalogue records.
-4. Do not add remote streaming, iPad playback, or tag write-back.
+1. Add content-hash/quick-signature calculation only when a user explicitly requests verification.
+2. Propose, never automatically apply, a relink when a root or file path changes.
+3. Keep duplicate/missing/offline health visible without destructive repair.
 
 ### Required UI work
 
-1. Add playlist list/detail/editor and add-to-playlist controls.
-2. Add a queue inspector with unresolved-item status.
-3. Do not add iPad streaming or automatic metadata correction.
+1. Add Library Health duplicate/relink review actions with clear before/after paths.
+2. Do not add iPad streaming or automatic metadata correction.
 
 ### Required tests
 
 Add persistence tests for at least:
 
-- Playlist ordering/mutations and persistence.
-- Playback-end repeat/shuffle behavior and queue restoration with unavailable items.
-- No remote playback or catalogue writes from transport failures.
+- Hash/signature duplicate classification and non-destructive relink proposals.
+- Missing/offline behavior with no automatic path change.
 
 Run `swift test` after the slice. Update this document's completed/not-implemented sections, tests, limitations, and next task before committing.
 
@@ -317,7 +317,7 @@ Run `swift test` after the slice. Update this document's completed/not-implement
 
 Do not implement all of this at once. Complete and test one vertical slice per commit group.
 
-1. Playlists and queue persistence refinement.
+1. Duplicate detection and safe relocation proposals.
 5. Digital assets, availability health, duplicate detection, and relocation.
 6. Lossless playback engine, queue, and playlists.
 7. Library Health, soft delete/recovery, edit history, JSON/CSV export.

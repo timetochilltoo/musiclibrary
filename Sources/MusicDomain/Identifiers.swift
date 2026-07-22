@@ -16,6 +16,7 @@ public struct ContributorID: MusicIdentifier { public let rawValue: UUID; public
 public struct PhysicalLocationID: MusicIdentifier { public let rawValue: UUID; public init(rawValue: UUID) { self.rawValue = rawValue } }
 public struct BoxSetID: MusicIdentifier { public let rawValue: UUID; public init(rawValue: UUID) { self.rawValue = rawValue } }
 public struct DigitalAssetID: MusicIdentifier { public let rawValue: UUID; public init(rawValue: UUID) { self.rawValue = rawValue } }
+public struct PlaylistID: MusicIdentifier { public let rawValue: UUID; public init(rawValue: UUID) { self.rawValue = rawValue } }
 public struct StorageRootID: MusicIdentifier { public let rawValue: UUID; public init(rawValue: UUID) { self.rawValue = rawValue } }
 public struct ImportBatchID: MusicIdentifier { public let rawValue: UUID; public init(rawValue: UUID) { self.rawValue = rawValue } }
 public struct ImportCandidateID: MusicIdentifier { public let rawValue: UUID; public init(rawValue: UUID) { self.rawValue = rawValue } }

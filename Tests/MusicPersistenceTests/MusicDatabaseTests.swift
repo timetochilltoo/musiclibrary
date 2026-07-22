@@ -224,6 +224,20 @@ struct MusicDatabaseTests {
         #expect(try await database.libraryHealthIssues().map(\.kind) == [.offline])
     }
 
+    @Test("Playlists preserve ordered track membership")
+    func playlists() async throws {
+        let database = try MusicDatabase(url: temporaryDatabaseURL())
+        try await database.migrate()
+        let album = try await database.createAlbum(.init(title: "Album"))
+        let disc = try await database.createDisc(albumID: album.id, title: nil)
+        let first = try await database.createTrack(discID: disc.id, draft: .init(title: "First"))
+        let second = try await database.createTrack(discID: disc.id, draft: .init(title: "Second"))
+        let playlist = try await database.createPlaylist(name: "Favourites")
+        try await database.addTrack(second.id, to: playlist.id)
+        try await database.addTrack(first.id, to: playlist.id)
+        #expect(try await database.playlistItems(playlistID: playlist.id).map(\.trackID) == [second.id, first.id])
+    }
+
     private func temporaryDatabaseURL() -> URL {
         FileManager.default.temporaryDirectory.appending(path: "MusicDatabaseTests-\(UUID().uuidString).sqlite")
     }

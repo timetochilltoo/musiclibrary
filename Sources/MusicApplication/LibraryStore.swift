@@ -11,6 +11,7 @@ public final class LibraryStore: ObservableObject {
     @Published public private(set) var storageRoots: [StorageRoot] = []
     @Published public private(set) var importBatches: [ImportBatch] = []
     @Published public private(set) var libraryHealthIssues: [LibraryHealthIssue] = []
+    @Published public private(set) var playlists: [Playlist] = []
     @Published public private(set) var isReady = false
     @Published public private(set) var errorMessage: String?
 
@@ -45,12 +46,14 @@ public final class LibraryStore: ObservableObject {
         async let loadedStorageRoots = database.storageRoots()
         async let loadedImportBatches = database.importBatches()
         async let loadedHealth = database.libraryHealthIssues()
+        async let loadedPlaylists = database.playlists()
         albums = try await loadedAlbums
         locations = try await loadedLocations
         boxSets = try await loadedBoxSets
         storageRoots = try await loadedStorageRoots
         importBatches = try await loadedImportBatches
         libraryHealthIssues = try await loadedHealth
+        playlists = try await loadedPlaylists
     }
 
     public func search(_ term: String) async {
@@ -206,6 +209,9 @@ public final class LibraryStore: ObservableObject {
         for track in discTracks { let asset = try await playbackURL(for: track.id); results.append((asset.url, track.id, asset.title)) }
         return results
     }
+    public func playlistItems(_ id: PlaylistID) async throws -> [PlaylistItem] { guard let database else { throw DatabaseError.notFound("Catalogue database") }; return try await database.playlistItems(playlistID: id) }
+    public func addPlaylist(name: String) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; _ = try await database.createPlaylist(name: name); try await reload() }
+    public func addTrack(_ trackID: TrackID, toPlaylist id: PlaylistID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.addTrack(trackID, to: id); try await reload() }
 
     public func startImportScan(rootID: StorageRootID) async throws {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }

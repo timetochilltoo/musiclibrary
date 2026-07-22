@@ -49,12 +49,14 @@ private struct LibraryShellView: View {
     @State private var selectedAlbumID: AlbumID?
     @State private var selectedBoxSetID: BoxSetID?
     @State private var selectedImportBatchID: ImportBatchID?
+    @State private var selectedPlaylistID: PlaylistID?
     @State private var searchText = ""
     @State private var showsAlbumEditor = false
     @State private var showsLocationEditor = false
     @State private var showsBoxSetEditor = false
     @State private var showsStorageRootPicker = false
     @State private var showsScanRootPicker = false
+    @State private var showsPlaylistEditor = false
     @State private var albumToEdit: Album?
 
     var body: some View {
@@ -79,6 +81,7 @@ private struct LibraryShellView: View {
         .sheet(isPresented: $showsLocationEditor) { LocationEditor(library: library) }
         .sheet(isPresented: $showsBoxSetEditor) { BoxSetEditor(library: library) }
         .sheet(isPresented: $showsScanRootPicker) { ScanRootPicker(library: library) }
+        .sheet(isPresented: $showsPlaylistEditor) { PlaylistEditor(library: library) }
         .sheet(item: $albumToEdit) { album in EditAlbumEditor(library: library, album: album) }
         .fileImporter(isPresented: $showsStorageRootPicker, allowedContentTypes: [.folder]) { result in
             if case let .success(url) = result { Task { try? await library.addStorageRoot(url: url) } }
@@ -129,6 +132,9 @@ private struct LibraryShellView: View {
                 }.tag(batch.id)
             }
             .overlay { if library.isReady && library.importBatches.isEmpty { ContentUnavailableView("No import batches", systemImage: "tray", description: Text("Choose an available music folder to scan into the review inbox.")) } }
+        case .playlists:
+            List(library.playlists, selection: $selectedPlaylistID) { playlist in Text(playlist.name).tag(playlist.id) }
+            .overlay { if library.isReady && library.playlists.isEmpty { ContentUnavailableView("No playlists", systemImage: "music.note.list", description: Text("Create a playlist, then add tracks from an album.")) } }
             .overlay {
                 if library.isReady && library.boxSets.isEmpty {
                     ContentUnavailableView("No box sets", systemImage: "shippingbox", description: Text("Create a box set to group its member albums at one location."))
@@ -146,6 +152,8 @@ private struct LibraryShellView: View {
             BoxSetDetail(library: library, boxSet: box)
         } else if section == .importInbox, let selectedImportBatchID, let batch = library.importBatches.first(where: { $0.id == selectedImportBatchID }) {
             ImportBatchDetail(library: library, batch: batch)
+        } else if section == .playlists, let selectedPlaylistID, let playlist = library.playlists.first(where: { $0.id == selectedPlaylistID }) {
+            PlaylistDetail(library: library, playlist: playlist)
         } else if let selectedAlbumID, let album = library.albums.first(where: { $0.id == selectedAlbumID }) {
             AlbumDetail(library: library, playback: playback, album: album, locations: library.locations, onEdit: { albumToEdit = album })
         } else {
@@ -155,12 +163,13 @@ private struct LibraryShellView: View {
 
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
         ToolbarItem(placement: .primaryAction) {
-            Button(section == .locations ? "Add Location" : section == .boxSets ? "Add Box Set" : section == .settings ? "Add Music Folder" : section == .importInbox ? "Scan Music Folder" : "Add Album", systemImage: "plus") {
+            Button(section == .locations ? "Add Location" : section == .boxSets ? "Add Box Set" : section == .settings ? "Add Music Folder" : section == .importInbox ? "Scan Music Folder" : section == .playlists ? "Add Playlist" : "Add Album", systemImage: "plus") {
                 switch section {
                 case .locations: showsLocationEditor = true
                 case .boxSets: showsBoxSetEditor = true
                 case .settings: showsStorageRootPicker = true
                 case .importInbox: showsScanRootPicker = true
+                case .playlists: showsPlaylistEditor = true
                 default: showsAlbumEditor = true
                 }
             }
@@ -248,6 +257,20 @@ private struct ScanRootPicker: View {
     }
 
     private func scan(_ root: StorageRoot) { Task { try? await library.startImportScan(rootID: root.id); dismiss() } }
+}
+
+private struct PlaylistEditor: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var library: LibraryStore
+    @State private var name = ""
+    var body: some View { Form { TextField("Playlist name", text: $name) }.padding().frame(width: 360).toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button("Create") { Task { try? await library.addPlaylist(name: name); dismiss() } }.disabled(name.nilIfBlank == nil) } } }
+}
+
+private struct PlaylistDetail: View {
+    @ObservedObject var library: LibraryStore
+    let playlist: Playlist
+    @State private var items: [PlaylistItem] = []
+    var body: some View { List(items) { item in Text("\(item.position). \(item.title)") }.navigationTitle(playlist.name).task(id: playlist.id) { items = (try? await library.playlistItems(playlist.id)) ?? [] } }
 }
 
 private struct ImportBatchDetail: View {
@@ -352,6 +375,7 @@ private struct AlbumDetail: View {
                                 Text("\(track.number). \(track.title)")
                                 Spacer()
                                 Button("Play", systemImage: "play.fill") { play(track) }.labelStyle(.iconOnly)
+                                Menu("Add to Playlist") { ForEach(library.playlists) { playlist in Button(playlist.name) { Task { try? await library.addTrack(track.id, toPlaylist: playlist.id) } } } }.labelStyle(.iconOnly)
                                 Button("Credit", systemImage: "person.badge.plus") { trackForContributor = track }
                                     .labelStyle(.iconOnly)
                                 Button("Remove", systemImage: "trash", role: .destructive) { Task { try? await library.deleteTrack(track.id); await loadContent() } }
