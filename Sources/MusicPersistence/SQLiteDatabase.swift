@@ -300,7 +300,7 @@ public actor MusicDatabase {
     public func catalogueExportJSON() throws -> String {
         let albums = try self.albums()
         let digitalAlbumIDs = try albumIDsWithDigitalAssets()
-        let rows: [[String: Any]] = albums.map {
+        let rows: [[String: Any]] = try albums.map {
             var row: [String: Any] = [
                 "id": $0.id.description,
                 "title": $0.title,
@@ -310,6 +310,7 @@ public actor MusicDatabase {
             if let editionLabel = $0.editionLabel, !editionLabel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { row["editionLabel"] = editionLabel }
             if let releaseYear = $0.releaseYear { row["releaseYear"] = releaseYear }
             if let catalogueNumber = $0.catalogueNumber, !catalogueNumber.isEmpty { row["catalogueNumber"] = catalogueNumber }
+            row["discs"] = try snapshotDiscRows(albumID: $0.id)
             return row
         }
         let data = try JSONSerialization.data(withJSONObject: ["format": "music-library-json", "schemaVersion": try schemaVersion(), "catalogueRevision": try currentRevision(), "albums": rows], options: [.prettyPrinted, .sortedKeys]); return String(decoding: data, as: UTF8.self)
@@ -324,6 +325,36 @@ public actor MusicDatabase {
             if let id = Self.text(at: 0, from: statement) { values.insert(id) }
         }
         return values
+    }
+
+    private func snapshotDiscRows(albumID: AlbumID) throws -> [[String: Any]] {
+        try discs(albumID: albumID).map { disc in
+            var row: [String: Any] = ["id": disc.id.description, "number": disc.number, "tracks": try snapshotTrackRows(discID: disc.id)]
+            if let title = disc.title, !title.isEmpty { row["title"] = title }
+            return row
+        }
+    }
+
+    private func snapshotTrackRows(discID: DiscID) throws -> [[String: Any]] {
+        try tracks(discID: discID).map { track in
+            var row: [String: Any] = ["id": track.id.description, "number": track.number, "title": track.title, "assets": try snapshotAssetRows(trackID: track.id)]
+            if let durationMilliseconds = track.durationMilliseconds { row["durationMilliseconds"] = durationMilliseconds }
+            return row
+        }
+    }
+
+    private func snapshotAssetRows(trackID: TrackID) throws -> [[String: Any]] {
+        let statement = try Self.prepare("SELECT digital_asset.storage_root_id, digital_asset.relative_path, digital_asset.availability, storage_root.status FROM digital_asset JOIN storage_root ON storage_root.id = digital_asset.storage_root_id WHERE digital_asset.track_id = ? ORDER BY digital_asset.id;", on: connection)
+        defer { sqlite3_finalize(statement) }
+        try Self.bind(trackID.description, at: 1, to: statement)
+        var rows: [[String: Any]] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let rootID = Self.text(at: 0, from: statement), let relativePath = Self.text(at: 1, from: statement) else { continue }
+            let stored = Self.text(at: 2, from: statement) ?? "invalid"
+            let rootOffline = Self.text(at: 3, from: statement) != StorageRootStatus.available.rawValue
+            rows.append(["storageRootID": rootID, "relativePath": relativePath, "availability": rootOffline ? DigitalAssetAvailability.rootOffline.rawValue : stored])
+        }
+        return rows
     }
 
     public func recordAssetFingerprint(_ assetID: DigitalAssetID, contentHash: String, quickSignature: String) throws {

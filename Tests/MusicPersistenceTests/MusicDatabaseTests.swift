@@ -253,6 +253,22 @@ struct MusicDatabaseTests {
         #expect(try await database.playlistItems(playlistID: playlist.id).map(\.trackID) == [second.id, first.id])
     }
 
+    @Test("Published catalogue contains ordered read-only disc and track rows")
+    func publishedTrackRows() async throws {
+        let database = try MusicDatabase(url: temporaryDatabaseURL())
+        try await database.migrate()
+        let album = try await database.createAlbum(.init(title: "Published"))
+        let disc = try await database.createDisc(albumID: album.id, title: "Main")
+        _ = try await database.createTrack(discID: disc.id, draft: .init(title: "First", durationMilliseconds: 1234))
+        let object = try JSONSerialization.jsonObject(with: Data((try await database.catalogueExportJSON()).utf8)) as? [String: Any]
+        let albums = try #require(object?["albums"] as? [[String: Any]])
+        let discs = try #require(albums.first?["discs"] as? [[String: Any]])
+        let tracks = try #require(discs.first?["tracks"] as? [[String: Any]])
+        #expect(discs.first?["title"] as? String == "Main")
+        #expect(tracks.first?["title"] as? String == "First")
+        #expect((tracks.first?["assets"] as? [[String: Any]])?.isEmpty == true)
+    }
+
     private func temporaryDatabaseURL() -> URL {
         FileManager.default.temporaryDirectory.appending(path: "MusicDatabaseTests-\(UUID().uuidString).sqlite")
     }

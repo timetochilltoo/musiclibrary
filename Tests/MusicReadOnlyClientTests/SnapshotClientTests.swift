@@ -49,3 +49,13 @@ func localCatalogueBrowsing() throws {
     #expect(catalogue.albums.filter { $0.matches("TOCT") }.map(\.id) == ["one"])
     #expect(catalogue.albums.filter { $0.matches("宇多田") }.map(\.id) == ["one"])
 }
+
+@Test("Read-only assets resolve only through matching safe device-local roots")
+func rootRelativeAssetResolution() {
+    let asset = ReadOnlyDigitalAsset(storageRootID: "root-a", relativePath: "Artist/Album/01.flac", availability: "available")
+    let mappings = [SMBRootMapping(publishedRootID: "root-a", localURL: URL(fileURLWithPath: "/Volumes/Music"))]
+    #expect(asset.resolve(using: mappings) == .mapped(URL(fileURLWithPath: "/Volumes/Music/Artist/Album/01.flac")))
+    #expect(asset.resolve(using: []) == .unmappedRoot)
+    #expect(ReadOnlyDigitalAsset(storageRootID: "root-a", relativePath: "../outside.flac", availability: "available").resolve(using: mappings) == .unsafeRelativePath)
+    #expect(ReadOnlyDigitalAsset(storageRootID: "root-a", relativePath: "Artist/Album/01.flac", availability: "rootOffline").resolve(using: mappings) == .unavailable("rootOffline"))
+}

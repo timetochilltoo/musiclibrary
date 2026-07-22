@@ -44,7 +44,7 @@ public struct PadLibraryView: View {
                             Text("No albums match your search.").foregroundStyle(.secondary)
                         }
                         ForEach(filteredAlbums) { album in
-                            NavigationLink { PadAlbumDetailView(album: album) } label: { PadAlbumRow(album: album) }
+                            NavigationLink { PadAlbumDetailView(album: album, mappings: mappings) } label: { PadAlbumRow(album: album) }
                         }
                     } else {
                         Text("Refresh a verified snapshot to browse albums.").foregroundStyle(.secondary)
@@ -152,8 +152,12 @@ public struct PadAlbumRow: View {
 
 public struct PadAlbumDetailView: View {
     public let album: ReadOnlyAlbum
+    public let mappings: [SMBRootMapping]
 
-    public init(album: ReadOnlyAlbum) { self.album = album }
+    public init(album: ReadOnlyAlbum, mappings: [SMBRootMapping] = []) {
+        self.album = album
+        self.mappings = mappings
+    }
 
     public var body: some View {
         List {
@@ -167,7 +171,31 @@ public struct PadAlbumDetailView: View {
                 LabeledContent("CD", value: album.hasCD ? "Available" : "Not catalogued")
                 LabeledContent("Digital", value: album.hasDigital ? "Available" : "Not catalogued")
             }
+            if !album.discs.isEmpty {
+                ForEach(album.discs) { disc in
+                    Section(disc.title ?? "Disc \(disc.number)") {
+                        ForEach(disc.tracks) { track in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("\(track.number). \(track.title)")
+                                Text(assetStatus(for: track))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+            }
         }
         .navigationTitle(album.displayTitle)
+    }
+
+    private func assetStatus(for track: ReadOnlyTrack) -> String {
+        guard let asset = track.assets.first else { return "No digital file catalogued" }
+        return switch asset.resolve(using: mappings) {
+        case .mapped: "SMB root mapped"
+        case .unmappedRoot: "SMB root is not mapped on this device"
+        case .unavailable(let state): "Digital file unavailable (\(state))"
+        case .unsafeRelativePath: "Unsafe published path refused"
+        }
     }
 }

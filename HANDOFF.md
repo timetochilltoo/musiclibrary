@@ -178,9 +178,9 @@ Implemented and tested:
 - Confirming an approved proposal explicitly creates an album, ordered discs/tracks, and root-relative digital assets in one idempotent transaction. A repeated confirmation returns the already created album. Library Health derives missing/offline/partial status from track assets and current root status; it never relocates or deletes a file.
 - Local Mac playback resolves only available, authorized root-relative assets, verifies file existence, and uses normal shared AVFoundation output. Playing a track queues its disc; the persisted queue supports previous/next, repeat, shuffle, volume, pause, stop, and seek API. Missing/offline files fail locally without any catalogue mutation.
 - Playlists use the existing ordered playlist tables. The UI supports playlist creation, listing/detail, and adding album tracks. Normal playback completion advances the resolved local queue; no queue failure changes catalogue data.
-- Snapshot publication writes a revisioned sanitized JSON payload and writes the SHA-256-protected manifest last. Its current payload contains a format, schema version, catalogue revision, and album rows with ID, title, optional edition/year/catalogue number, and CD/digital flags. The read-only client refuses malformed formats, unsafe names, stale revisions, and checksum failures; it atomically retains the last verified cache after any failure.
+- Snapshot publication writes a revisioned sanitized JSON payload and writes the SHA-256-protected manifest last. Its current payload contains a format, schema version, catalogue revision, album rows with ID, edition/year/catalogue/CD/digital data, ordered discs/tracks, and root-relative digital-asset references. It contains no Mac bookmark or absolute path. The read-only client refuses malformed formats, unsafe names, stale revisions, and checksum failures; it atomically retains the last verified cache after any failure.
 - Device-local SMB root mappings are persisted separately from published snapshot content. Replacing a mapping changes only the selected published-root ID.
-- `MusicLibraryPadShell` supplies a read-only SwiftUI navigation view which shows whether the local verified snapshot cache exists, lists the device-local SMB mappings, and browses the verified payload as searchable album list/detail views. It persists a user-selected snapshot folder as a security-scoped bookmark, offers manual verified refresh, and provides user-selected SMB root add/replace/remove controls. It exposes no catalogue edit controls.
+- `MusicLibraryPadShell` supplies a read-only SwiftUI navigation view which shows whether the local verified snapshot cache exists, lists the device-local SMB mappings, and browses the verified payload as searchable album list/detail views. Album detail shows tracks and whether their first asset is mapped, unmapped, unavailable, or refused for an unsafe path. It persists a user-selected snapshot folder as a security-scoped bookmark, offers manual verified refresh, and provides user-selected SMB root add/replace/remove controls. It exposes no catalogue edit controls or playback controls.
 - Increment catalogue revision once per successful high-level write operation.
 
 ### macOS UI
@@ -209,7 +209,7 @@ This database is user data. Do not remove it during development. If a destructiv
 
 ## 8. Current tests and verification baseline
 
-The last verified baseline contains 31 tests in 4 suites, run with a rebuilt `swift test` followed by `swift test --skip-build` on 22 July 2026. Run `swift test`; do not rely on this handoff alone.
+The last verified baseline contains 33 tests in 4 suites, run with a rebuilt `swift test` followed by `swift test --skip-build` on 22 July 2026. Run `swift test`; do not rely on this handoff alone.
 
 `MusicDomainTests/AlbumTests.swift` verifies:
 
@@ -238,7 +238,7 @@ The last verified baseline contains 31 tests in 4 suites, run with a rebuilt `sw
 
 `MusicApplicationTests/ImportScannerTests.swift` verifies content-type audio discovery, hidden-file exclusion, cancellation before enumeration, and Unicode/multi-disc proposal grouping.
 
-`MusicReadOnlyClientTests/SnapshotClientTests.swift` verifies verified snapshot replacement, checksum-failure fallback to the prior local cache, device-local SMB mapping replacement semantics, snapshot-source bookmark persistence/clear behavior, and verified-payload Unicode/search decoding.
+`MusicReadOnlyClientTests/SnapshotClientTests.swift` verifies verified snapshot replacement, checksum-failure fallback to the prior local cache, device-local SMB mapping replacement semantics, snapshot-source bookmark persistence/clear behavior, verified-payload Unicode/search decoding, and root-relative asset resolution (including unmapped, unavailable, and traversal-path refusal states).
 
 There are no UI automation or visual snapshot tests yet. Building via `swift test` compiles the macOS executable, but does not exercise a real UI session. Add targeted tests before making core data behaviour more complex.
 
@@ -280,7 +280,7 @@ Storage-root authorization, Import Inbox scanning, embedded common-tag proposal 
 
 ### Read-only companion foundation
 
-`SnapshotClient` reads a published directory supplied by its host, verifies its JSON manifest and payload checksum, and maintains a local cache. `localCatalogue()` validates the cached payload checksum again before decoding it. `SnapshotSourceStore` persists a security-scoped selected source, and `SMBRootMappingStore` remains a separate device-local JSON preference store. `PadLibraryView` supplies folder-picker controls, manual refresh with non-blocking failure feedback, mapping add/replace/removal, Unicode search, and read-only album detail. There is still no separately packaged iPad application target, automatic manifest-date polling, published track/asset data, a NAS-specific transport, or companion playback.
+`SnapshotClient` reads a published directory supplied by its host, verifies its JSON manifest and payload checksum, and maintains a local cache. `localCatalogue()` validates the cached payload checksum again before decoding it. `SnapshotSourceStore` persists a security-scoped selected source, and `SMBRootMappingStore` remains a separate device-local JSON preference store. `ReadOnlyDigitalAsset.resolve(using:)` only joins a safe relative path to a matching device-local mapped root; it refuses absolute/traversal paths and never falls back to a Mac path. `PadLibraryView` supplies folder-picker controls, manual refresh with non-blocking failure feedback, mapping add/replace/removal, Unicode search, and read-only track detail. There is still no separately packaged iPad application target, automatic manifest-date polling, or companion playback.
 
 ## 10. Non-negotiable invariants to preserve
 
@@ -301,31 +301,31 @@ Enforce these with transactions, validation, constraints, and tests where possib
 
 If an invariant needs to change, stop and document the proposed migration and user-facing impact before implementing it.
 
-## 11. Exact next slice: companion track payload and SMB resolution
+## 11. Exact next slice: read-only iPad playback foundation
 
-The companion now browses a verified cached album payload with search and edition/CD/digital detail. The next slice must add tracks and root-relative digital asset references to the published payload, resolving them only through device-local SMB mappings. Playback remains a later action.
+The companion now publishes and displays ordered track/asset data and resolves a safe asset URL only through a matching device-local SMB mapping. The next slice may add a small read-only playback engine which opens only resolved, available local URLs; it must never alter the catalogue, asset path, or mapping automatically.
 
 ### Goal
 
-Make the read-only companion able to identify the audio file for an album track safely, without treating a Mac/NAS path as an iPad-local path.
+Play a selected, safely resolved companion track while keeping the catalogue and file organisation completely read-only.
 
 ### Required persistence work
 
-1. Publish discs, tracks, and root-relative assets without publishing Mac security bookmarks or absolute local paths.
-2. Resolve an asset only through a matching device-local mapped root; report an unmapped/offline state instead of guessing a URL.
-3. Keep all mapping and source preferences outside the verified catalogue payload.
+1. Introduce an iPad-safe player abstraction that accepts only a resolved available URL.
+2. Keep queue/transport state device-local and do not publish favourites, plays, or edits.
+3. Make unmapped, offline, missing, and unsafe assets non-playable with clear UI feedback.
 
 ### Required UI work
 
-1. Add read-only track presentation and a clear mapped/unmapped/offline indicator.
-2. Do not add upload, automatic metadata correction, or playback controls in this slice.
+1. Add one-tap play/pause/stop for a mapped track and basic failure feedback.
+2. Do not add upload, automatic metadata correction, tag writes, or catalogue edit controls.
 
 ### Required tests
 
 Add persistence tests for at least:
 
-- Root-relative asset payload encoding and device-local mapping resolution.
-- Missing mapping/offline states never construct or expose an arbitrary fallback path.
+- Player rejects unresolved/non-available URLs and leaves catalogue state unchanged.
+- Mapped URL construction, failed open, and transport state are tested without a live NAS.
 
 Run `swift test` after the slice. Update this document's completed/not-implemented sections, tests, limitations, and next task before committing.
 
