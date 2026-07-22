@@ -31,6 +31,7 @@ let package = Package(
             dependencies: ["MusicDomain", "MusicApplication", "MusicUIComponents"]
         ),
         .testTarget(name: "MusicDomainTests", dependencies: ["MusicDomain"]),
-        .testTarget(name: "MusicPersistenceTests", dependencies: ["MusicDomain", "MusicPersistence"])
+        .testTarget(name: "MusicPersistenceTests", dependencies: ["MusicDomain", "MusicPersistence"]),
+        .testTarget(name: "MusicApplicationTests", dependencies: ["MusicDomain", "MusicApplication"])
     ]
 )

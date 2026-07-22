@@ -109,6 +109,75 @@ public actor MusicDatabase {
         }
     }
 
+    public func createImportBatch(storageRootID: StorageRootID, sourceDescription: String) throws -> ImportBatch {
+        let id = ImportBatchID(); let now = Date()
+        try transaction {
+            let root = try Self.prepare("SELECT status FROM storage_root WHERE id = ?;", on: connection)
+            defer { sqlite3_finalize(root) }; try Self.bind(storageRootID.description, at: 1, to: root)
+            guard sqlite3_step(root) == SQLITE_ROW else { throw DatabaseError.notFound("Storage root") }
+            guard Self.text(at: 0, from: root) == StorageRootStatus.available.rawValue else { throw DatabaseError.invalidOperation("The selected storage root is not available.") }
+            let statement = try Self.prepare("INSERT INTO import_batch (id, kind, status, source_description, started_at, storage_root_id) VALUES (?, 'scan', ?, ?, ?, ?);", on: connection)
+            defer { sqlite3_finalize(statement) }; try Self.bind(id.description, at: 1, to: statement); try Self.bind(ImportBatchStatus.scanning.rawValue, at: 2, to: statement); try Self.bind(sourceDescription, at: 3, to: statement); try Self.bind(Self.milliseconds(now), at: 4, to: statement); try Self.bind(storageRootID.description, at: 5, to: statement); try Self.stepDone(statement, connection: connection)
+        }
+        return .init(id: id, storageRootID: storageRootID, status: .scanning, sourceDescription: sourceDescription, startedAt: now, completedAt: nil, processedCount: 0, candidateCount: 0, errorCount: 0, errorSummary: nil)
+    }
+
+    public func importBatches() throws -> [ImportBatch] {
+        let statement = try Self.prepare("SELECT id, storage_root_id, status, source_description, started_at, completed_at, processed_count, candidate_count, error_count, error_summary FROM import_batch WHERE kind = 'scan' ORDER BY started_at DESC;", on: connection)
+        defer { sqlite3_finalize(statement) }; var values: [ImportBatch] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let rawID = Self.text(at: 0, from: statement), let uuid = UUID(uuidString: rawID), let rawStatus = Self.text(at: 2, from: statement), let status = ImportBatchStatus(rawValue: rawStatus) else { throw DatabaseError.invalidIdentifier("import_batch") }
+            let rootID = Self.text(at: 1, from: statement).flatMap(UUID.init(uuidString:)).map(StorageRootID.init(rawValue:))
+            values.append(.init(id: .init(rawValue: uuid), storageRootID: rootID, status: status, sourceDescription: Self.text(at: 3, from: statement), startedAt: Self.date(fromMilliseconds: Self.int(at: 4, from: statement) ?? 0), completedAt: Self.int(at: 5, from: statement).map(Self.date(fromMilliseconds:)), processedCount: Int(Self.int(at: 6, from: statement) ?? 0), candidateCount: Int(Self.int(at: 7, from: statement) ?? 0), errorCount: Int(Self.int(at: 8, from: statement) ?? 0), errorSummary: Self.text(at: 9, from: statement)))
+        }
+        return values
+    }
+
+    public func importCandidates(batchID: ImportBatchID) throws -> [ImportCandidate] {
+        let statement = try Self.prepare("SELECT id, status, proposed_payload, error_message FROM import_candidate WHERE batch_id = ? ORDER BY rowid;", on: connection)
+        defer { sqlite3_finalize(statement) }; try Self.bind(batchID.description, at: 1, to: statement); var values: [ImportCandidate] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let rawID = Self.text(at: 0, from: statement), let uuid = UUID(uuidString: rawID), let rawStatus = Self.text(at: 1, from: statement), let status = ImportCandidateStatus(rawValue: rawStatus) else { throw DatabaseError.invalidIdentifier("import_candidate") }
+            let payload = Self.data(at: 2, from: statement).flatMap { try? JSONDecoder().decode(ImportCandidatePayload.self, from: $0) }
+            values.append(.init(id: .init(rawValue: uuid), batchID: batchID, status: status, payload: payload, errorMessage: Self.text(at: 3, from: statement)))
+        }
+        return values
+    }
+
+    public func recordImportCandidate(batchID: ImportBatchID, payload: ImportCandidatePayload) throws {
+        let data = try JSONEncoder().encode(payload); let id = ImportCandidateID()
+        try transaction {
+            let statement = try Self.prepare("INSERT INTO import_candidate (id, batch_id, status, proposed_payload) VALUES (?, ?, ?, ?);", on: connection)
+            defer { sqlite3_finalize(statement) }; try Self.bind(id.description, at: 1, to: statement); try Self.bind(batchID.description, at: 2, to: statement); try Self.bind(ImportCandidateStatus.pending.rawValue, at: 3, to: statement); try Self.bind(data, at: 4, to: statement); try Self.stepDone(statement, connection: connection)
+            try incrementImportProgress(batchID: batchID, candidates: 1, errors: 0)
+        }
+    }
+
+    public func recordImportError(batchID: ImportBatchID, message: String) throws {
+        let id = ImportCandidateID()
+        try transaction {
+            let statement = try Self.prepare("INSERT INTO import_candidate (id, batch_id, status, proposed_payload, error_message) VALUES (?, ?, ?, ?, ?);", on: connection)
+            defer { sqlite3_finalize(statement) }; try Self.bind(id.description, at: 1, to: statement); try Self.bind(batchID.description, at: 2, to: statement); try Self.bind(ImportCandidateStatus.failed.rawValue, at: 3, to: statement); try Self.bind(Data(), at: 4, to: statement); try Self.bind(message, at: 5, to: statement); try Self.stepDone(statement, connection: connection)
+            try incrementImportProgress(batchID: batchID, candidates: 0, errors: 1)
+        }
+    }
+
+    public func finishImportBatch(_ batchID: ImportBatchID, status: ImportBatchStatus, errorSummary: String? = nil) throws {
+        guard status != .scanning else { throw DatabaseError.invalidOperation("A finished import batch must have a terminal status.") }
+        try transaction {
+            let statement = try Self.prepare("UPDATE import_batch SET status = ?, completed_at = ?, error_summary = ? WHERE id = ? AND status = 'scanning';", on: connection)
+            defer { sqlite3_finalize(statement) }; try Self.bind(status.rawValue, at: 1, to: statement); try Self.bind(Self.milliseconds(Date()), at: 2, to: statement); try Self.bind(errorSummary, at: 3, to: statement); try Self.bind(batchID.description, at: 4, to: statement); try Self.stepDone(statement, connection: connection)
+            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Active import batch") }
+        }
+    }
+
+    public func recoverInterruptedImportBatches() throws {
+        try transaction {
+            let statement = try Self.prepare("UPDATE import_batch SET status = 'cancelled', completed_at = ?, error_summary = COALESCE(error_summary, 'Scan interrupted by a previous app session.') WHERE kind = 'scan' AND status = 'scanning';", on: connection)
+            defer { sqlite3_finalize(statement) }; try Self.bind(Self.milliseconds(Date()), at: 1, to: statement); try Self.stepDone(statement, connection: connection)
+        }
+    }
+
     public func createLocation(_ draft: NewPhysicalLocation) throws -> PhysicalLocation {
         let valid = try draft.validated()
         let id = PhysicalLocationID()
@@ -645,6 +714,12 @@ public actor MusicDatabase {
 
     private func incrementRevision() throws {
         try Self.execute("UPDATE catalogue_state SET catalogue_revision = catalogue_revision + 1 WHERE singleton_id = 1;", on: connection)
+    }
+
+    private func incrementImportProgress(batchID: ImportBatchID, candidates: Int64, errors: Int64) throws {
+        let statement = try Self.prepare("UPDATE import_batch SET processed_count = processed_count + 1, candidate_count = candidate_count + ?, error_count = error_count + ? WHERE id = ? AND status = 'scanning';", on: connection)
+        defer { sqlite3_finalize(statement) }; try Self.bind(candidates, at: 1, to: statement); try Self.bind(errors, at: 2, to: statement); try Self.bind(batchID.description, at: 3, to: statement); try Self.stepDone(statement, connection: connection)
+        guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Active import batch") }
     }
 
     private static let albumSelect = "SELECT id, title, edition_label, release_year, country_code, label_name, catalogue_number, barcode, remaster_year, media_format, disc_count, has_cd, physical_location_id, physical_location_unknown, physical_note, notes, rating, is_favourite, created_at, updated_at, deleted_at FROM album"

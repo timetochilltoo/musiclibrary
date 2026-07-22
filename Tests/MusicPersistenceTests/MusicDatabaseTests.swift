@@ -9,7 +9,7 @@ struct MusicDatabaseTests {
     func migrationCreatesSchema() async throws {
         let database = try MusicDatabase(url: temporaryDatabaseURL())
         try await database.migrate()
-        #expect(try await database.schemaVersion() == 3)
+        #expect(try await database.schemaVersion() == 4)
         #expect(try await database.currentRevision() == 0)
     }
 
@@ -164,6 +164,26 @@ struct MusicDatabaseTests {
         try await database.deleteStorageRoot(root.id)
         #expect(try await database.storageRoots().isEmpty)
         #expect(try await database.currentRevision() == 4)
+    }
+
+    @Test("Import Inbox persists scan candidates without changing the catalogue")
+    func importInboxPersistence() async throws {
+        let database = try MusicDatabase(url: temporaryDatabaseURL())
+        try await database.migrate()
+        let root = try await database.createStorageRoot(.init(displayName: "Music", lastKnownPath: "/Music", bookmarkData: Data([1])))
+        let batch = try await database.createImportBatch(storageRootID: root.id, sourceDescription: "/Music")
+        let payload = ImportCandidatePayload(relativePath: "Artist/Album/song.mp3", fileName: "song.mp3", contentTypeIdentifier: "public.mp3", fileSize: 123, modifiedAt: nil)
+        try await database.recordImportCandidate(batchID: batch.id, payload: payload)
+        try await database.recordImportError(batchID: batch.id, message: "Unreadable item")
+        try await database.finishImportBatch(batch.id, status: .completed)
+        let loaded = try #require(await database.importBatches().first)
+        #expect(loaded.status == .completed)
+        #expect(loaded.processedCount == 2)
+        #expect(loaded.candidateCount == 1)
+        #expect(loaded.errorCount == 1)
+        #expect(try await database.importCandidates(batchID: batch.id).first?.payload == payload)
+        #expect(try await database.albums().isEmpty)
+        #expect(try await database.currentRevision() == 1)
     }
 
     private func temporaryDatabaseURL() -> URL {

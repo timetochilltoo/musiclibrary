@@ -47,11 +47,13 @@ private struct LibraryShellView: View {
     @State private var section: Section? = .albums
     @State private var selectedAlbumID: AlbumID?
     @State private var selectedBoxSetID: BoxSetID?
+    @State private var selectedImportBatchID: ImportBatchID?
     @State private var searchText = ""
     @State private var showsAlbumEditor = false
     @State private var showsLocationEditor = false
     @State private var showsBoxSetEditor = false
     @State private var showsStorageRootPicker = false
+    @State private var showsScanRootPicker = false
     @State private var albumToEdit: Album?
 
     var body: some View {
@@ -75,6 +77,7 @@ private struct LibraryShellView: View {
         .sheet(isPresented: $showsAlbumEditor) { AlbumEditor(library: library) }
         .sheet(isPresented: $showsLocationEditor) { LocationEditor(library: library) }
         .sheet(isPresented: $showsBoxSetEditor) { BoxSetEditor(library: library) }
+        .sheet(isPresented: $showsScanRootPicker) { ScanRootPicker(library: library) }
         .sheet(item: $albumToEdit) { album in EditAlbumEditor(library: library, album: album) }
         .fileImporter(isPresented: $showsStorageRootPicker, allowedContentTypes: [.folder]) { result in
             if case let .success(url) = result { Task { try? await library.addStorageRoot(url: url) } }
@@ -111,6 +114,14 @@ private struct LibraryShellView: View {
                     if let edition = box.editionLabel, !edition.isEmpty { Text(edition).foregroundStyle(.secondary) }
                 }.tag(box.id)
             }
+        case .importInbox:
+            List(library.importBatches, selection: $selectedImportBatchID) { batch in
+                VStack(alignment: .leading) {
+                    Text(batch.sourceDescription ?? "Music folder").lineLimit(1)
+                    Text("\(batch.candidateCount) audio files · \(batch.errorCount) errors · \(batch.status.rawValue)").font(.caption).foregroundStyle(.secondary)
+                }.tag(batch.id)
+            }
+            .overlay { if library.isReady && library.importBatches.isEmpty { ContentUnavailableView("No import batches", systemImage: "tray", description: Text("Choose an available music folder to scan into the review inbox.")) } }
             .overlay {
                 if library.isReady && library.boxSets.isEmpty {
                     ContentUnavailableView("No box sets", systemImage: "shippingbox", description: Text("Create a box set to group its member albums at one location."))
@@ -126,6 +137,8 @@ private struct LibraryShellView: View {
     @ViewBuilder private var detail: some View {
         if section == .boxSets, let selectedBoxSetID, let box = library.boxSets.first(where: { $0.id == selectedBoxSetID }) {
             BoxSetDetail(library: library, boxSet: box)
+        } else if section == .importInbox, let selectedImportBatchID, let batch = library.importBatches.first(where: { $0.id == selectedImportBatchID }) {
+            ImportBatchDetail(library: library, batch: batch)
         } else if let selectedAlbumID, let album = library.albums.first(where: { $0.id == selectedAlbumID }) {
             AlbumDetail(library: library, album: album, locations: library.locations, onEdit: { albumToEdit = album })
         } else {
@@ -135,11 +148,12 @@ private struct LibraryShellView: View {
 
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
         ToolbarItem(placement: .primaryAction) {
-            Button(section == .locations ? "Add Location" : section == .boxSets ? "Add Box Set" : section == .settings ? "Add Music Folder" : "Add Album", systemImage: "plus") {
+            Button(section == .locations ? "Add Location" : section == .boxSets ? "Add Box Set" : section == .settings ? "Add Music Folder" : section == .importInbox ? "Scan Music Folder" : "Add Album", systemImage: "plus") {
                 switch section {
                 case .locations: showsLocationEditor = true
                 case .boxSets: showsBoxSetEditor = true
                 case .settings: showsStorageRootPicker = true
+                case .importInbox: showsScanRootPicker = true
                 default: showsAlbumEditor = true
                 }
             }
@@ -195,6 +209,55 @@ private struct StorageRootRenameEditor: View {
     }
 
     private func save() { Task { try? await library.renameStorageRoot(root.id, to: name); dismiss() } }
+}
+
+private struct ScanRootPicker: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var library: LibraryStore
+
+    var body: some View {
+        NavigationStack {
+            List(library.storageRoots) { root in
+                Button { scan(root) } label: {
+                    HStack { VStack(alignment: .leading) { Text(root.displayName); Text(root.lastKnownPath).font(.caption).foregroundStyle(.secondary).lineLimit(1) }; Spacer(); Text(root.status.rawValue).font(.caption).foregroundStyle(root.status == .available ? .green : .secondary) }
+                }
+                .disabled(root.status != .available)
+            }
+            .navigationTitle("Choose Music Folder")
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+        }
+        .frame(width: 520, height: 360)
+    }
+
+    private func scan(_ root: StorageRoot) { Task { try? await library.startImportScan(rootID: root.id); dismiss() } }
+}
+
+private struct ImportBatchDetail: View {
+    @ObservedObject var library: LibraryStore
+    let batch: ImportBatch
+    @State private var candidates: [ImportCandidate] = []
+
+    var body: some View {
+        List {
+            Section("Scan") {
+                LabeledContent("Status", value: batch.status.rawValue.capitalized)
+                LabeledContent("Files processed", value: String(batch.processedCount))
+                LabeledContent("Audio candidates", value: String(batch.candidateCount))
+                LabeledContent("Errors", value: String(batch.errorCount))
+                if let error = batch.errorSummary { Text(error).foregroundStyle(.secondary) }
+                if batch.status == .scanning { Button("Cancel Scan", role: .destructive) { Task { await library.cancelImportScan(batch.id) } } }
+                if batch.status != .scanning { Button("Retry Scan", systemImage: "arrow.clockwise") { Task { try? await library.retryImportScan(batch.id) } } }
+            }
+            Section("Candidates") {
+                ForEach(candidates) { candidate in
+                    if let payload = candidate.payload { VStack(alignment: .leading) { Text(payload.relativePath); Text(payload.contentTypeIdentifier).font(.caption).foregroundStyle(.secondary) } }
+                    else { Text(candidate.errorMessage ?? "Unreadable item").foregroundStyle(.secondary) }
+                }
+            }
+        }
+        .navigationTitle("Import Batch")
+        .task(id: batch.id) { candidates = (try? await library.importCandidates(batchID: batch.id)) ?? [] }
+    }
 }
 
 private struct AlbumDetail: View {

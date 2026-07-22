@@ -2,7 +2,7 @@ import Foundation
 import SQLite3
 
 enum SchemaMigrator {
-    static let currentVersion = 3
+    static let currentVersion = 4
 
     static func migrate(_ connection: OpaquePointer) throws {
         var statement: OpaquePointer?
@@ -18,7 +18,8 @@ enum SchemaMigrator {
             version = 1
         }
         if version == 1 { try migrateToVersion2(connection); version = 2 }
-        if version == 2 { try migrateToVersion3(connection) }
+        if version == 2 { try migrateToVersion3(connection); version = 3 }
+        if version == 3 { try migrateToVersion4(connection) }
     }
 
     private static func migrateToVersion1(_ connection: OpaquePointer) throws {
@@ -290,6 +291,25 @@ enum SchemaMigrator {
         ALTER TABLE storage_root ADD COLUMN bookmark_needs_refresh INTEGER NOT NULL DEFAULT 0 CHECK (bookmark_needs_refresh IN (0, 1));
         PRAGMA user_version = 3;
         UPDATE catalogue_state SET schema_version = 3 WHERE singleton_id = 1;
+        COMMIT;
+        """
+        var error: UnsafeMutablePointer<CChar>?
+        guard sqlite3_exec(connection, sql, nil, nil, &error) == SQLITE_OK else {
+            defer { sqlite3_free(error) }
+            throw DatabaseError.sqlite(message: error.map { String(cString: $0) } ?? String(cString: sqlite3_errmsg(connection)))
+        }
+    }
+
+    private static func migrateToVersion4(_ connection: OpaquePointer) throws {
+        let sql = """
+        BEGIN IMMEDIATE;
+        ALTER TABLE import_batch ADD COLUMN storage_root_id TEXT REFERENCES storage_root(id) ON DELETE RESTRICT;
+        ALTER TABLE import_batch ADD COLUMN processed_count INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE import_batch ADD COLUMN candidate_count INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE import_batch ADD COLUMN error_count INTEGER NOT NULL DEFAULT 0;
+        CREATE INDEX IF NOT EXISTS import_batch_root_index ON import_batch(storage_root_id, started_at DESC);
+        PRAGMA user_version = 4;
+        UPDATE catalogue_state SET schema_version = 4 WHERE singleton_id = 1;
         COMMIT;
         """
         var error: UnsafeMutablePointer<CChar>?

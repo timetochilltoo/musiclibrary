@@ -9,11 +9,13 @@ public final class LibraryStore: ObservableObject {
     @Published public private(set) var locations: [PhysicalLocation] = []
     @Published public private(set) var boxSets: [BoxSet] = []
     @Published public private(set) var storageRoots: [StorageRoot] = []
+    @Published public private(set) var importBatches: [ImportBatch] = []
     @Published public private(set) var isReady = false
     @Published public private(set) var errorMessage: String?
 
     private var database: MusicDatabase?
     private var hasStarted = false
+    private var scanTasks: [ImportBatchID: Task<Void, Never>] = [:]
 
     public init() {}
 
@@ -25,6 +27,7 @@ public final class LibraryStore: ObservableObject {
             let database = try MusicDatabase(url: directory.appending(path: "MusicLibrary.sqlite"))
             try await database.migrate()
             self.database = database
+            try await database.recoverInterruptedImportBatches()
             try await reload()
             try await refreshStorageRootAccess()
             isReady = true
@@ -39,10 +42,12 @@ public final class LibraryStore: ObservableObject {
         async let loadedLocations = database.locations()
         async let loadedBoxSets = database.boxSets()
         async let loadedStorageRoots = database.storageRoots()
+        async let loadedImportBatches = database.importBatches()
         albums = try await loadedAlbums
         locations = try await loadedLocations
         boxSets = try await loadedBoxSets
         storageRoots = try await loadedStorageRoots
+        importBatches = try await loadedImportBatches
     }
 
     public func search(_ term: String) async {
@@ -137,6 +142,55 @@ public final class LibraryStore: ObservableObject {
         try await reload()
     }
 
+    public func importCandidates(batchID: ImportBatchID) async throws -> [ImportCandidate] {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        return try await database.importCandidates(batchID: batchID)
+    }
+
+    public func startImportScan(rootID: StorageRootID) async throws {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        try await refreshStorageRootAccess()
+        guard let root = storageRoots.first(where: { $0.id == rootID }) else { throw DatabaseError.notFound("Storage root") }
+        let resolved = resolveSecurityScopedBookmark(root)
+        guard resolved.status == .available, let url = resolved.url else { throw DatabaseError.invalidOperation("The selected storage root is not available.") }
+        let batch = try await database.createImportBatch(storageRootID: rootID, sourceDescription: url.path)
+        await refreshImportBatches()
+        let task = Task.detached { [weak self, database] in
+            let accessed = url.startAccessingSecurityScopedResource()
+            defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+            guard accessed else {
+                try? await database.finishImportBatch(batch.id, status: .failed, errorSummary: "Permission to access the selected folder was not available.")
+                await self?.refreshImportBatches()
+                return
+            }
+            let result = ImportScanner().scan(rootURL: url)
+            do {
+                for (index, candidate) in result.candidates.enumerated() {
+                    if Task.isCancelled { break }
+                    try await database.recordImportCandidate(batchID: batch.id, payload: candidate)
+                    if index.isMultiple(of: 20) { await self?.refreshImportBatches() }
+                }
+                for error in result.errors { try await database.recordImportError(batchID: batch.id, message: error) }
+                let status: ImportBatchStatus = (result.wasCancelled || Task.isCancelled) ? .cancelled : .completed
+                try await database.finishImportBatch(batch.id, status: status, errorSummary: result.errors.first)
+            } catch {
+                try? await database.finishImportBatch(batch.id, status: .failed, errorSummary: error.localizedDescription)
+            }
+            await self?.refreshImportBatches()
+        }
+        scanTasks[batch.id] = task
+    }
+
+    public func cancelImportScan(_ batchID: ImportBatchID) async {
+        scanTasks[batchID]?.cancel()
+    }
+
+    public func retryImportScan(_ batchID: ImportBatchID) async throws {
+        guard let batch = importBatches.first(where: { $0.id == batchID }), let rootID = batch.storageRootID else { throw DatabaseError.notFound("Storage root for import batch") }
+        guard batch.status != .scanning else { throw DatabaseError.invalidOperation("This import batch is already scanning.") }
+        try await startImportScan(rootID: rootID)
+    }
+
     public func addLocation(_ draft: NewPhysicalLocation) async throws {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
         _ = try await database.createLocation(draft)
@@ -169,6 +223,11 @@ public final class LibraryStore: ObservableObject {
         let directory = base.appending(path: "MusicLibrary", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory
+    }
+
+    private func refreshImportBatches() async {
+        guard let database else { return }
+        importBatches = (try? await database.importBatches()) ?? importBatches
     }
 
     private func makeSecurityScopedBookmark(for url: URL) throws -> Data {
