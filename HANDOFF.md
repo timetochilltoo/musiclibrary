@@ -310,9 +310,9 @@ Enforce these with transactions, validation, constraints, and tests where possib
 
 If an invariant needs to change, stop and document the proposed migration and user-facing impact before implementing it.
 
-## 11. Exact next slice: publication recovery and status polish
+## 11. Exact next slice: publication failure history and recovery review
 
-The Mac now uses a tested scheduler and performs a bounded three-second background flush for pending publication; if time expires, the safe writer continues independently and Settings reports that state. Next, improve recovery/status presentation rather than changing publishing protocol.
+The Mac now uses a tested scheduler, performs a bounded background flush, and shows the last successful revision/time. Next, retain a small failure history and offer a recovery review without changing the publication protocol.
 
 ### Goal
 

@@ -20,6 +20,7 @@ public final class LibraryStore: ObservableObject {
     @Published public private(set) var snapshotPublishStatus = "Snapshot destination not configured"
     @Published public private(set) var catalogueRevision: Int64 = 0
     @Published public private(set) var lastPublishedRevision: Int64?
+    @Published public private(set) var lastPublishedAt: Date?
     @Published public private(set) var isSnapshotPublishPending = false
 
     private var database: MusicDatabase?
@@ -28,6 +29,7 @@ public final class LibraryStore: ObservableObject {
     private var snapshotPublishTask: Task<Void, Never>?
     private let snapshotDestinationBookmarkKey = "MusicLibrary.snapshotDestinationBookmark"
     private let lastPublishedRevisionKey = "MusicLibrary.lastPublishedRevision"
+    private let lastPublishedAtKey = "MusicLibrary.lastPublishedAt"
     private var publicationSchedule = SnapshotPublicationSchedule()
 
     public init() {}
@@ -245,6 +247,8 @@ public final class LibraryStore: ObservableObject {
         lastPublishedRevision = manifest.revision
         publicationSchedule.markPublished(manifest.revision)
         UserDefaults.standard.set(manifest.revision, forKey: lastPublishedRevisionKey)
+        lastPublishedAt = Date()
+        UserDefaults.standard.set(lastPublishedAt, forKey: lastPublishedAtKey)
         snapshotPublishStatus = "Published revision \(manifest.revision)"
         isSnapshotPublishPending = false
     }
@@ -347,6 +351,7 @@ public final class LibraryStore: ObservableObject {
             lastPublishedRevision = revision
             publicationSchedule.markPublished(revision)
         }
+        lastPublishedAt = UserDefaults.standard.object(forKey: lastPublishedAtKey) as? Date
         snapshotPublishStatus = "Ready to publish"
     }
 
