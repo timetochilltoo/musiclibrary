@@ -655,8 +655,22 @@ private struct ImportBatchDetail: View {
                 LabeledContent("Errors", value: String(batch.errorCount))
                 if let error = batch.errorSummary { Text(error).foregroundStyle(.secondary) }
                 if batch.status == .scanning { Button("Cancel Scan", role: .destructive) { Task { await library.cancelImportScan(batch.id) } } }
-                if batch.status != .scanning { Button("Retry Scan", systemImage: "arrow.clockwise") { Task { try? await library.retryImportScan(batch.id) } } }
-                if batch.status != .scanning { Button("Read Embedded Metadata", systemImage: "text.magnifyingglass") { Task { try? await library.analyzeImportBatch(batch.id); await load() } } }
+                if batch.status != .scanning { Button("Retry Scan", systemImage: "arrow.clockwise") {
+                    Task {
+                        do { try await library.retryImportScan(batch.id) }
+                        catch { library.presentError(error) }
+                    }
+                } }
+                if batch.status != .scanning { Button("Read Embedded Metadata", systemImage: "text.magnifyingglass") {
+                    Task {
+                        do {
+                            try await library.analyzeImportBatch(batch.id)
+                            await load()
+                        } catch {
+                            library.presentError(error)
+                        }
+                    }
+                } }
             }
             Section("Release Proposals") {
                 if proposals.isEmpty { Text("Read embedded metadata to create local proposals. No catalogue records or source files will be changed.").foregroundStyle(.secondary) }
@@ -667,7 +681,28 @@ private struct ImportBatchDetail: View {
                         Text("Source: \(proposal.provenance). Approval only marks this proposal for later catalogue creation.").font(.caption2).foregroundStyle(.secondary)
                         Button("Search MusicBrainz…", systemImage: "magnifyingglass") { proposalToLookUp = proposal }
                         if let selection = selections[proposal.id] { Button("Review MusicBrainz Fields…", systemImage: "rectangle.and.pencil.and.ellipsis") { selectionToReview = selection } }
-                        if proposal.status == .proposed { HStack { Button("Approve for Later") { Task { try? await library.setImportReleaseProposal(proposal.id, status: .approved); await load() } }; Button("Dismiss", role: .destructive) { Task { try? await library.setImportReleaseProposal(proposal.id, status: .dismissed); await load() } } } }
+                        if proposal.status == .proposed { HStack {
+                            Button("Approve for Later") {
+                                Task {
+                                    do {
+                                        try await library.setImportReleaseProposal(proposal.id, status: .approved)
+                                        await load()
+                                    } catch {
+                                        library.presentError(error)
+                                    }
+                                }
+                            }
+                            Button("Dismiss", role: .destructive) {
+                                Task {
+                                    do {
+                                        try await library.setImportReleaseProposal(proposal.id, status: .dismissed)
+                                        await load()
+                                    } catch {
+                                        library.presentError(error)
+                                    }
+                                }
+                            }
+                        } }
                         if proposal.status == .approved && proposal.createdAlbumID == nil { Button("Create Catalogue Records…", systemImage: "checkmark.seal") { proposalToConfirm = proposal } }
                         if let albumID = proposal.createdAlbumID { Text("Created catalogue album: \(albumID.description)").font(.caption).foregroundStyle(.green) }
                     }
@@ -681,7 +716,17 @@ private struct ImportBatchDetail: View {
         .task(id: batch.id) { await load() }
         .confirmationDialog("Create catalogue records?", isPresented: Binding(get: { proposalToConfirm != nil }, set: { if !$0 { proposalToConfirm = nil } }), titleVisibility: .visible) {
             if let proposal = proposalToConfirm {
-                Button("Create Album, Tracks, and Assets") { Task { _ = try? await library.confirmImportReleaseProposal(proposal.id); await load(); proposalToConfirm = nil } }
+                Button("Create Album, Tracks, and Assets") {
+                    Task {
+                        do {
+                            _ = try await library.confirmImportReleaseProposal(proposal.id)
+                            await load()
+                            proposalToConfirm = nil
+                        } catch {
+                            library.presentError(error)
+                        }
+                    }
+                }
             }
         } message: {
             Text(proposalToConfirm.map(proposalConfirmationMessage) ?? "")
