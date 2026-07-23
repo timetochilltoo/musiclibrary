@@ -237,6 +237,36 @@ public actor MusicDatabase {
         }
     }
 
+    public func saveExternalMetadataSelection(importProposalID: UUID, provider: String, externalID: String, title: String, artist: String?, discCount: Int) throws {
+        let now = Self.milliseconds(Date())
+        try transaction {
+            guard try Self.exists("SELECT 1 FROM import_release_proposal WHERE id = ?;", value: importProposalID.uuidString.lowercased(), on: connection) else { throw DatabaseError.notFound("Import release proposal") }
+            let statement = try Self.prepare("INSERT INTO external_metadata_selection (id, import_proposal_id, provider, external_id, title, artist, disc_count, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(import_proposal_id) DO UPDATE SET provider = excluded.provider, external_id = excluded.external_id, title = excluded.title, artist = excluded.artist, disc_count = excluded.disc_count, updated_at = excluded.updated_at;", on: connection)
+            defer { sqlite3_finalize(statement) }
+            try Self.bind(UUID().uuidString.lowercased(), at: 1, to: statement); try Self.bind(importProposalID.uuidString.lowercased(), at: 2, to: statement); try Self.bind(provider, at: 3, to: statement); try Self.bind(externalID, at: 4, to: statement); try Self.bind(title, at: 5, to: statement); try Self.bind(artist, at: 6, to: statement); try Self.bind(Int64(max(1, discCount)), at: 7, to: statement); try Self.bind(now, at: 8, to: statement); try Self.bind(now, at: 9, to: statement); try Self.stepDone(statement, connection: connection)
+        }
+    }
+
+    public func externalMetadataSelection(importProposalID: UUID) throws -> ExternalMetadataSelection? {
+        let statement = try Self.prepare("SELECT id, provider, external_id, title, artist, disc_count FROM external_metadata_selection WHERE import_proposal_id = ?;", on: connection)
+        defer { sqlite3_finalize(statement) }; try Self.bind(importProposalID.uuidString.lowercased(), at: 1, to: statement)
+        guard sqlite3_step(statement) == SQLITE_ROW, let rawID = Self.text(at: 0, from: statement), let id = UUID(uuidString: rawID) else { return nil }
+        return .init(id: id, importProposalID: importProposalID, provider: Self.text(at: 1, from: statement) ?? "", externalID: Self.text(at: 2, from: statement) ?? "", title: Self.text(at: 3, from: statement) ?? "", artist: Self.text(at: 4, from: statement), discCount: Int(Self.int(at: 5, from: statement) ?? 1))
+    }
+
+    public func applyExternalMetadataSelection(_ selection: ExternalMetadataSelection, fields: ExternalMetadataFieldSelection) throws {
+        try transaction {
+            let existing = try Self.prepare("SELECT title, artist, disc_count FROM import_release_proposal WHERE id = ?;", on: connection)
+            defer { sqlite3_finalize(existing) }; try Self.bind(selection.importProposalID.uuidString.lowercased(), at: 1, to: existing)
+            guard sqlite3_step(existing) == SQLITE_ROW else { throw DatabaseError.notFound("Import release proposal") }
+            let title = fields.title ? selection.title : (Self.text(at: 0, from: existing) ?? "")
+            let artist = fields.artist ? selection.artist : Self.text(at: 1, from: existing)
+            let discs = fields.discCount ? selection.discCount : Int(Self.int(at: 2, from: existing) ?? 1)
+            let update = try Self.prepare("UPDATE import_release_proposal SET title = ?, artist = ?, disc_count = ?, provenance = provenance || ', ' || ?, updated_at = ? WHERE id = ?;", on: connection)
+            defer { sqlite3_finalize(update) }; try Self.bind(title, at: 1, to: update); try Self.bind(artist, at: 2, to: update); try Self.bind(Int64(discs), at: 3, to: update); try Self.bind(selection.provider, at: 4, to: update); try Self.bind(Self.milliseconds(Date()), at: 5, to: update); try Self.bind(selection.importProposalID.uuidString.lowercased(), at: 6, to: update); try Self.stepDone(update, connection: connection)
+        }
+    }
+
     public func confirmImportReleaseProposal(_ proposalID: UUID) throws -> AlbumID {
         var result: AlbumID?
         try transaction {

@@ -2,7 +2,7 @@ import Foundation
 import SQLite3
 
 enum SchemaMigrator {
-    static let currentVersion = 7
+    static let currentVersion = 8
 
     static func migrate(_ connection: OpaquePointer) throws {
         var statement: OpaquePointer?
@@ -22,7 +22,8 @@ enum SchemaMigrator {
         if version == 3 { try migrateToVersion4(connection); version = 4 }
         if version == 4 { try migrateToVersion5(connection); version = 5 }
         if version == 5 { try migrateToVersion6(connection); version = 6 }
-        if version == 6 { try migrateToVersion7(connection) }
+        if version == 6 { try migrateToVersion7(connection); version = 7 }
+        if version == 7 { try migrateToVersion8(connection) }
     }
 
     private static func migrateToVersion1(_ connection: OpaquePointer) throws {
@@ -369,6 +370,10 @@ enum SchemaMigrator {
     }
     private static func migrateToVersion7(_ connection: OpaquePointer) throws {
         let sql = "BEGIN IMMEDIATE; CREATE TABLE IF NOT EXISTS asset_relink_proposal (id TEXT PRIMARY KEY, asset_id TEXT NOT NULL REFERENCES digital_asset(id) ON DELETE CASCADE, proposed_relative_path TEXT NOT NULL, created_at INTEGER NOT NULL, UNIQUE(asset_id, proposed_relative_path)); PRAGMA user_version = 7; UPDATE catalogue_state SET schema_version = 7 WHERE singleton_id = 1; COMMIT;"
+        var error: UnsafeMutablePointer<CChar>?; guard sqlite3_exec(connection, sql, nil, nil, &error) == SQLITE_OK else { defer { sqlite3_free(error) }; throw DatabaseError.sqlite(message: error.map { String(cString: $0) } ?? String(cString: sqlite3_errmsg(connection))) }
+    }
+    private static func migrateToVersion8(_ connection: OpaquePointer) throws {
+        let sql = "BEGIN IMMEDIATE; CREATE TABLE IF NOT EXISTS external_metadata_selection (id TEXT PRIMARY KEY, import_proposal_id TEXT NOT NULL UNIQUE REFERENCES import_release_proposal(id) ON DELETE CASCADE, provider TEXT NOT NULL, external_id TEXT NOT NULL, title TEXT NOT NULL, artist TEXT, disc_count INTEGER NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL); PRAGMA user_version = 8; UPDATE catalogue_state SET schema_version = 8 WHERE singleton_id = 1; COMMIT;"
         var error: UnsafeMutablePointer<CChar>?; guard sqlite3_exec(connection, sql, nil, nil, &error) == SQLITE_OK else { defer { sqlite3_free(error) }; throw DatabaseError.sqlite(message: error.map { String(cString: $0) } ?? String(cString: sqlite3_errmsg(connection))) }
     }
 }

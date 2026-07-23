@@ -257,6 +257,21 @@ public final class LibraryStore: ObservableObject {
         try await metadataLookupProvider.searchRelease(title: title, artist: artist)
     }
 
+    public func saveMusicBrainzSelection(_ result: ExternalReleasePreview, for proposalID: UUID) async throws {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        try await database.saveExternalMetadataSelection(importProposalID: proposalID, provider: "musicbrainz", externalID: result.id, title: result.title, artist: result.artist, discCount: result.mediaCount)
+    }
+
+    public func externalMetadataSelection(for proposalID: UUID) async throws -> ExternalMetadataSelection? {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        return try await database.externalMetadataSelection(importProposalID: proposalID)
+    }
+
+    public func applyExternalMetadataSelection(_ selection: ExternalMetadataSelection, fields: ExternalMetadataFieldSelection) async throws {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        try await database.applyExternalMetadataSelection(selection, fields: fields)
+    }
+
     public func playbackURL(for trackID: TrackID) async throws -> (url: URL, title: String) {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
         try await refreshStorageRootAccess()

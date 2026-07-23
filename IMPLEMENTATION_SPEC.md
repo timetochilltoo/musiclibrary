@@ -16,13 +16,13 @@ Completed and verified:
 
 - Swift package structure with macOS SwiftUI executable and separate Domain, Persistence, Application, and UI modules.
 - Domain identifiers, album/edition model, physical locations, box sets, contributor roles, and derived digital-availability logic.
-- SQLite schema migrations 1 through 7, foreign keys, catalogue revision tracking, and core repositories.
+- SQLite schema migrations 1 through 8, foreign keys, catalogue revision tracking, and core repositories.
 - Persistent Mac catalogue stored in the user's Application Support directory.
 - Catalogue UI: browse/search albums; add albums; create/rename locations; create box sets; show basic album details.
 - Atomic album creation inside a box set, including inherited physical-location behaviour.
 - Album editing plus box-member browse, confirmed move, removal with a standalone placement, and reorder workflows.
 - Schema migration 2 adds `physical_location_unknown`, removing ambiguity between a boxed album and a standalone CD whose location is unknown.
-- Forty-four automated tests across five test suites, last verified with a rebuilt `swift test` followed by `swift test --skip-build` on 23 July 2026.
+- Forty-five automated tests across five test suites, last verified with a rebuilt `swift test` followed by `swift test --skip-build` on 23 July 2026.
 - Catalogue-content foundation complete: ordered discs/tracks, aliases, contributor roles at album and track level, selected album artwork with local-path provenance, and safe track/alias removal. Album detail supports manual creation of each of these relationships and user-selected front artwork without modifying source files.
 - Storage-root foundation complete: migration 3, persisted root records, security-scoped bookmark creation/resolution, availability checks, and Settings management. Offline and authorization-required roots are retained rather than removed.
 - Import Inbox foundation complete: migration 4, cancellable system-content-type scanning of available authorized roots, persistent batches/candidates/errors, recovery of interrupted scans, and Inbox cancellation/retry UI. Scans never create albums, tracks, or digital assets.
@@ -44,6 +44,7 @@ Completed and verified:
 - Master backup and restore workflow complete: Settings stores dated standalone master database backups plus SHA-256 manifests in the selected NAS destination's `MasterBackups` folder, retains seven daily and twelve monthly restore points, makes one automatic backup on a changed-catalogue day, and restores only after verification while retaining the replaced live master in the local Recovery folder.
 - Catalogue-only correction UI complete: the Mac album editor corrects album title/edition fields; Album Detail now edits track titles and shows track credits; contributor-name editing updates the shared catalogue contributor record and clearly states that source audio tags are not changed.
 - Manual external metadata lookup foundation complete: an Import Inbox proposal can explicitly open a MusicBrainz text-only search. The user must press Search before any request is sent; the provider has an identifying User-Agent and a one-request-per-second gate. Results are ephemeral previews with no accept/apply action, no catalogue writes, and no audio upload.
+- Reviewable external metadata selection complete: a MusicBrainz result can be saved against an import proposal, then title, artist, and disc-count differences can be accepted independently. Applying selections updates only the pending import proposal with provenance; later catalogue creation remains separately approved.
 
 Not yet implemented:
 

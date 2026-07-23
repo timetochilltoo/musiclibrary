@@ -539,6 +539,8 @@ private struct ImportBatchDetail: View {
     @State private var proposals: [ImportReleaseProposal] = []
     @State private var proposalToConfirm: ImportReleaseProposal?
     @State private var proposalToLookUp: ImportReleaseProposal?
+    @State private var selectionToReview: ExternalMetadataSelection?
+    @State private var selections: [UUID: ExternalMetadataSelection] = [:]
 
     var body: some View {
         List {
@@ -560,6 +562,7 @@ private struct ImportBatchDetail: View {
                         Text(proposalSummary(proposal)).font(.caption).foregroundStyle(.secondary)
                         Text("Source: \(proposal.provenance). Approval only marks this proposal for later catalogue creation.").font(.caption2).foregroundStyle(.secondary)
                         Button("Search MusicBrainz…", systemImage: "magnifyingglass") { proposalToLookUp = proposal }
+                        if let selection = selections[proposal.id] { Button("Review MusicBrainz Fields…", systemImage: "rectangle.and.pencil.and.ellipsis") { selectionToReview = selection } }
                         if proposal.status == .proposed { HStack { Button("Approve for Later") { Task { try? await library.setImportReleaseProposal(proposal.id, status: .approved); await load() } }; Button("Dismiss", role: .destructive) { Task { try? await library.setImportReleaseProposal(proposal.id, status: .dismissed); await load() } } } }
                         if proposal.status == .approved && proposal.createdAlbumID == nil { Button("Create Catalogue Records…", systemImage: "checkmark.seal") { proposalToConfirm = proposal } }
                         if let albumID = proposal.createdAlbumID { Text("Created catalogue album: \(albumID.description)").font(.caption).foregroundStyle(.green) }
@@ -580,13 +583,17 @@ private struct ImportBatchDetail: View {
             Text(proposalToConfirm.map(proposalConfirmationMessage) ?? "")
         }
         .sheet(item: $proposalToLookUp) { proposal in
-            ExternalMetadataLookupView(library: library, proposal: proposal)
+            ExternalMetadataLookupView(library: library, proposal: proposal, onSelected: { await load() })
         }
+        .sheet(item: $selectionToReview) { selection in ExternalMetadataComparisonView(library: library, selection: selection, proposal: proposals.first(where: { $0.id == selection.importProposalID }), onApplied: { await load() }) }
     }
 
     private func load() async {
         candidates = (try? await library.importCandidates(batchID: batch.id)) ?? []
         proposals = (try? await library.importReleaseProposals(batchID: batch.id)) ?? []
+        var loaded: [UUID: ExternalMetadataSelection] = [:]
+        for proposal in proposals { if let selection = try? await library.externalMetadataSelection(for: proposal.id) { loaded[proposal.id] = selection } }
+        selections = loaded
     }
 }
 
@@ -594,6 +601,7 @@ private struct ExternalMetadataLookupView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var library: LibraryStore
     let proposal: ImportReleaseProposal
+    let onSelected: () async -> Void
     @State private var title: String
     @State private var artist: String
     @State private var results: [ExternalReleasePreview] = []
@@ -601,9 +609,10 @@ private struct ExternalMetadataLookupView: View {
     @State private var errorMessage: String?
     @State private var hasSearched = false
 
-    init(library: LibraryStore, proposal: ImportReleaseProposal) {
+    init(library: LibraryStore, proposal: ImportReleaseProposal, onSelected: @escaping () async -> Void) {
         self.library = library
         self.proposal = proposal
+        self.onSelected = onSelected
         _title = State(initialValue: proposal.title)
         _artist = State(initialValue: proposal.artist ?? "")
     }
@@ -628,6 +637,7 @@ private struct ExternalMetadataLookupView: View {
                                 .font(.caption).foregroundStyle(.secondary)
                             if result.mediaCount > 0 { Text("\(result.mediaCount) disc(s)").font(.caption).foregroundStyle(.secondary) }
                             Text("Preview only — no catalogue change has been made.").font(.caption2).foregroundStyle(.secondary)
+                            Button("Use for Field Comparison") { save(result) }
                         }
                     }
                 }
@@ -649,6 +659,42 @@ private struct ExternalMetadataLookupView: View {
             isSearching = false
         }
     }
+    private func save(_ result: ExternalReleasePreview) {
+        Task {
+            do { try await library.saveMusicBrainzSelection(result, for: proposal.id); await onSelected(); dismiss() }
+            catch { errorMessage = error.localizedDescription }
+        }
+    }
+}
+
+private struct ExternalMetadataComparisonView: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var library: LibraryStore
+    let selection: ExternalMetadataSelection
+    let proposal: ImportReleaseProposal?
+    let onApplied: () async -> Void
+    @State private var useTitle = true
+    @State private var useArtist = true
+    @State private var useDiscCount = true
+    @State private var errorMessage: String?
+
+    var body: some View {
+        Form {
+            Section("MusicBrainz field comparison") {
+                comparison("Album title", current: proposal?.title, proposed: selection.title, enabled: $useTitle)
+                comparison("Artist", current: proposal?.artist, proposed: selection.artist, enabled: $useArtist)
+                comparison("Disc count", current: proposal.map { String($0.discCount) }, proposed: String(selection.discCount), enabled: $useDiscCount)
+                Text("Only checked fields update this import proposal. This does not yet create or edit a catalogue album, and never changes audio tags.").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .padding().frame(width: 520)
+        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button("Apply Selected Fields") { apply() } } }
+        .alert("Unable to apply fields", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) { Button("OK", role: .cancel) {} } message: { Text(errorMessage ?? "") }
+    }
+    private func comparison(_ name: String, current: String?, proposed: String?, enabled: Binding<Bool>) -> some View {
+        Toggle(isOn: enabled) { VStack(alignment: .leading) { Text(name); Text("Current: \(current ?? "—") → MusicBrainz: \(proposed ?? "—")").font(.caption).foregroundStyle(.secondary) } }
+    }
+    private func apply() { Task { do { try await library.applyExternalMetadataSelection(selection, fields: .init(title: useTitle, artist: useArtist, discCount: useDiscCount)); await onApplied(); dismiss() } catch { errorMessage = error.localizedDescription } } }
 }
 
 private struct AlbumDetail: View {

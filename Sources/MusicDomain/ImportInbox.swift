@@ -88,6 +88,22 @@ public struct ImportReleaseProposal: Identifiable, Equatable, Sendable {
     }
 }
 
+public struct ExternalMetadataSelection: Identifiable, Equatable, Sendable {
+    public let id: UUID
+    public let importProposalID: UUID
+    public let provider: String
+    public let externalID: String
+    public let title: String
+    public let artist: String?
+    public let discCount: Int
+    public init(id: UUID, importProposalID: UUID, provider: String, externalID: String, title: String, artist: String?, discCount: Int) { self.id = id; self.importProposalID = importProposalID; self.provider = provider; self.externalID = externalID; self.title = title; self.artist = artist; self.discCount = discCount }
+}
+
+public struct ExternalMetadataFieldSelection: Equatable, Sendable {
+    public var title: Bool; public var artist: Bool; public var discCount: Bool
+    public init(title: Bool, artist: Bool, discCount: Bool) { self.title = title; self.artist = artist; self.discCount = discCount }
+}
+
 public enum LibraryHealthKind: String, Codable, CaseIterable, Sendable { case missing, offline, partial, duplicate }
 
 public struct LibraryHealthIssue: Identifiable, Equatable, Sendable {
