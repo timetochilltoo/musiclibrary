@@ -796,8 +796,15 @@ private struct AlbumDetail: View {
                                         .labelStyle(.iconOnly)
                                 }
                                 if let credits = trackCredits[track.id], !credits.isEmpty {
-                                    Text(credits.map { ($0.creditedName ?? $0.contributor.name) + " — " + $0.role.rawValue }.joined(separator: " · "))
-                                        .font(.caption).foregroundStyle(.secondary)
+                                    ForEach(credits) { credit in
+                                        HStack {
+                                            Text("\(credit.creditedName ?? credit.contributor.name) — \(credit.role.rawValue)")
+                                                .font(.caption).foregroundStyle(.secondary)
+                                            Spacer()
+                                            Button("Remove credit", systemImage: "trash", role: .destructive) { Task { try? await library.deleteTrackContributor(credit, from: track.id); await loadContent() } }
+                                                .labelStyle(.iconOnly)
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -813,6 +820,7 @@ private struct AlbumDetail: View {
                         Text("\(credit.creditedName ?? credit.contributor.name) — \(credit.role.rawValue)")
                         Spacer()
                         Button("Edit name", systemImage: "pencil") { contributorToEdit = credit.contributor }.labelStyle(.iconOnly)
+                        Button("Remove credit", systemImage: "trash", role: .destructive) { Task { try? await library.deleteAlbumContributor(credit, from: album.id); await loadContent() } }.labelStyle(.iconOnly)
                     }
                 }
                 Button("Add Contributor", systemImage: "plus") { showsAddContributor = true }

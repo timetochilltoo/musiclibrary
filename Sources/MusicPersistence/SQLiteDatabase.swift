@@ -995,6 +995,20 @@ public actor MusicDatabase {
         return values
     }
 
+    public func deleteAlbumContributor(_ contributorID: ContributorID, from albumID: AlbumID, role: ContributorRole, position: Int) throws {
+        try transaction {
+            let statement = try Self.prepare("DELETE FROM album_contributor WHERE album_id = ? AND contributor_id = ? AND role = ? AND position = ?;", on: connection)
+            defer { sqlite3_finalize(statement) }
+            try Self.bind(albumID.description, at: 1, to: statement)
+            try Self.bind(contributorID.description, at: 2, to: statement)
+            try Self.bind(role.rawValue, at: 3, to: statement)
+            try Self.bind(Int64(position), at: 4, to: statement)
+            try Self.stepDone(statement, connection: connection)
+            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Album contributor credit") }
+            try incrementRevision()
+        }
+    }
+
     public func addTrackContributor(_ contributorID: ContributorID, to trackID: TrackID, role: ContributorRole, creditedName: String? = nil) throws {
         try transaction {
             guard try Self.exists("SELECT 1 FROM track WHERE id = ?;", value: trackID.description, on: connection) else { throw DatabaseError.notFound("Track") }
@@ -1014,6 +1028,20 @@ public actor MusicDatabase {
             values.append(.init(contributor: .init(id: .init(rawValue: uuid), name: Self.text(at: 1, from: statement) ?? "", sortName: Self.text(at: 2, from: statement)), role: role, creditedName: Self.text(at: 4, from: statement), position: Int(Self.int(at: 5, from: statement) ?? 0)))
         }
         return values
+    }
+
+    public func deleteTrackContributor(_ contributorID: ContributorID, from trackID: TrackID, role: ContributorRole, position: Int) throws {
+        try transaction {
+            let statement = try Self.prepare("DELETE FROM track_contributor WHERE track_id = ? AND contributor_id = ? AND role = ? AND position = ?;", on: connection)
+            defer { sqlite3_finalize(statement) }
+            try Self.bind(trackID.description, at: 1, to: statement)
+            try Self.bind(contributorID.description, at: 2, to: statement)
+            try Self.bind(role.rawValue, at: 3, to: statement)
+            try Self.bind(Int64(position), at: 4, to: statement)
+            try Self.stepDone(statement, connection: connection)
+            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Track contributor credit") }
+            try incrementRevision()
+        }
     }
 
     public func addAlbumArtwork(albumID: AlbumID, localPath: String, role: ArtworkRole = .front, source: String = "user-selected") throws -> Artwork {

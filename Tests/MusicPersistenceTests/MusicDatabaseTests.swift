@@ -149,6 +149,27 @@ struct MusicDatabaseTests {
         #expect(try await database.currentRevision() == 7)
     }
 
+    @Test("Contributor credits can be removed without deleting their catalogue person")
+    func contributorCreditRemoval() async throws {
+        let database = try MusicDatabase(url: temporaryDatabaseURL())
+        try await database.migrate()
+        let album = try await database.createAlbum(.init(title: "Credits"))
+        let disc = try await database.createDisc(albumID: album.id)
+        let track = try await database.createTrack(discID: disc.id, draft: .init(title: "Track"))
+        let contributor = try await database.createContributor(.init(name: "Guest"))
+        try await database.addAlbumContributor(contributor.id, to: album.id, role: .albumArtist)
+        try await database.addTrackContributor(contributor.id, to: track.id, role: .performer)
+
+        let albumCredit = try #require(await database.albumContributors(albumID: album.id).first)
+        let trackCredit = try #require(await database.trackContributors(trackID: track.id).first)
+        try await database.deleteAlbumContributor(albumCredit.contributor.id, from: album.id, role: albumCredit.role, position: albumCredit.position)
+        try await database.deleteTrackContributor(trackCredit.contributor.id, from: track.id, role: trackCredit.role, position: trackCredit.position)
+
+        #expect(try await database.albumContributors(albumID: album.id).isEmpty)
+        #expect(try await database.trackContributors(trackID: track.id).isEmpty)
+        #expect(try await database.updateContributor(contributor.id, with: .init(name: "Guest Artist")).name == "Guest Artist")
+    }
+
     @Test("Moving, reordering, and removing box members preserves placement rules")
     func boxMembershipManagement() async throws {
         let database = try MusicDatabase(url: temporaryDatabaseURL())
