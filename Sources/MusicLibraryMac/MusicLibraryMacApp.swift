@@ -457,7 +457,41 @@ private struct PlaylistDetail: View {
     @ObservedObject var library: LibraryStore
     let playlist: Playlist
     @State private var items: [PlaylistItem] = []
-    var body: some View { List(items) { item in Text("\(item.position). \(item.title)") }.navigationTitle(playlist.name).task(id: playlist.id) { items = (try? await library.playlistItems(playlist.id)) ?? [] } }
+    var body: some View {
+        List(items) { item in
+            HStack {
+                Text("\(item.position). \(item.title)")
+                Spacer()
+                Button("Move Earlier", systemImage: "arrow.up") { move(item, to: item.position - 1) }
+                    .labelStyle(.iconOnly).disabled(item.position == 1)
+                Button("Move Later", systemImage: "arrow.down") { move(item, to: item.position + 1) }
+                    .labelStyle(.iconOnly).disabled(item.position == items.count)
+                Button("Remove", systemImage: "trash", role: .destructive) { remove(item) }
+                    .labelStyle(.iconOnly)
+            }
+        }
+        .navigationTitle(playlist.name)
+        .task(id: playlist.id) { await load() }
+    }
+
+    private func load() async {
+        do { items = try await library.playlistItems(playlist.id) }
+        catch { library.presentError(error) }
+    }
+
+    private func move(_ item: PlaylistItem, to position: Int) {
+        Task {
+            do { try await library.movePlaylistItem(item.id, to: position); await load() }
+            catch { library.presentError(error) }
+        }
+    }
+
+    private func remove(_ item: PlaylistItem) {
+        Task {
+            do { try await library.removePlaylistItem(item.id); await load() }
+            catch { library.presentError(error) }
+        }
+    }
 }
 
 private struct ImportBatchDetail: View {

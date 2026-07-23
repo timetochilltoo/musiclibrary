@@ -466,10 +466,69 @@ public actor MusicDatabase {
         try transaction { guard try Self.exists("SELECT 1 FROM playlist WHERE id = ? AND deleted_at IS NULL;", value: playlistID.description, on: connection) else { throw DatabaseError.notFound("Playlist") }; guard try Self.exists("SELECT 1 FROM track WHERE id = ?;", value: trackID.description, on: connection) else { throw DatabaseError.notFound("Track") }; let position = try Self.nextNumber("SELECT COALESCE(MAX(position), 0) + 1 FROM playlist_item WHERE playlist_id = ?;", ownerID: playlistID.description, on: connection); let statement = try Self.prepare("INSERT INTO playlist_item (id, playlist_id, track_id, position) VALUES (?, ?, ?, ?);", on: connection); defer { sqlite3_finalize(statement) }; try Self.bind(UUID().uuidString.lowercased(), at: 1, to: statement); try Self.bind(playlistID.description, at: 2, to: statement); try Self.bind(trackID.description, at: 3, to: statement); try Self.bind(Int64(position), at: 4, to: statement); try Self.stepDone(statement, connection: connection); try incrementRevision() }
     }
 
+    public func removePlaylistItem(_ id: UUID) throws {
+        try transaction {
+            let source = try Self.prepare("SELECT playlist_id FROM playlist_item WHERE id = ?;", on: connection)
+            defer { sqlite3_finalize(source) }
+            try Self.bind(id.uuidString.lowercased(), at: 1, to: source)
+            guard sqlite3_step(source) == SQLITE_ROW, let rawPlaylist = Self.text(at: 0, from: source), let playlistUUID = UUID(uuidString: rawPlaylist) else { throw DatabaseError.notFound("Playlist item") }
+            let statement = try Self.prepare("DELETE FROM playlist_item WHERE id = ?;", on: connection)
+            defer { sqlite3_finalize(statement) }
+            try Self.bind(id.uuidString.lowercased(), at: 1, to: statement)
+            try Self.stepDone(statement, connection: connection)
+            try renumberPlaylistItems(.init(rawValue: playlistUUID), orderedItemIDs: try playlistItemIDs(.init(rawValue: playlistUUID)))
+            try incrementRevision()
+        }
+    }
+
+    public func movePlaylistItem(_ id: UUID, to position: Int) throws {
+        try transaction {
+            let source = try Self.prepare("SELECT playlist_id FROM playlist_item WHERE id = ?;", on: connection)
+            defer { sqlite3_finalize(source) }
+            try Self.bind(id.uuidString.lowercased(), at: 1, to: source)
+            guard sqlite3_step(source) == SQLITE_ROW, let rawPlaylist = Self.text(at: 0, from: source), let playlistUUID = UUID(uuidString: rawPlaylist) else { throw DatabaseError.notFound("Playlist item") }
+            let playlistID = PlaylistID(rawValue: playlistUUID)
+            var ids = try playlistItemIDs(playlistID)
+            guard let currentIndex = ids.firstIndex(of: id) else { throw DatabaseError.notFound("Playlist item") }
+            ids.remove(at: currentIndex)
+            ids.insert(id, at: min(max(0, position - 1), ids.count))
+            try renumberPlaylistItems(playlistID, orderedItemIDs: ids)
+            try incrementRevision()
+        }
+    }
+
     public func playlistItems(playlistID: PlaylistID) throws -> [PlaylistItem] {
         let statement = try Self.prepare("SELECT playlist_item.id, playlist_item.track_id, playlist_item.position, track.title FROM playlist_item JOIN track ON track.id = playlist_item.track_id WHERE playlist_item.playlist_id = ? ORDER BY playlist_item.position;", on: connection); defer { sqlite3_finalize(statement) }; try Self.bind(playlistID.description, at: 1, to: statement); var values: [PlaylistItem] = []
         while sqlite3_step(statement) == SQLITE_ROW { guard let raw = Self.text(at: 0, from: statement), let id = UUID(uuidString: raw), let rawTrack = Self.text(at: 1, from: statement), let trackUUID = UUID(uuidString: rawTrack) else { throw DatabaseError.invalidIdentifier("playlist_item") }; values.append(.init(id: id, playlistID: playlistID, trackID: .init(rawValue: trackUUID), position: Int(Self.int(at: 2, from: statement) ?? 0), title: Self.text(at: 3, from: statement) ?? "")) }
         return values
+    }
+
+    private func playlistItemIDs(_ playlistID: PlaylistID) throws -> [UUID] {
+        let statement = try Self.prepare("SELECT id FROM playlist_item WHERE playlist_id = ? ORDER BY position;", on: connection)
+        defer { sqlite3_finalize(statement) }
+        try Self.bind(playlistID.description, at: 1, to: statement)
+        var values: [UUID] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let raw = Self.text(at: 0, from: statement), let id = UUID(uuidString: raw) else { throw DatabaseError.invalidIdentifier("playlist_item") }
+            values.append(id)
+        }
+        return values
+    }
+
+    private func renumberPlaylistItems(_ playlistID: PlaylistID, orderedItemIDs: [UUID]) throws {
+        let offset = try Self.prepare("UPDATE playlist_item SET position = position + 1000000 WHERE playlist_id = ?;", on: connection)
+        defer { sqlite3_finalize(offset) }
+        try Self.bind(playlistID.description, at: 1, to: offset)
+        try Self.stepDone(offset, connection: connection)
+        let update = try Self.prepare("UPDATE playlist_item SET position = ? WHERE id = ? AND playlist_id = ?;", on: connection)
+        defer { sqlite3_finalize(update) }
+        for (index, id) in orderedItemIDs.enumerated() {
+            sqlite3_reset(update)
+            try Self.bind(Int64(index + 1), at: 1, to: update)
+            try Self.bind(id.uuidString.lowercased(), at: 2, to: update)
+            try Self.bind(playlistID.description, at: 3, to: update)
+            try Self.stepDone(update, connection: connection)
+        }
     }
 
     public func finishImportBatch(_ batchID: ImportBatchID, status: ImportBatchStatus, errorSummary: String? = nil) throws {
