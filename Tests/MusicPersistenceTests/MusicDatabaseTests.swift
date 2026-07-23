@@ -418,15 +418,17 @@ struct MusicDatabaseTests {
     func publishedTrackRows() async throws {
         let database = try MusicDatabase(url: temporaryDatabaseURL())
         try await database.migrate()
-        let album = try await database.createAlbum(.init(title: "Published"))
+        let album = try await database.createAlbum(.init(title: "Published", rating: 4))
         let disc = try await database.createDisc(albumID: album.id, title: "Main")
-        _ = try await database.createTrack(discID: disc.id, draft: .init(title: "First", durationMilliseconds: 1234))
+        _ = try await database.createTrack(discID: disc.id, draft: .init(title: "First", durationMilliseconds: 1234, rating: 5))
         let object = try JSONSerialization.jsonObject(with: Data((try await database.catalogueExportJSON()).utf8)) as? [String: Any]
         let albums = try #require(object?["albums"] as? [[String: Any]])
         let discs = try #require(albums.first?["discs"] as? [[String: Any]])
         let tracks = try #require(discs.first?["tracks"] as? [[String: Any]])
         #expect(discs.first?["title"] as? String == "Main")
+        #expect(albums.first?["rating"] as? Int == 4)
         #expect(tracks.first?["title"] as? String == "First")
+        #expect(tracks.first?["rating"] as? Int == 5)
         #expect((tracks.first?["assets"] as? [[String: Any]])?.isEmpty == true)
     }
 
