@@ -18,7 +18,8 @@ struct MusicLibraryPadApp: App {
             PadLibraryView(
                 snapshotDirectory: storageDirectory.appending(path: "SnapshotCache", directoryHint: .isDirectory),
                 mappingStoreURL: storageDirectory.appending(path: "SMBRootMappings.json"),
-                sourceStoreURL: storageDirectory.appending(path: "SnapshotSource.bookmark")
+                sourceStoreURL: storageDirectory.appending(path: "SnapshotSource.bookmark"),
+                preferenceStoreURL: storageDirectory.appending(path: "CompanionPreferences.json")
             )
         }
     }

@@ -10,6 +10,8 @@ public struct PadLibraryView: View {
     @State private var searchText = ""
     @State private var mappings: [SMBRootMapping] = []
     @State private var sourceDirectory: URL?
+    @State private var favouriteAlbumIDs: Set<String> = []
+    @State private var showsFavouritesOnly = false
     @State private var isSelectingSnapshotSource = false
     @State private var isSelectingSMBRoot = false
     @State private var rootID = ""
@@ -17,13 +19,15 @@ public struct PadLibraryView: View {
     private let client: SnapshotClient
     private let mappingStore: SMBRootMappingStore
     private let sourceStore: SnapshotSourceStore
+    private let preferenceStore: CompanionPreferenceStore
     private let snapshotDirectory: URL
 
-    public init(snapshotDirectory: URL, mappingStoreURL: URL, sourceStoreURL: URL? = nil) {
+    public init(snapshotDirectory: URL, mappingStoreURL: URL, sourceStoreURL: URL? = nil, preferenceStoreURL: URL? = nil) {
         self.snapshotDirectory = snapshotDirectory
         client = SnapshotClient(cacheDirectory: snapshotDirectory)
         mappingStore = SMBRootMappingStore(url: mappingStoreURL)
         sourceStore = SnapshotSourceStore(url: sourceStoreURL ?? mappingStoreURL.deletingLastPathComponent().appending(path: "snapshot-source.bookmark"))
+        preferenceStore = CompanionPreferenceStore(url: preferenceStoreURL ?? mappingStoreURL.deletingLastPathComponent().appending(path: "companion-preferences.json"))
     }
 
     public var body: some View {
@@ -48,7 +52,11 @@ public struct PadLibraryView: View {
                             Text("No albums match your search.").foregroundStyle(.secondary)
                         }
                         ForEach(filteredAlbums) { album in
-                            NavigationLink { PadAlbumDetailView(album: album, mappings: mappings, playback: playback) } label: { PadAlbumRow(album: album) }
+                            NavigationLink {
+                                PadAlbumDetailView(album: album, mappings: mappings, playback: playback, isFavourite: favouriteAlbumIDs.contains(album.id), onSetFavourite: { setFavourite($0, for: album.id) })
+                            } label: {
+                                PadAlbumRow(album: album, isFavourite: favouriteAlbumIDs.contains(album.id))
+                            }
                         }
                     } else {
                         Text("Refresh a verified snapshot to browse albums.").foregroundStyle(.secondary)
@@ -68,6 +76,7 @@ public struct PadLibraryView: View {
             }
             .navigationTitle("Music Library")
             .searchable(text: $searchText, prompt: "Search title, edition, catalogue number")
+            .toolbar { Toggle("Favourites only", isOn: $showsFavouritesOnly) }
             .task { loadState() }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { checkForNewerSource() }
@@ -90,6 +99,8 @@ public struct PadLibraryView: View {
     private func loadState() {
         mappings = (try? mappingStore.mappings()) ?? []
         sourceDirectory = try? sourceStore.selectedDirectory()
+        do { favouriteAlbumIDs = try preferenceStore.favouriteAlbumIDs() }
+        catch { message = "Could not load device-local favourites: \(error.localizedDescription)" }
         do {
             catalogue = try client.localCatalogue()
             snapshotStatus = catalogue == nil ? "No verified snapshot loaded" : "Verified local snapshot available"
@@ -147,18 +158,32 @@ public struct PadLibraryView: View {
 
     private var filteredAlbums: [ReadOnlyAlbum] {
         guard let catalogue else { return [] }
-        return catalogue.albums.filter { $0.matches(searchText) }
+        return catalogue.albums.filter { $0.matches(searchText) && (!showsFavouritesOnly || favouriteAlbumIDs.contains($0.id)) }
+    }
+
+    private func setFavourite(_ isFavourite: Bool, for albumID: String) {
+        do {
+            try preferenceStore.setFavourite(isFavourite, albumID: albumID)
+            if isFavourite { favouriteAlbumIDs.insert(albumID) }
+            else { favouriteAlbumIDs.remove(albumID) }
+        } catch {
+            message = "Could not save device-local favourite: \(error.localizedDescription)"
+        }
     }
 }
 
 public struct PadAlbumRow: View {
     public let album: ReadOnlyAlbum
+    public let isFavourite: Bool
 
-    public init(album: ReadOnlyAlbum) { self.album = album }
+    public init(album: ReadOnlyAlbum, isFavourite: Bool = false) { self.album = album; self.isFavourite = isFavourite }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(album.displayTitle)
+            HStack {
+                Text(album.displayTitle)
+                if isFavourite { Image(systemName: "star.fill").foregroundStyle(.yellow) }
+            }
             HStack(spacing: 6) {
                 if let releaseYear = album.releaseYear { Text(String(releaseYear)) }
                 if let rating = album.rating { Text("\(rating)★") }
@@ -175,11 +200,15 @@ public struct PadAlbumDetailView: View {
     public let album: ReadOnlyAlbum
     public let mappings: [SMBRootMapping]
     @ObservedObject public var playback: CompanionPlaybackController
+    public let isFavourite: Bool
+    public let onSetFavourite: (Bool) -> Void
 
-    public init(album: ReadOnlyAlbum, mappings: [SMBRootMapping] = [], playback: CompanionPlaybackController) {
+    public init(album: ReadOnlyAlbum, mappings: [SMBRootMapping] = [], playback: CompanionPlaybackController, isFavourite: Bool = false, onSetFavourite: @escaping (Bool) -> Void = { _ in }) {
         self.album = album
         self.mappings = mappings
         self.playback = playback
+        self.isFavourite = isFavourite
+        self.onSetFavourite = onSetFavourite
     }
 
     public var body: some View {
@@ -219,6 +248,11 @@ public struct PadAlbumDetailView: View {
             }
         }
         .navigationTitle(album.displayTitle)
+        .toolbar {
+            Button(isFavourite ? "Remove Favourite" : "Add Favourite", systemImage: isFavourite ? "star.fill" : "star") {
+                onSetFavourite(!isFavourite)
+            }
+        }
     }
 
     private func assetStatus(for track: ReadOnlyTrack) -> String {

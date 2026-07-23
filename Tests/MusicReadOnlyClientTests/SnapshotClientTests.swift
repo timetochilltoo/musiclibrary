@@ -3,6 +3,18 @@ import CryptoKit
 import Testing
 @testable import MusicReadOnlyClient
 
+@Test("Companion favourites are device-local and survive reload")
+func companionFavourites() throws {
+    let url = FileManager.default.temporaryDirectory.appending(path: "companion-preferences-\(UUID().uuidString).json")
+    defer { try? FileManager.default.removeItem(at: url) }
+    let store = CompanionPreferenceStore(url: url)
+    try store.setFavourite(true, albumID: "album-1")
+    try store.setFavourite(true, albumID: "album-2")
+    try store.setFavourite(false, albumID: "album-1")
+    #expect(try store.favouriteAlbumIDs() == ["album-2"])
+    #expect(try CompanionPreferenceStore(url: url).favouriteAlbumIDs() == ["album-2"])
+}
+
 @Test("Snapshot client keeps last valid cache when checksum fails")
 func snapshotValidation() throws {
     let source = FileManager.default.temporaryDirectory.appending(path: "snapshot-source-\(UUID().uuidString)"); let cache = FileManager.default.temporaryDirectory.appending(path: "snapshot-cache-\(UUID().uuidString)"); defer { try? FileManager.default.removeItem(at: source); try? FileManager.default.removeItem(at: cache) }; try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)

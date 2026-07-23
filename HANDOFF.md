@@ -218,7 +218,7 @@ This database is user data. Do not remove it during development. If a destructiv
 
 ## 8. Current tests and verification baseline
 
-The last verified baseline contains 51 tests in 5 suites, run with a rebuilt `swift test` on 24 July 2026. Run `swift test`; do not rely on this handoff alone.
+The last verified baseline contains 52 tests in 5 suites, run with a rebuilt `swift test` on 24 July 2026. Run `swift test`; do not rely on this handoff alone.
 
 Albums now expose **Move to Recently Deleted** in the Albums list context menu. Settings displays a **Recently Deleted** section and its Restore action. This uses the existing soft-delete records, preserves album relationships, and never deletes or changes source media files.
 
@@ -306,6 +306,8 @@ Storage-root authorization, Import Inbox scanning, embedded common-tag proposal 
 ### Read-only companion foundation
 
 `SnapshotClient` reads a published directory supplied by its host, verifies its JSON manifest and payload checksum, and maintains a local cache. `localCatalogue()` validates the cached payload checksum again before decoding it. `SnapshotSourceStore` persists a security-scoped selected source, and `SMBRootMappingStore` remains a separate device-local JSON preference store. `ReadOnlyDigitalAsset.resolve(using:)` only joins a safe relative path to a matching device-local mapped root; it refuses absolute/traversal paths and never falls back to a Mac path. `CompanionPlaybackController` checks for a resolved mapped URL and local file existence before using `AVAudioPlayer`; its transport state is device-local and it never mutates catalogue/mapping data. `MusicLibraryPadApp` is the SwiftUI composition target. `PadLibraryView` checks a selected manifest's modification date at launch and whenever its scene becomes active, displays a non-blocking update-available indicator, and retains the existing cache until an explicit refresh. Run `xcodegen generate`, open `MusicLibraryPad.xcodeproj`, select a Development Team, then build the `MusicLibraryPad` scheme. An unsigned iOS Simulator build was verified with `xcodebuild` on 22 July 2026.
+
+`CompanionPreferenceStore` writes `CompanionPreferences.json` under iPad Application Support. It currently holds only a set of published album IDs starred by the user. The iPad album detail toggles this preference, album rows show a star, and a **Favourites only** filter narrows local browsing. This data is intentionally outside the verified snapshot cache and Mac master: it is never published, uploaded, merged, or treated as catalogue data. Snapshot refresh preserves it; IDs that are absent from a newer snapshot simply do not appear until/if that album returns.
 
 ## 10. Non-negotiable invariants to preserve
 
