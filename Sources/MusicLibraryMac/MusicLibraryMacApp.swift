@@ -359,6 +359,9 @@ private struct StorageRootList: View {
                         catch { library.presentError(error) }
                     }
                 }
+                if library.storageRoots.isEmpty {
+                    ContentUnavailableView("No music folders", systemImage: "externaldrive", description: Text("Add a local or NAS folder. The app saves access permission, not NAS credentials."))
+                }
                 ForEach(library.storageRoots) { root in
                     HStack {
                         Image(systemName: symbol(for: root.status)).foregroundStyle(color(for: root.status))
@@ -522,9 +525,6 @@ private struct StorageRootList: View {
             }
         } message: {
             Text(relinkProposalToApply.map(relinkConfirmationMessage) ?? "")
-        }
-        .overlay {
-            if library.isReady && library.storageRoots.isEmpty { ContentUnavailableView("No music folders", systemImage: "externaldrive", description: Text("Add a local or NAS folder. The app saves access permission, not NAS credentials.")) }
         }
         .sheet(item: $rootToRename) { root in StorageRootRenameEditor(library: library, root: root) }
     }
