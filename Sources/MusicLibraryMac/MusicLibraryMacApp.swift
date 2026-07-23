@@ -183,10 +183,17 @@ private struct LibraryShellView: View {
             }
             .overlay { if library.isReady && library.playlists.isEmpty { ContentUnavailableView("No playlists", systemImage: "music.note.list", description: Text("Create a playlist, then add tracks from an album.")) } }
         case .settings:
-            StorageRootList(library: library) { albumID in
-                selectedAlbumID = albumID
-                section = .albums
-            }
+            StorageRootList(
+                library: library,
+                onShowAlbum: { albumID in
+                    selectedAlbumID = albumID
+                    section = .albums
+                },
+                onShowImportBatch: { batchID in
+                    selectedImportBatchID = batchID
+                    section = .importInbox
+                }
+            )
         default:
             ContentUnavailableView(section?.title ?? "Music Library", systemImage: section?.symbol ?? "music.note")
         }
@@ -302,6 +309,7 @@ private func relinkConfirmationMessage(_ proposal: AssetRelinkProposal) -> Strin
 private struct StorageRootList: View {
     @ObservedObject var library: LibraryStore
     let onShowAlbum: (AlbumID) -> Void
+    let onShowImportBatch: (ImportBatchID) -> Void
     @State private var rootToRename: StorageRoot?
     @State private var relinkProposalToApply: AssetRelinkProposal?
     @State private var restoreManifestURL: URL?
@@ -424,6 +432,18 @@ private struct StorageRootList: View {
                     }
                 }
             }
+            if !importBatchesNeedingAttention.isEmpty {
+                Section("Import Inbox Attention") {
+                    ForEach(importBatchesNeedingAttention) { batch in
+                        VStack(alignment: .leading) {
+                            Label(batch.sourceDescription ?? "Music folder", systemImage: "tray.and.arrow.down.fill")
+                            Text(importAttentionDetail(batch)).font(.caption).foregroundStyle(.secondary)
+                            Button("Review Import") { onShowImportBatch(batch.id) }
+                                .font(.caption)
+                        }
+                    }
+                }
+            }
             if !library.duplicateAssets.isEmpty {
                 Section("Possible duplicate assets") {
                     ForEach(library.duplicateAssets, id: \.contentHash) { duplicate in
@@ -515,6 +535,16 @@ private struct StorageRootList: View {
         case .missingArtwork: "photo.badge.exclamationmark"
         default: "exclamationmark.triangle"
         }
+    }
+
+    private var importBatchesNeedingAttention: [ImportBatch] {
+        library.importBatches.filter { $0.status == .failed || $0.status == .cancelled || $0.errorCount > 0 }
+    }
+
+    private func importAttentionDetail(_ batch: ImportBatch) -> String {
+        if batch.status == .failed { return batch.errorSummary ?? "The scan failed. Review it and retry when ready." }
+        if batch.status == .cancelled { return "The scan was cancelled after (batch.processedCount) item(s). Review it or retry the scan." }
+        return "(batch.errorCount) scan error(s) were recorded among (batch.processedCount) processed item(s)."
     }
 
     private func label(for status: StorageRootStatus) -> String { switch status { case .available: "Available"; case .offline: "Offline"; case .permissionRequired: "Permission required" } }
