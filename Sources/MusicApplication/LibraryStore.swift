@@ -172,6 +172,7 @@ public final class LibraryStore: ObservableObject {
 
     public func recheckLibraryHealth() async throws {
         try await refreshStorageRootAccess()
+        try await refreshAvailableAssetStatuses()
         try await reload()
     }
     public func applyRelinkProposal(_ id: UUID) async throws {
@@ -296,6 +297,21 @@ public final class LibraryStore: ObservableObject {
             let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined(); try await database.recordAssetFingerprint(candidate.id, contentHash: hash, quickSignature: "\(data.count)-\(hash.prefix(16))")
         }
         try await reload()
+    }
+
+    private func refreshAvailableAssetStatuses() async throws {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        for candidate in try await database.assetFingerprintCandidates() {
+            guard let root = storageRoots.first(where: { $0.id == candidate.rootID }) else { continue }
+            let state = resolveSecurityScopedBookmark(root)
+            guard state.status == .available, let rootURL = state.url else { continue }
+            let accessed = rootURL.startAccessingSecurityScopedResource()
+            defer { if accessed { rootURL.stopAccessingSecurityScopedResource() } }
+            guard accessed else { continue }
+            let url = rootURL.appending(path: candidate.relativePath)
+            let availability: DigitalAssetAvailability = FileManager.default.fileExists(atPath: url.path) ? .available : .missing
+            try await database.updateAssetAvailability(candidate.id, to: availability)
+        }
     }
 
     public func startImportScan(rootID: StorageRootID) async throws {

@@ -360,6 +360,14 @@ public actor MusicDatabase {
     public func recordAssetFingerprint(_ assetID: DigitalAssetID, contentHash: String, quickSignature: String) throws {
         try transaction { let statement = try Self.prepare("UPDATE digital_asset SET content_hash = ?, quick_signature = ? WHERE id = ?;", on: connection); defer { sqlite3_finalize(statement) }; try Self.bind(contentHash, at: 1, to: statement); try Self.bind(quickSignature, at: 2, to: statement); try Self.bind(assetID.description, at: 3, to: statement); try Self.stepDone(statement, connection: connection); guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Digital asset") } }
     }
+    public func updateAssetAvailability(_ assetID: DigitalAssetID, to availability: DigitalAssetAvailability) throws {
+        let statement = try Self.prepare("UPDATE digital_asset SET availability = ? WHERE id = ?;", on: connection)
+        defer { sqlite3_finalize(statement) }
+        try Self.bind(availability.rawValue, at: 1, to: statement)
+        try Self.bind(assetID.description, at: 2, to: statement)
+        try Self.stepDone(statement, connection: connection)
+        guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Digital asset") }
+    }
     public func duplicateAssets() throws -> [AssetDuplicate] {
         let statement = try Self.prepare("SELECT content_hash, group_concat(relative_path, '|') FROM digital_asset WHERE content_hash IS NOT NULL GROUP BY content_hash HAVING COUNT(*) > 1;", on: connection); defer { sqlite3_finalize(statement) }; var values: [AssetDuplicate] = []
         while sqlite3_step(statement) == SQLITE_ROW { guard let hash = Self.text(at: 0, from: statement) else { continue }; values.append(.init(contentHash: hash, paths: (Self.text(at: 1, from: statement) ?? "").split(separator: "|").map(String.init))) }

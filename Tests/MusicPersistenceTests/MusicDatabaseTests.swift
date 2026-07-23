@@ -238,6 +238,12 @@ struct MusicDatabaseTests {
         try await database.updateImportReleaseProposal(importProposal.id, status: .approved)
         let albumID = try await database.confirmImportReleaseProposal(importProposal.id)
         let assetID = try #require(await database.digitalAssetIDs(albumID: albumID).first)
+        let revisionBeforeHealthCheck = try await database.currentRevision()
+        try await database.updateAssetAvailability(assetID, to: .missing)
+        #expect(try await database.libraryHealthIssues().map(\.kind) == [.missing])
+        try await database.updateAssetAvailability(assetID, to: .available)
+        #expect(try await database.libraryHealthIssues().isEmpty)
+        #expect(try await database.currentRevision() == revisionBeforeHealthCheck)
         let relink = try await database.proposeRelink(assetID: assetID, proposedRelativePath: "Album/new-song.mp3")
         let revisionBeforeApply = try await database.currentRevision()
 
