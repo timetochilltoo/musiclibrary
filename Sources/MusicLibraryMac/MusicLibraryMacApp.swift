@@ -105,6 +105,14 @@ private struct LibraryShellView: View {
         } message: {
             Text(library.errorMessage ?? "")
         }
+        .alert("Playback", isPresented: Binding(
+            get: { playback.errorMessage != nil },
+            set: { if !$0 { playback.dismissError() } }
+        )) {
+            Button("OK", role: .cancel) { playback.dismissError() }
+        } message: {
+            Text(playback.errorMessage ?? "")
+        }
         .safeAreaInset(edge: .bottom) {
             if playback.isPlaying || playback.currentTitle != "Nothing playing" {
                 HStack { Image(systemName: playback.isPlaying ? "speaker.wave.2.fill" : "pause.circle"); Text(playback.currentTitle).lineLimit(1); Spacer(); Button("Previous", systemImage: "backward.fill") { playback.previous() }.labelStyle(.iconOnly); Button(playback.isPlaying ? "Pause" : "Play") { playback.toggle() }; Button("Next", systemImage: "forward.fill") { playback.next() }.labelStyle(.iconOnly); Menu("Queue") { Button("Shuffle") { playback.shuffle() }; Picker("Repeat", selection: Binding(get: { playback.queue.repeatMode }, set: { playback.setRepeatMode($0) })) { ForEach(RepeatMode.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) } } }; Slider(value: Binding(get: { playback.volume }, set: { playback.setVolume(Float($0)) }), in: 0...1).frame(width: 90); Button("Stop") { playback.stop() } }

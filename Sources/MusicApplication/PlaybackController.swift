@@ -18,10 +18,28 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
         guard items.indices.contains(index) else { throw NSError(domain: "MusicLibrary", code: 1, userInfo: [NSLocalizedDescriptionKey: "No playable queue item was selected."]) }
         self.items = items; queue.replace(with: items.map(\.trackID), startingAt: index); persist(); try loadCurrentAndPlay()
     }
-    public func toggle() { guard let player else { return }; if player.isPlaying { player.pause(); isPlaying = false } else { player.play(); isPlaying = true } }
+    public func toggle() {
+        guard let player else { return }
+        if player.isPlaying {
+            player.pause()
+            isPlaying = false
+        } else if player.play() {
+            isPlaying = true
+        } else {
+            failPlayback(message: "The current audio file could not resume playing.")
+        }
+    }
     public func stop() { player?.stop(); isPlaying = false }
-    public func next() { guard queue.next() != nil, let index = queue.currentIndex else { stop(); return }; persist(); try? load(index: index) }
-    public func previous() { guard queue.previous() != nil, let index = queue.currentIndex else { return }; persist(); try? load(index: index) }
+    public func next() {
+        guard queue.next() != nil, let index = queue.currentIndex else { stop(); return }
+        persist()
+        loadOrReport(index: index)
+    }
+    public func previous() {
+        guard queue.previous() != nil, let index = queue.currentIndex else { return }
+        persist()
+        loadOrReport(index: index)
+    }
     public func seek(to fraction: Double) { guard let player, player.duration > 0 else { return }; player.currentTime = player.duration * min(max(0, fraction), 1) }
     public func setVolume(_ value: Float) { volume = Double(min(max(0, value), 1)); player?.volume = Float(volume) }
     public func setRepeatMode(_ mode: RepeatMode) { queue.repeatMode = mode; persist() }
@@ -29,6 +47,32 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
     public func dismissError() { errorMessage = nil }
     private func persist() { if let data = try? JSONEncoder().encode(queue) { UserDefaults.standard.set(data, forKey: defaultsKey) } }
     private func loadCurrentAndPlay() throws { guard let index = queue.currentIndex else { return }; try load(index: index) }
-    private func load(index: Int) throws { guard items.indices.contains(index) else { return }; let item = items[index]; player = try AVAudioPlayer(contentsOf: item.url); player?.delegate = self; player?.prepareToPlay(); player?.play(); currentTitle = item.title; isPlaying = true }
+    private func loadOrReport(index: Int) {
+        do {
+            try load(index: index)
+        } catch {
+            failPlayback(message: error.localizedDescription)
+        }
+    }
+    private func failPlayback(message: String) {
+        player?.stop()
+        player = nil
+        isPlaying = false
+        currentTitle = "Playback unavailable"
+        errorMessage = message
+    }
+    private func load(index: Int) throws {
+        guard items.indices.contains(index) else { return }
+        let item = items[index]
+        let openedPlayer = try AVAudioPlayer(contentsOf: item.url)
+        openedPlayer.delegate = self
+        openedPlayer.prepareToPlay()
+        guard openedPlayer.play() else {
+            throw NSError(domain: "MusicLibrary", code: 2, userInfo: [NSLocalizedDescriptionKey: "The audio file could not start playing."])
+        }
+        player = openedPlayer
+        currentTitle = item.title
+        isPlaying = true
+    }
     nonisolated public func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) { guard flag else { return }; Task { @MainActor [weak self] in self?.next() } }
 }

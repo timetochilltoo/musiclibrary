@@ -301,7 +301,7 @@ Settings now includes **Recent Catalogue Activity**. `MusicDatabase.incrementRev
 
 ### Digital media
 
-Storage-root authorization, Import Inbox scanning, embedded common-tag proposal review, confirmed digital assets, basic Library Health, local Mac playback, playlists, and explicit SHA-256 duplicate diagnostics are implemented. Fingerprint verification is user-triggered. A stored relink proposal can be applied only after a Mac confirmation: it changes the catalogue's root-relative path and removes the proposal; it never moves, renames, or otherwise changes an audio file.
+Storage-root authorization, Import Inbox scanning, embedded common-tag proposal review, confirmed digital assets, basic Library Health, local Mac playback, playlists, and explicit SHA-256 duplicate diagnostics are implemented. Fingerprint verification is user-triggered. A stored relink proposal can be applied only after a Mac confirmation: it changes the catalogue's root-relative path and removes the proposal; it never moves, renames, or otherwise changes an audio file. `PlaybackController` now turns failed resume/previous/next AVFoundation opens into a stopped **Playback unavailable** state and the Mac shell presents its local error alert; it does not mutate catalogue data or silently retain a playing state.
 
 ### Read-only companion foundation
 
