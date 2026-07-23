@@ -224,14 +224,28 @@ struct MusicDatabaseTests {
         #expect(try await database.libraryHealthIssues().map(\.kind) == [.offline])
     }
 
-    @Test("Asset fingerprints and relink proposals never change the stored path")
-    func assetDiagnosticsAreNonDestructive() async throws {
-        let database = try MusicDatabase(url: temporaryDatabaseURL()); try await database.migrate()
+    @Test("Applying a relink proposal changes only the stored catalogue path")
+    func applyRelinkProposal() async throws {
+        let database = try MusicDatabase(url: temporaryDatabaseURL())
+        try await database.migrate()
         let root = try await database.createStorageRoot(.init(displayName: "Music", lastKnownPath: "/Music", bookmarkData: Data([1])))
-        let album = try await database.createAlbum(.init(title: "Album")); let disc = try await database.createDisc(albumID: album.id, title: nil); let track = try await database.createTrack(discID: disc.id, draft: .init(title: "Song"))
-        // Create an asset by confirming a minimal approved proposal path through the existing import flow is covered elsewhere; this test exercises the migration's no-op safety at the API boundary.
-        #expect(try await database.digitalAssetIDs(albumID: album.id).isEmpty)
-        _ = root; _ = track
+        let batch = try await database.createImportBatch(storageRootID: root.id, sourceDescription: "/Music")
+        try await database.recordImportCandidate(batchID: batch.id, payload: .init(relativePath: "Album/old-song.mp3", fileName: "old-song.mp3", contentTypeIdentifier: "public.mp3", fileSize: 123, modifiedAt: nil))
+        let candidate = try #require(await database.importCandidates(batchID: batch.id).first)
+        try await database.saveEmbeddedMetadata(.init(title: "Song", albumTitle: "Album", artist: "Artist", albumArtist: nil, discNumber: 1, trackNumber: 1, durationMilliseconds: 1000, rawTags: [:]), for: candidate.id)
+        try await database.rebuildImportReleaseProposals(batchID: batch.id, drafts: [.init(title: "Album", artist: "Artist", discCount: 1, confidence: 0.9, candidateIDs: [candidate.id])])
+        let importProposal = try #require(await database.importReleaseProposals(batchID: batch.id).first)
+        try await database.updateImportReleaseProposal(importProposal.id, status: .approved)
+        let albumID = try await database.confirmImportReleaseProposal(importProposal.id)
+        let assetID = try #require(await database.digitalAssetIDs(albumID: albumID).first)
+        let relink = try await database.proposeRelink(assetID: assetID, proposedRelativePath: "Album/new-song.mp3")
+        let revisionBeforeApply = try await database.currentRevision()
+
+        try await database.applyRelinkProposal(relink.id)
+
+        #expect(try await database.relinkProposals().isEmpty)
+        #expect(try await database.assetFingerprintCandidates().first(where: { $0.id == assetID })?.relativePath == "Album/new-song.mp3")
+        #expect(try await database.currentRevision() == revisionBeforeApply + 1)
     }
 
     @Test("Albums can be soft-deleted, restored, and exported")

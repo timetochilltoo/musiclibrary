@@ -380,6 +380,21 @@ public actor MusicDatabase {
         }
         return values
     }
+    public func applyRelinkProposal(_ id: UUID) throws {
+        try transaction {
+            let proposal = try Self.prepare("SELECT asset_id, proposed_relative_path FROM asset_relink_proposal WHERE id = ?;", on: connection)
+            defer { sqlite3_finalize(proposal) }
+            try Self.bind(id.uuidString.lowercased(), at: 1, to: proposal)
+            guard sqlite3_step(proposal) == SQLITE_ROW, let assetID = Self.text(at: 0, from: proposal), let path = Self.text(at: 1, from: proposal) else { throw DatabaseError.notFound("Relink proposal") }
+            let update = try Self.prepare("UPDATE digital_asset SET relative_path = ? WHERE id = ?;", on: connection)
+            defer { sqlite3_finalize(update) }
+            try Self.bind(path, at: 1, to: update); try Self.bind(assetID, at: 2, to: update); try Self.stepDone(update, connection: connection)
+            let delete = try Self.prepare("DELETE FROM asset_relink_proposal WHERE id = ?;", on: connection)
+            defer { sqlite3_finalize(delete) }
+            try Self.bind(id.uuidString.lowercased(), at: 1, to: delete); try Self.stepDone(delete, connection: connection)
+            try incrementRevision()
+        }
+    }
     public func digitalAssetIDs(albumID: AlbumID) throws -> [DigitalAssetID] {
         let statement = try Self.prepare("SELECT digital_asset.id FROM digital_asset JOIN track ON track.id = digital_asset.track_id JOIN disc ON disc.id = track.disc_id WHERE disc.album_id = ? ORDER BY digital_asset.id;", on: connection); defer { sqlite3_finalize(statement) }; try Self.bind(albumID.description, at: 1, to: statement); var values: [DigitalAssetID] = []
         while sqlite3_step(statement) == SQLITE_ROW { guard let raw = Self.text(at: 0, from: statement), let uuid = UUID(uuidString: raw) else { throw DatabaseError.invalidIdentifier("digital_asset") }; values.append(.init(rawValue: uuid)) }

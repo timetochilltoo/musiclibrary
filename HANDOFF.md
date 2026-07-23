@@ -218,7 +218,7 @@ This database is user data. Do not remove it during development. If a destructiv
 
 ## 8. Current tests and verification baseline
 
-The last verified baseline contains 37 tests in 4 suites, run with a rebuilt `swift test` followed by `swift test --skip-build` on 22 July 2026. Run `swift test`; do not rely on this handoff alone.
+The last verified baseline contains 37 tests in 4 suites, run with a rebuilt `swift test` followed by `swift test --skip-build` on 23 July 2026. Run `swift test`; do not rely on this handoff alone.
 
 `MusicDomainTests/AlbumTests.swift` verifies:
 
@@ -242,6 +242,7 @@ The last verified baseline contains 37 tests in 4 suites, run with a rebuilt `sw
 - Import Inbox batch/candidate persistence and proof that scanning does not mutate albums or catalogue revision.
 - Metadata-proposal persistence, approval state, and proof that review does not create catalogue records or alter catalogue revision.
 - Idempotent approved-proposal confirmation and offline-root Library Health derivation.
+- Explicit individual relink application: updates only the catalogue-relative path, consumes the reviewed proposal, and increments the catalogue revision.
 - Queue ordering/repeat and Codable state restoration.
 - Playlist ordered membership persistence.
 
@@ -285,7 +286,7 @@ Album edits and box membership workflows are available. Album detail supports ma
 
 ### Digital media
 
-Storage-root authorization, Import Inbox scanning, embedded common-tag proposal review, confirmed digital assets, basic Library Health, local Mac playback, playlists, and explicit SHA-256 duplicate diagnostics are implemented. Fingerprint verification is user-triggered; relink proposals never change paths automatically.
+Storage-root authorization, Import Inbox scanning, embedded common-tag proposal review, confirmed digital assets, basic Library Health, local Mac playback, playlists, and explicit SHA-256 duplicate diagnostics are implemented. Fingerprint verification is user-triggered. A stored relink proposal can be applied only after a Mac confirmation: it changes the catalogue's root-relative path and removes the proposal; it never moves, renames, or otherwise changes an audio file.
 
 ### Read-only companion foundation
 
@@ -314,7 +315,7 @@ If an invariant needs to change, stop and document the proposed migration and us
 
 The Mac now persists the latest publication failure, shows it in Settings after relaunch, and changes the manual action to Retry Publish. Settings also provides a safe Library Health recheck: it refreshes root authorization/availability and derived issues without modifying files or stored paths.
 Possible duplicate assets are shown in Settings by shared verified content hash and path list. This is review-only: no duplicate is removed, moved, or relinked automatically.
-Stored relink proposals are also visible with before/after relative paths. They remain review-only; confirmation/apply is deliberately not implemented.
+Stored relink proposals are visible with before/after relative paths. The Mac requires an explicit confirmation before applying one; this is a database-only path correction, not a filesystem operation. The workflow does not yet verify that the proposed target exists, so future relink discovery must continue to make its evidence clear before proposing a correction.
 The macOS Import Inbox view was refactored into small row/summary helpers and now uses the current SwiftUI confirmation-dialog API. This prevents the compiler type-check failures previously seen when launching `swift run MusicLibraryMac`.
 
 ### Goal

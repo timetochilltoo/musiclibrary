@@ -208,9 +208,14 @@ private func proposalConfirmationMessage(_ proposal: ImportReleaseProposal) -> S
     "This will create one album, \(proposal.trackCount) tracks, and root-relative digital asset records. It will not copy, move, or modify any audio files."
 }
 
+private func relinkConfirmationMessage(_ proposal: AssetRelinkProposal) -> String {
+    "Change the catalogue path from \(proposal.currentPath) to \(proposal.proposedPath). No audio file will be moved or renamed."
+}
+
 private struct StorageRootList: View {
     @ObservedObject var library: LibraryStore
     @State private var rootToRename: StorageRoot?
+    @State private var relinkProposalToApply: AssetRelinkProposal?
     @State private var showsSnapshotDestinationPicker = false
 
     var body: some View {
@@ -263,9 +268,14 @@ private struct StorageRootList: View {
                 }
             }
             if !library.relinkProposals.isEmpty {
-                Section("Relink proposals — review only") {
+                Section("Relink proposals") {
                     ForEach(library.relinkProposals) { proposal in
-                        VStack(alignment: .leading) { Text(proposal.currentPath).font(.caption); Text("Proposed: \(proposal.proposedPath)").font(.caption).foregroundStyle(.secondary) }
+                        VStack(alignment: .leading) {
+                            Text(proposal.currentPath).font(.caption)
+                            Text("Proposed: \(proposal.proposedPath)").font(.caption).foregroundStyle(.secondary)
+                            Button("Apply Catalogue Path") { relinkProposalToApply = proposal }
+                                .font(.caption)
+                        }
                     }
                 }
             }
@@ -273,6 +283,18 @@ private struct StorageRootList: View {
         }
         .fileImporter(isPresented: $showsSnapshotDestinationPicker, allowedContentTypes: [.folder]) { result in
             if case let .success(url) = result { try? library.setSnapshotDestination(url) }
+        }
+        .confirmationDialog("Apply catalogue path?", isPresented: Binding(get: { relinkProposalToApply != nil }, set: { if !$0 { relinkProposalToApply = nil } }), titleVisibility: .visible) {
+            if let proposal = relinkProposalToApply {
+                Button("Apply Catalogue Path") {
+                    Task {
+                        try? await library.applyRelinkProposal(proposal.id)
+                        relinkProposalToApply = nil
+                    }
+                }
+            }
+        } message: {
+            Text(relinkProposalToApply.map(relinkConfirmationMessage) ?? "")
         }
         .overlay {
             if library.isReady && library.storageRoots.isEmpty { ContentUnavailableView("No music folders", systemImage: "externaldrive", description: Text("Add a local or NAS folder. The app saves access permission, not NAS credentials.")) }

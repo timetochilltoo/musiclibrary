@@ -174,6 +174,11 @@ public final class LibraryStore: ObservableObject {
         try await refreshStorageRootAccess()
         try await reload()
     }
+    public func applyRelinkProposal(_ id: UUID) async throws {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        try await database.applyRelinkProposal(id)
+        try await reload()
+    }
 
     public func importCandidates(batchID: ImportBatchID) async throws -> [ImportCandidate] {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
