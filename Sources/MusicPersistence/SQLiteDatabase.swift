@@ -1036,6 +1036,17 @@ public actor MusicDatabase {
         return .init(id: id, name: valid.name, sortName: valid.sortName)
     }
 
+    public func contributors() throws -> [Contributor] {
+        let statement = try Self.prepare("SELECT id, name, sort_name FROM contributor ORDER BY COALESCE(sort_name, name) COLLATE NOCASE, name COLLATE NOCASE;", on: connection)
+        defer { sqlite3_finalize(statement) }
+        var values: [Contributor] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let raw = Self.text(at: 0, from: statement), let uuid = UUID(uuidString: raw) else { throw DatabaseError.invalidIdentifier("contributor") }
+            values.append(.init(id: .init(rawValue: uuid), name: Self.text(at: 1, from: statement) ?? "", sortName: Self.text(at: 2, from: statement)))
+        }
+        return values
+    }
+
     public func updateContributor(_ contributorID: ContributorID, with draft: NewContributor) throws -> Contributor {
         let valid = try draft.validated()
         try transaction {

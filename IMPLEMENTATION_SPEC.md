@@ -18,7 +18,7 @@ Completed and verified:
 - Domain identifiers, album/edition model, physical locations, box sets, contributor roles, and derived digital-availability logic.
 - SQLite schema migrations 1 through 9, foreign keys, catalogue revision tracking, and core repositories.
 - Persistent Mac catalogue stored in the user's Application Support directory.
-- Catalogue UI: browse/search albums; add albums; create/rename locations; create box sets; show basic album details.
+- Catalogue UI: browse/search albums; browse contributors; add albums; create/rename locations; create box sets; show basic album details.
 - Atomic album creation inside a box set, including inherited physical-location behaviour.
 - Album editing plus box-member browse, confirmed move, removal with a standalone placement, and reorder workflows.
 - Schema migration 2 adds `physical_location_unknown`, removing ambiguity between a boxed album and a standalone CD whose location is unknown.

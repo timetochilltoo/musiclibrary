@@ -8,6 +8,7 @@ import MusicPersistence
 public final class LibraryStore: ObservableObject {
     @Published public private(set) var albums: [Album] = []
     @Published public private(set) var deletedAlbums: [Album] = []
+    @Published public private(set) var contributors: [Contributor] = []
     @Published public private(set) var locations: [PhysicalLocation] = []
     @Published public private(set) var boxSets: [BoxSet] = []
     @Published public private(set) var storageRoots: [StorageRoot] = []
@@ -72,6 +73,7 @@ public final class LibraryStore: ObservableObject {
         guard let database else { return }
         async let loadedAlbums = database.albums(matching: searchTerm)
         async let loadedDeletedAlbums = database.deletedAlbums()
+        async let loadedContributors = database.contributors()
         async let loadedLocations = database.locations()
         async let loadedBoxSets = database.boxSets()
         async let loadedStorageRoots = database.storageRoots()
@@ -81,6 +83,7 @@ public final class LibraryStore: ObservableObject {
         async let loadedDeletedPlaylists = database.deletedPlaylists()
         albums = try await loadedAlbums
         deletedAlbums = try await loadedDeletedAlbums
+        contributors = try await loadedContributors
         locations = try await loadedLocations
         boxSets = try await loadedBoxSets
         storageRoots = try await loadedStorageRoots

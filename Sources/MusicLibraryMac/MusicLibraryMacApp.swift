@@ -24,11 +24,12 @@ struct MusicLibraryMacApp: App {
 
 private struct LibraryShellView: View {
     private enum Section: Hashable, CaseIterable, Identifiable {
-        case albums, locations, boxSets, importInbox, playlists, settings
+        case albums, contributors, locations, boxSets, importInbox, playlists, settings
         var id: Self { self }
         var title: String {
             switch self {
             case .albums: "Albums"
+            case .contributors: "Contributors"
             case .locations: "Locations"
             case .boxSets: "Box Sets"
             case .importInbox: "Import Inbox"
@@ -39,6 +40,7 @@ private struct LibraryShellView: View {
         var symbol: String {
             switch self {
             case .albums: "square.stack"
+            case .contributors: "person.2"
             case .locations: "archivebox"
             case .boxSets: "shippingbox"
             case .importInbox: "tray"
@@ -124,6 +126,14 @@ private struct LibraryShellView: View {
             }
         case .locations:
             LocationList(library: library)
+        case .contributors:
+            List(library.contributors) { contributor in
+                VStack(alignment: .leading) {
+                    Text(contributor.name)
+                    if let sortName = contributor.sortName, sortName != contributor.name { Text(sortName).font(.caption).foregroundStyle(.secondary) }
+                }
+            }
+            .overlay { if library.isReady && library.contributors.isEmpty { ContentUnavailableView("No contributors", systemImage: "person.2", description: Text("Add contributors from an album or track credit.")) } }
         case .boxSets:
             List(library.boxSets, selection: $selectedBoxSetID) { box in
                 VStack(alignment: .leading) {
