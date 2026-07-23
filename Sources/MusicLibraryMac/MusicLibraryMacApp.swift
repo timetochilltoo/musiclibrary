@@ -746,11 +746,21 @@ private struct ImportBatchDetail: View {
     }
 
     private func load() async {
-        candidates = (try? await library.importCandidates(batchID: batch.id)) ?? []
-        proposals = (try? await library.importReleaseProposals(batchID: batch.id)) ?? []
-        var loaded: [UUID: ExternalMetadataSelection] = [:]
-        for proposal in proposals { if let selection = try? await library.externalMetadataSelection(for: proposal.id) { loaded[proposal.id] = selection } }
-        selections = loaded
+        do {
+            let loadedCandidates = try await library.importCandidates(batchID: batch.id)
+            let loadedProposals = try await library.importReleaseProposals(batchID: batch.id)
+            var loadedSelections: [UUID: ExternalMetadataSelection] = [:]
+            for proposal in loadedProposals {
+                if let selection = try await library.externalMetadataSelection(for: proposal.id) {
+                    loadedSelections[proposal.id] = selection
+                }
+            }
+            candidates = loadedCandidates
+            proposals = loadedProposals
+            selections = loadedSelections
+        } catch {
+            library.presentError(error)
+        }
     }
 }
 
