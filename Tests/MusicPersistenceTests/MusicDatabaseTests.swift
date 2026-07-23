@@ -408,6 +408,9 @@ struct MusicDatabaseTests {
         #expect(try await database.playlists().map(\.name) == ["Road trip"])
         try await database.deletePlaylist(playlist.id)
         #expect(try await database.playlists().isEmpty)
+        #expect(try await database.deletedPlaylists().map(\.id) == [playlist.id])
+        try await database.restorePlaylist(playlist.id)
+        #expect(try await database.playlists().map(\.id) == [playlist.id])
     }
 
     @Test("Published catalogue contains ordered read-only disc and track rows")

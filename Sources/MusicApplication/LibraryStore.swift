@@ -14,6 +14,7 @@ public final class LibraryStore: ObservableObject {
     @Published public private(set) var importBatches: [ImportBatch] = []
     @Published public private(set) var libraryHealthIssues: [LibraryHealthIssue] = []
     @Published public private(set) var playlists: [Playlist] = []
+    @Published public private(set) var deletedPlaylists: [Playlist] = []
     @Published public private(set) var duplicateAssets: [AssetDuplicate] = []
     @Published public private(set) var relinkProposals: [AssetRelinkProposal] = []
     @Published public private(set) var isReady = false
@@ -77,6 +78,7 @@ public final class LibraryStore: ObservableObject {
         async let loadedImportBatches = database.importBatches()
         async let loadedHealth = database.libraryHealthIssues()
         async let loadedPlaylists = database.playlists()
+        async let loadedDeletedPlaylists = database.deletedPlaylists()
         albums = try await loadedAlbums
         deletedAlbums = try await loadedDeletedAlbums
         locations = try await loadedLocations
@@ -85,6 +87,7 @@ public final class LibraryStore: ObservableObject {
         importBatches = try await loadedImportBatches
         libraryHealthIssues = try await loadedHealth
         playlists = try await loadedPlaylists
+        deletedPlaylists = try await loadedDeletedPlaylists
         duplicateAssets = try await database.duplicateAssets()
         relinkProposals = try await database.relinkProposals()
         let revision = try await database.currentRevision()
@@ -315,6 +318,7 @@ public final class LibraryStore: ObservableObject {
     public func addPlaylist(name: String) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; _ = try await database.createPlaylist(name: name); try await reload() }
     public func renamePlaylist(_ id: PlaylistID, to name: String) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.renamePlaylist(id, to: name); try await reload() }
     public func deletePlaylist(_ id: PlaylistID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.deletePlaylist(id); try await reload() }
+    public func restorePlaylist(_ id: PlaylistID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.restorePlaylist(id); try await reload() }
     public func addTrack(_ trackID: TrackID, toPlaylist id: PlaylistID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.addTrack(trackID, to: id); try await reload() }
     public func removePlaylistItem(_ id: UUID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.removePlaylistItem(id); try await reload() }
     public func movePlaylistItem(_ id: UUID, to position: Int) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.movePlaylistItem(id, to: position); try await reload() }

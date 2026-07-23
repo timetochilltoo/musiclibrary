@@ -48,7 +48,7 @@ Completed and verified:
 - Manual lookup reliability complete: identical title/artist requests reuse a session-only in-memory MusicBrainz response cache, while temporary HTTP 429/5xx and URL-loading failures use up to two bounded retries. No retry is scheduled unless the user already initiated the lookup.
 - Extended MusicBrainz field review complete: country/region and catalogue number are independently selectable, persisted in schema 9, and transferred into the resulting album only through the existing explicit proposal approval and creation workflow.
 - Broad catalogue search complete: album search now matches title, edition, catalogue number, barcode, aliases, track titles, album/track contributors, box-set titles, direct physical locations, and inherited box locations.
-- Recently Deleted UI complete: Albums can be moved to Recently Deleted from their context menu, and Settings lists deleted albums with a restore action. Recovery preserves the existing catalogue relationships and leaves media files untouched.
+- Recently Deleted recovery complete for albums and playlists: Albums can be moved to Recently Deleted from their context menu, and Settings lists deleted albums and playlists with restore actions. Playlist recovery retains its ordered items; recovery never changes media files.
 - JSON export UI complete: Settings opens a standard macOS Save dialog to export the current catalogue's portable JSON representation. Export does not copy audio or alter catalogue data.
 - CSV export complete: Settings can export album-level catalogue data as quoted CSV for spreadsheet use, including edition, release, country, catalogue, and availability fields.
 - Album rating/favourite UI complete: add/edit forms expose the agreed shared 1–5 rating and favourite marker, and album detail displays the saved values.
@@ -60,7 +60,7 @@ Not yet implemented:
 
 - General deletion/recovery, tag write-back, lyrics, and AI.
 
-The next coding slice should assess a user-visible general recovery workflow beyond albums, while retaining the established rule that source media is never removed or changed by catalogue cleanup. Preserve identity and ordering invariants, require explicit user action, and never write source tags. A Mac recheck refreshes the derived availability of reachable root-relative files without changing paths or catalogue revision. A reviewed individual relink can be explicitly applied as a catalogue-only path update; it must never move or rename media. Playlists support create, ordered membership, rename, soft delete, item removal, reordering, and playback. Do not allow companion clients to alter the catalogue.
+Remaining general recovery should be designed specifically for box sets before implementation, because hiding a box set without changing or hiding its member albums would violate the physical-placement model. Keep source media untouched; preserve identity and ordering invariants; and require explicit user action. A Mac recheck refreshes the derived availability of reachable root-relative files without changing paths or catalogue revision. A reviewed individual relink can be explicitly applied as a catalogue-only path update; it must never move or rename media. Playlists support create, ordered membership, rename, soft delete, item removal, reordering, and playback. Do not allow companion clients to alter the catalogue.
 
 ## 1. Fixed decisions
 

@@ -339,6 +339,7 @@ Schema 9 extends the selected external result and review sheet with country/regi
 **Artwork storage decision (23 July 2026):** new selected artwork is copied into managed catalogue storage, making it resilient to moved source folders and eligible for master backups and later iPad publication. Existing legacy local-path records still need migration before full artwork portability can be claimed.
 **Online lookup/privacy decision (23 July 2026):** textual metadata lookup runs only after an explicit user action. Scanning never contacts the internet automatically; source audio files are never uploaded by default. Any future acoustic fingerprint lookup is disabled by default and requires a clearly labelled user action plus approval before sending a derived fingerprint to a provider.
 Playlists now have persistent rename and soft-delete operations, exposed from the playlist list's context menu. These operations increment the catalogue revision and are reflected in the next published snapshot.
+Settings now also lists **Recently Deleted Playlists**. Restore returns the playlist and its existing ordered items, without touching tracks or media files.
 Playlist detail now supports moving an item earlier/later and removing it. The persistence layer renumbers its ordered items safely inside one transaction and increments the catalogue revision once per user action.
 The Mac playlist detail has a Play action. It resolves saved items in playlist order and skips files that are currently unavailable; if none can be resolved it shows an error instead of replacing the current queue.
 Possible duplicate assets are shown in Settings by shared verified content hash and path list. This is review-only: no duplicate is removed, moved, or relinked automatically.
@@ -351,7 +352,7 @@ Automatic publication is already observable and bounded; do not regress it while
 
 ### Next safe slice
 
-Assess an explicit, recoverable general catalogue-cleanup workflow next. Preserve stable identities and ordering, make each action explicit and transactional, and keep all corrections catalogue-only. Do not begin artwork migration or snapshot-to-master reconstruction without a new reviewed design.
+Do not implement soft-deleting box sets until its member-album semantics are explicitly designed: a hidden box cannot leave visible members with an invalid inherited physical placement. The next safe implementation slice can instead be a narrowly scoped, independently reviewable feature. Preserve stable identities and ordering, make each action explicit and transactional, and keep all corrections catalogue-only. Do not begin artwork migration or snapshot-to-master reconstruction without a new reviewed design.
 
 ## 12. Planned implementation order after the next slice
 

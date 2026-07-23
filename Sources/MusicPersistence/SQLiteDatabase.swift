@@ -509,6 +509,12 @@ public actor MusicDatabase {
         return values
     }
 
+    public func deletedPlaylists() throws -> [Playlist] {
+        let statement = try Self.prepare("SELECT id, name FROM playlist WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC;", on: connection); defer { sqlite3_finalize(statement) }; var values: [Playlist] = []
+        while sqlite3_step(statement) == SQLITE_ROW { guard let raw = Self.text(at: 0, from: statement), let uuid = UUID(uuidString: raw) else { throw DatabaseError.invalidIdentifier("playlist") }; values.append(.init(id: .init(rawValue: uuid), name: Self.text(at: 1, from: statement) ?? "")) }
+        return values
+    }
+
     public func renamePlaylist(_ id: PlaylistID, to name: String) throws {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw ValidationError.requiredField("Playlist name") }
@@ -534,6 +540,17 @@ public actor MusicDatabase {
             try Self.bind(id.description, at: 3, to: statement)
             try Self.stepDone(statement, connection: connection)
             guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Playlist") }
+            try incrementRevision()
+        }
+    }
+
+    public func restorePlaylist(_ id: PlaylistID) throws {
+        try transaction {
+            let statement = try Self.prepare("UPDATE playlist SET deleted_at = NULL, updated_at = ? WHERE id = ? AND deleted_at IS NOT NULL;", on: connection)
+            defer { sqlite3_finalize(statement) }
+            try Self.bind(Self.milliseconds(Date()), at: 1, to: statement); try Self.bind(id.description, at: 2, to: statement)
+            try Self.stepDone(statement, connection: connection)
+            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Deleted playlist") }
             try incrementRevision()
         }
     }

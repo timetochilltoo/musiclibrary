@@ -325,6 +325,17 @@ private struct StorageRootList: View {
                     }
                 }
             }
+            if !library.deletedPlaylists.isEmpty {
+                Section("Recently Deleted Playlists") {
+                    ForEach(library.deletedPlaylists) { playlist in
+                        HStack {
+                            VStack(alignment: .leading) { Text(playlist.name); Text("Restore returns this playlist with its saved ordered items.").font(.caption).foregroundStyle(.secondary) }
+                            Spacer()
+                            Button("Restore") { Task { do { try await library.restorePlaylist(playlist.id) } catch { library.presentError(error) } } }
+                        }
+                    }
+                }
+            }
             if !library.libraryHealthIssues.isEmpty {
                 Section("Library Health") {
                     ForEach(library.libraryHealthIssues) { issue in
