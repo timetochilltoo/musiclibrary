@@ -29,6 +29,7 @@ public final class LibraryStore: ObservableObject {
     private var hasStarted = false
     private var scanTasks: [ImportBatchID: Task<Void, Never>] = [:]
     private var snapshotPublishTask: Task<Void, Never>?
+    private var managedArtworkStore: ManagedArtworkStore?
     private let snapshotDestinationBookmarkKey = "MusicLibrary.snapshotDestinationBookmark"
     private let lastPublishedRevisionKey = "MusicLibrary.lastPublishedRevision"
     private let lastPublishedAtKey = "MusicLibrary.lastPublishedAt"
@@ -45,6 +46,7 @@ public final class LibraryStore: ObservableObject {
             let database = try MusicDatabase(url: directory.appending(path: "MusicLibrary.sqlite"))
             try await database.migrate()
             self.database = database
+            self.managedArtworkStore = .init(directory: directory.appending(path: "Artwork"))
             loadSnapshotDestination()
             try await database.recoverInterruptedImportBatches()
             try await reload()
@@ -137,7 +139,19 @@ public final class LibraryStore: ObservableObject {
     public func deleteAlbumAlias(_ aliasID: UUID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.deleteAlbumAlias(aliasID); try await reload() }
     public func addAlbumContributor(albumID: AlbumID, name: String, role: ContributorRole, creditedName: String?) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; let contributor = try await database.createContributor(.init(name: name)); try await database.addAlbumContributor(contributor.id, to: albumID, role: role, creditedName: creditedName); try await reload() }
     public func addTrackContributor(trackID: TrackID, name: String, role: ContributorRole, creditedName: String?) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; let contributor = try await database.createContributor(.init(name: name)); try await database.addTrackContributor(contributor.id, to: trackID, role: role, creditedName: creditedName); try await reload() }
-    public func addAlbumArtwork(albumID: AlbumID, localPath: String, role: ArtworkRole) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; _ = try await database.addAlbumArtwork(albumID: albumID, localPath: localPath, role: role); try await reload() }
+    public func addAlbumArtwork(albumID: AlbumID, from sourceURL: URL, role: ArtworkRole) async throws {
+        guard let database, let managedArtworkStore else { throw DatabaseError.notFound("Catalogue database") }
+        let accessed = sourceURL.startAccessingSecurityScopedResource()
+        defer { if accessed { sourceURL.stopAccessingSecurityScopedResource() } }
+        let managedURL = try managedArtworkStore.importArtwork(from: sourceURL)
+        do {
+            _ = try await database.addAlbumArtwork(albumID: albumID, localPath: managedURL.path, role: role, source: "managed-user-selected")
+        } catch {
+            try? FileManager.default.removeItem(at: managedURL)
+            throw error
+        }
+        try await reload()
+    }
 
     public func addStorageRoot(url: URL) async throws {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }

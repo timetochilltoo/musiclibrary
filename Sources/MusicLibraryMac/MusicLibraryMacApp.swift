@@ -649,7 +649,12 @@ private struct AlbumDetail: View {
         .sheet(isPresented: $showsAddContributor) { AddContributorEditor(library: library, albumID: album.id, onAdded: { await loadContent() }) }
         .sheet(item: $trackForContributor) { track in AddTrackContributorEditor(library: library, track: track, onAdded: { await loadContent() }) }
         .fileImporter(isPresented: $showsArtworkPicker, allowedContentTypes: [.image]) { result in
-            if case let .success(url) = result { Task { try? await library.addAlbumArtwork(albumID: album.id, localPath: url.path, role: .front); await loadContent() } }
+            if case let .success(url) = result {
+                Task {
+                    do { try await library.addAlbumArtwork(albumID: album.id, from: url, role: .front); await loadContent() }
+                    catch { library.presentError(error) }
+                }
+            }
         }
     }
 

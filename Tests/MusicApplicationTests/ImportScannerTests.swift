@@ -56,6 +56,19 @@ struct ImportScannerTests {
         #expect(decoded.sha256 == manifest.sha256)
     }
 
+    @Test("Managed artwork import copies the selected image into catalogue storage")
+    func importsManagedArtwork() throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let source = directory.appending(path: "cover.jpg")
+        try Data([1, 2, 3]).write(to: source)
+        let destination = try ManagedArtworkStore(directory: directory.appending(path: "Artwork")).importArtwork(from: source)
+        #expect(destination.deletingLastPathComponent().lastPathComponent == "Artwork")
+        #expect(destination != source)
+        #expect(try Data(contentsOf: destination) == Data([1, 2, 3]))
+    }
+
     @Test("Snapshot publisher retains only the configured recent revisions")
     func retainsSnapshotRevisions() throws {
         let directory = temporaryDirectory()
