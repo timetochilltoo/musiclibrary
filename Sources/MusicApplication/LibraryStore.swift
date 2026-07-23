@@ -422,7 +422,7 @@ public final class LibraryStore: ObservableObject {
         snapshotPublishTask?.cancel()
         isSnapshotPublishPending = true
         snapshotPublishTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(2))
+            try? await Task.sleep(for: .seconds(5))
             guard !Task.isCancelled, let self else { return }
             do { if self.publicationSchedule.needsPublication { try await self.publishSnapshotNow() } else { self.isSnapshotPublishPending = false } }
             catch { self.recordSnapshotPublishFailure(error, prefix: "Automatic publish failed") }

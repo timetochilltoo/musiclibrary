@@ -67,6 +67,15 @@ struct ImportScannerTests {
         #expect(manifest.fileName == "catalogue-4.json")
     }
 
+    @Test("Snapshot publisher keeps the current revision and three prior revisions by default")
+    func retainsDefaultSnapshotRevisions() throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        for revision in 1...5 { _ = try SnapshotPublisher.publish(json: "{\"format\":\"music-library-json\",\"revision\":\(revision)}", revision: Int64(revision), to: directory) }
+        let files = try FileManager.default.contentsOfDirectory(atPath: directory.path).filter { $0.hasPrefix("catalogue-") && $0.hasSuffix(".json") }
+        #expect(files.sorted() == ["catalogue-2.json", "catalogue-3.json", "catalogue-4.json", "catalogue-5.json"])
+    }
+
     @Test("Publication scheduling ignores initial and read-only observations but coalesces mutations")
     func publicationScheduling() {
         var schedule = SnapshotPublicationSchedule()

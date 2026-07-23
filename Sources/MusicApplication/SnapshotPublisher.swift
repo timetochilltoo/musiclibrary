@@ -10,7 +10,7 @@ public struct SnapshotManifest: Codable, Sendable {
 }
 
 public enum SnapshotPublisher {
-    public static func publish(json: String, revision: Int64, to directory: URL, retainRevisions: Int = 3) throws -> SnapshotManifest {
+    public static func publish(json: String, revision: Int64, to directory: URL, retainRevisions: Int = 4) throws -> SnapshotManifest {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let data = Data(json.utf8); let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
         let fileName = "catalogue-\(revision).json"; let temporary = directory.appending(path: ".\(fileName).tmp"); let destination = directory.appending(path: fileName)

@@ -22,7 +22,7 @@ Completed and verified:
 - Atomic album creation inside a box set, including inherited physical-location behaviour.
 - Album editing plus box-member browse, confirmed move, removal with a standalone placement, and reorder workflows.
 - Schema migration 2 adds `physical_location_unknown`, removing ambiguity between a boxed album and a standalone CD whose location is unknown.
-- Thirty-seven automated tests across four test suites, last verified with a rebuilt `swift test` followed by `swift test --skip-build` on 22 July 2026.
+- Thirty-eight automated tests across four test suites, last verified with a rebuilt `swift test` followed by `swift test --skip-build` on 23 July 2026.
 - Catalogue-content foundation complete: ordered discs/tracks, aliases, contributor roles at album and track level, selected album artwork with local-path provenance, and safe track/alias removal. Album detail supports manual creation of each of these relationships and user-selected front artwork without modifying source files.
 - Storage-root foundation complete: migration 3, persisted root records, security-scoped bookmark creation/resolution, availability checks, and Settings management. Offline and authorization-required roots are retained rather than removed.
 - Import Inbox foundation complete: migration 4, cancellable system-content-type scanning of available authorized roots, persistent batches/candidates/errors, recovery of interrupted scans, and Inbox cancellation/retry UI. Scans never create albums, tracks, or digital assets.
@@ -38,7 +38,7 @@ Completed and verified:
 - Read-only iPad playback foundation complete: `CompanionPlaybackController` accepts only a resolved mapped URL, checks that it exists, then uses local `AVAudioPlayer` playback. Failed opens and non-playable assets show local feedback and leave all catalogue/snapshot/mapping data unchanged.
 - iPad application composition and launch-time refresh indication complete: `MusicLibraryPad` is a SwiftUI executable target that locates all companion state in Application Support. The client compares source/local manifest modification dates only to expose a refresh indicator; it never replaces cache content until an explicit verified refresh.
 - iPad lifecycle/deployment preparation complete: the companion repeats the source-date check on scene activation, and `project.yml` reproducibly generates `MusicLibraryPad.xcodeproj` with automatic signing configuration. The Xcode project builds the shared iPad modules directly to avoid local package-resolution cache failures; an unsigned iOS Simulator build succeeded on 22 July 2026. Select a Development Team for device deployment.
-- Mac publication integration complete: Settings chooses a security-scoped destination, supports explicit publish, shows a status string, debounces automatic publication, and retains the two newest revision payloads after manifest-last publication.
+- Mac publication integration complete: Settings chooses a security-scoped destination, supports explicit publish, shows a status string, waits five seconds after the final change before automatic publication, and retains the current revision plus three prior revision payloads after manifest-last publication.
 - Mac publication observability complete: the store tracks observed catalogue and last-published revisions, schedules after an observed revision change, and attempts a best-effort scene-background publish without treating it as a hard quit blocker.
 - Mac publication pending-state handling complete: Settings shows pending work and automatic/background publication skips a revision already known to be published.
 
@@ -72,7 +72,7 @@ These decisions are requirements unless the user explicitly changes them:
 17. iPad is the first companion client; Android is deferred.
 18. CD ripping is out of scope. The app imports existing audio files only.
 19. Read-only clients access NAS audio through SMB using device-local user-selected root mappings.
-20. Snapshot publication supports manual publication and automatic publication after a debounced successful change and on orderly Mac app quit.
+20. Snapshot publication supports manual publication and automatic publication five seconds after the final debounced successful change and on orderly Mac app quit. Retain the current published snapshot plus three prior revisions.
 21. Catalogue metadata is editable on the Mac even when embedded rip tags are wrong. Corrected album titles, track titles, and contributor names are stored in the catalogue first; the original audio files are never rewritten in the initial release.
 22. File tag write-back is a later opt-in feature. It must show a per-file/per-field preview and offer a recoverable backup before modifying any source file.
 23. Read-only companion clients may store device-local favourites, recent plays, play counts, and resume positions. These preferences are explicitly local to that device, never alter the published catalogue, and do not sync to the Mac or other clients in version 1. Shared playlists remain Mac-catalogue data and therefore read-only on companion clients.
