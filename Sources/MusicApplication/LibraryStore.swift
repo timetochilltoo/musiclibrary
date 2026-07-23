@@ -380,6 +380,10 @@ public final class LibraryStore: ObservableObject {
         errorMessage = nil
     }
 
+    public func presentError(_ error: Error) {
+        errorMessage = error.localizedDescription
+    }
+
     private func loadSnapshotDestination() {
         guard let destination = resolvedSnapshotDestination() else { return }
         snapshotDestinationPath = destination.path

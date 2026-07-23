@@ -231,11 +231,26 @@ private struct StorageRootList: View {
                 if let lastPublishedAt = library.lastPublishedAt { Text("Last successful publish \(lastPublishedAt.formatted(date: .abbreviated, time: .shortened))").font(.caption).foregroundStyle(.secondary) }
                 if let failure = library.lastSnapshotPublishFailure { Text(failure).font(.caption).foregroundStyle(.red) }
                 Button("Choose Snapshot Destination") { showsSnapshotDestinationPicker = true }
-                Button(library.lastSnapshotPublishFailure == nil ? "Publish Now" : "Retry Publish") { Task { try? await library.publishSnapshotNow() } }.disabled(library.snapshotDestinationPath == nil)
+                Button(library.lastSnapshotPublishFailure == nil ? "Publish Now" : "Retry Publish") {
+                    Task {
+                        do { try await library.publishSnapshotNow() }
+                        catch { library.presentError(error) }
+                    }
+                }.disabled(library.snapshotDestinationPath == nil)
             }
             Section("Music Folders") {
-                Button("Recheck Library Health", systemImage: "arrow.clockwise") { Task { try? await library.recheckLibraryHealth() } }
-                Button("Verify Asset Fingerprints", systemImage: "checkmark.shield") { Task { try? await library.verifyFingerprints() } }
+                Button("Recheck Library Health", systemImage: "arrow.clockwise") {
+                    Task {
+                        do { try await library.recheckLibraryHealth() }
+                        catch { library.presentError(error) }
+                    }
+                }
+                Button("Verify Asset Fingerprints", systemImage: "checkmark.shield") {
+                    Task {
+                        do { try await library.verifyFingerprints() }
+                        catch { library.presentError(error) }
+                    }
+                }
                 ForEach(library.storageRoots) { root in
                     HStack {
                         Image(systemName: symbol(for: root.status)).foregroundStyle(color(for: root.status))
@@ -248,9 +263,19 @@ private struct StorageRootList: View {
                     }
                     .contextMenu {
                         Button("Rename") { rootToRename = root }
-                        Button("Check Access") { Task { try? await library.refreshStorageRootAccess() } }
+                        Button("Check Access") {
+                            Task {
+                                do { try await library.refreshStorageRootAccess() }
+                                catch { library.presentError(error) }
+                            }
+                        }
                         Divider()
-                        Button("Remove", role: .destructive) { Task { try? await library.deleteStorageRoot(root.id) } }
+                        Button("Remove", role: .destructive) {
+                            Task {
+                                do { try await library.deleteStorageRoot(root.id) }
+                                catch { library.presentError(error) }
+                            }
+                        }
                     }
                 }
             }
@@ -284,7 +309,12 @@ private struct StorageRootList: View {
                             Text("Proposed: \(proposal.proposedPath)").font(.caption).foregroundStyle(.secondary)
                             HStack {
                                 Button("Apply Catalogue Path") { relinkProposalToApply = proposal }
-                                Button("Discard", role: .destructive) { Task { try? await library.discardRelinkProposal(proposal.id) } }
+                                Button("Discard", role: .destructive) {
+                                    Task {
+                                        do { try await library.discardRelinkProposal(proposal.id) }
+                                        catch { library.presentError(error) }
+                                    }
+                                }
                             }
                             .font(.caption)
                         }
@@ -300,8 +330,12 @@ private struct StorageRootList: View {
             if let proposal = relinkProposalToApply {
                 Button("Apply Catalogue Path") {
                     Task {
-                        try? await library.applyRelinkProposal(proposal.id)
-                        relinkProposalToApply = nil
+                        do {
+                            try await library.applyRelinkProposal(proposal.id)
+                            relinkProposalToApply = nil
+                        } catch {
+                            library.presentError(error)
+                        }
                     }
                 }
             }
