@@ -54,6 +54,7 @@ private struct LibraryShellView: View {
     @StateObject private var playback = PlaybackController()
     @State private var section: Section? = .albums
     @State private var selectedAlbumID: AlbumID?
+    @State private var selectedContributorID: ContributorID?
     @State private var selectedBoxSetID: BoxSetID?
     @State private var selectedImportBatchID: ImportBatchID?
     @State private var selectedPlaylistID: PlaylistID?
@@ -127,11 +128,11 @@ private struct LibraryShellView: View {
         case .locations:
             LocationList(library: library)
         case .contributors:
-            List(library.contributors) { contributor in
+            List(library.contributors, selection: $selectedContributorID) { contributor in
                 VStack(alignment: .leading) {
                     Text(contributor.name)
                     if let sortName = contributor.sortName, sortName != contributor.name { Text(sortName).font(.caption).foregroundStyle(.secondary) }
-                }
+                }.tag(contributor.id)
             }
             .overlay { if library.isReady && library.contributors.isEmpty { ContentUnavailableView("No contributors", systemImage: "person.2", description: Text("Add contributors from an album or track credit.")) } }
         case .boxSets:
@@ -184,7 +185,9 @@ private struct LibraryShellView: View {
     }
 
     @ViewBuilder private var detail: some View {
-        if section == .boxSets, let selectedBoxSetID, let box = library.boxSets.first(where: { $0.id == selectedBoxSetID }) {
+        if section == .contributors, let selectedContributorID, let contributor = library.contributors.first(where: { $0.id == selectedContributorID }) {
+            ContributorDetail(library: library, contributor: contributor)
+        } else if section == .boxSets, let selectedBoxSetID, let box = library.boxSets.first(where: { $0.id == selectedBoxSetID }) {
             BoxSetDetail(library: library, boxSet: box)
         } else if section == .importInbox, let selectedImportBatchID, let batch = library.importBatches.first(where: { $0.id == selectedImportBatchID }) {
             ImportBatchDetail(library: library, batch: batch)
@@ -210,6 +213,32 @@ private struct LibraryShellView: View {
                 }
             }
         }
+    }
+}
+
+private struct ContributorDetail: View {
+    @ObservedObject var library: LibraryStore
+    let contributor: Contributor
+    @State private var albums: [Album] = []
+
+    var body: some View {
+        List {
+            Section("Contributor") {
+                Text(contributor.name)
+                if let sortName = contributor.sortName, sortName != contributor.name { LabeledContent("Sort name", value: sortName) }
+            }
+            Section("Credited albums") {
+                if albums.isEmpty { Text("No active album credits").foregroundStyle(.secondary) }
+                ForEach(albums) { album in
+                    VStack(alignment: .leading) {
+                        Text(album.displayTitle)
+                        Text("Includes album or track credits").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .navigationTitle(contributor.name)
+        .task(id: contributor.id) { albums = (try? await library.albums(creditedTo: contributor.id)) ?? [] }
     }
 }
 

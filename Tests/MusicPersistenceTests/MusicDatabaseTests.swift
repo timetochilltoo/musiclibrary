@@ -227,6 +227,7 @@ struct MusicDatabaseTests {
         try await database.addAlbumContributor(contributor.id, to: album.id, role: .albumArtist)
         #expect(try await database.albumContributors(albumID: album.id).first?.contributor.name == "Miles Davis")
         #expect(try await database.contributors().map(\.id) == [contributor.id])
+        #expect(try await database.albums(creditedTo: contributor.id).map(\.id) == [album.id])
     }
 
     @Test("Discs can be reordered and deleted while preserving remaining order")

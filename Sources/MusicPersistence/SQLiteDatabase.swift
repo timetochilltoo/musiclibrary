@@ -1047,6 +1047,16 @@ public actor MusicDatabase {
         return values
     }
 
+    public func albums(creditedTo contributorID: ContributorID) throws -> [Album] {
+        let sql = Self.albumSelect + " WHERE deleted_at IS NULL AND (EXISTS (SELECT 1 FROM album_contributor WHERE album_contributor.album_id = album.id AND album_contributor.contributor_id = ?) OR EXISTS (SELECT 1 FROM disc JOIN track ON track.disc_id = disc.id JOIN track_contributor ON track_contributor.track_id = track.id WHERE disc.album_id = album.id AND track_contributor.contributor_id = ?)) ORDER BY title COLLATE NOCASE, edition_label COLLATE NOCASE;"
+        let statement = try Self.prepare(sql, on: connection)
+        defer { sqlite3_finalize(statement) }
+        try Self.bind(contributorID.description, at: 1, to: statement); try Self.bind(contributorID.description, at: 2, to: statement)
+        var values: [Album] = []
+        while sqlite3_step(statement) == SQLITE_ROW { values.append(try Self.album(from: statement)) }
+        return values
+    }
+
     public func updateContributor(_ contributorID: ContributorID, with draft: NewContributor) throws -> Contributor {
         let valid = try draft.validated()
         try transaction {
