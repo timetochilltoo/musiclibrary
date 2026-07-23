@@ -771,7 +771,7 @@ public actor MusicDatabase {
     public func albums(matching term: String? = nil) throws -> [Album] {
         let query: String
         if let term, !term.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            query = Self.albumSelect + " WHERE deleted_at IS NULL AND (title LIKE ? COLLATE NOCASE OR edition_label LIKE ? COLLATE NOCASE OR catalogue_number LIKE ? COLLATE NOCASE) ORDER BY title COLLATE NOCASE, edition_label COLLATE NOCASE;"
+            query = Self.albumSelect + " WHERE deleted_at IS NULL AND (title LIKE ? COLLATE NOCASE OR edition_label LIKE ? COLLATE NOCASE OR catalogue_number LIKE ? COLLATE NOCASE OR barcode LIKE ? COLLATE NOCASE OR EXISTS (SELECT 1 FROM album_alias WHERE album_alias.album_id = album.id AND album_alias.name LIKE ? COLLATE NOCASE) OR EXISTS (SELECT 1 FROM disc JOIN track ON track.disc_id = disc.id WHERE disc.album_id = album.id AND track.title LIKE ? COLLATE NOCASE) OR EXISTS (SELECT 1 FROM album_contributor JOIN contributor ON contributor.id = album_contributor.contributor_id WHERE album_contributor.album_id = album.id AND contributor.name LIKE ? COLLATE NOCASE) OR EXISTS (SELECT 1 FROM disc JOIN track ON track.disc_id = disc.id JOIN track_contributor ON track_contributor.track_id = track.id JOIN contributor ON contributor.id = track_contributor.contributor_id WHERE disc.album_id = album.id AND contributor.name LIKE ? COLLATE NOCASE) OR EXISTS (SELECT 1 FROM box_set_album JOIN box_set ON box_set.id = box_set_album.box_set_id WHERE box_set_album.album_id = album.id AND box_set.title LIKE ? COLLATE NOCASE) OR EXISTS (SELECT 1 FROM physical_location WHERE physical_location.id = album.physical_location_id AND physical_location.name LIKE ? COLLATE NOCASE) OR EXISTS (SELECT 1 FROM box_set_album JOIN box_set ON box_set.id = box_set_album.box_set_id JOIN physical_location ON physical_location.id = box_set.physical_location_id WHERE box_set_album.album_id = album.id AND physical_location.name LIKE ? COLLATE NOCASE)) ORDER BY title COLLATE NOCASE, edition_label COLLATE NOCASE;"
         } else {
             query = Self.albumSelect + " WHERE deleted_at IS NULL ORDER BY title COLLATE NOCASE, edition_label COLLATE NOCASE;"
         }
@@ -779,9 +779,7 @@ public actor MusicDatabase {
         defer { sqlite3_finalize(statement) }
         if let term, !term.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             let pattern = "%\(term)%"
-            try Self.bind(pattern, at: 1, to: statement)
-            try Self.bind(pattern, at: 2, to: statement)
-            try Self.bind(pattern, at: 3, to: statement)
+            for index in 1...11 { try Self.bind(pattern, at: Int32(index), to: statement) }
         }
         var rows: [Album] = []
         while sqlite3_step(statement) == SQLITE_ROW { rows.append(try Self.album(from: statement)) }

@@ -91,6 +91,23 @@ struct MusicDatabaseTests {
         #expect(try await database.currentRevision() == 2)
     }
 
+    @Test("Catalogue search finds albums through aliases, tracks, contributors, boxes, and locations")
+    func broadCatalogueSearch() async throws {
+        let database = try MusicDatabase(url: temporaryDatabaseURL())
+        try await database.migrate()
+        let location = try await database.createLocation(.init(name: "Listening Room"))
+        let box = try await database.createBoxSet(.init(title: "Blue Note Box", physicalLocationID: location.id))
+        let album = try await database.createAlbum(.init(title: "Opaque", catalogueNumber: "CAT-1"), in: box.id)
+        _ = try await database.addAlbumAlias(albumID: album.id, name: "別名", kind: .original)
+        let disc = try await database.createDisc(albumID: album.id)
+        let track = try await database.createTrack(discID: disc.id, draft: .init(title: "Hidden Track"))
+        let artist = try await database.createContributor(.init(name: "Searchable Artist"))
+        try await database.addTrackContributor(artist.id, to: track.id, role: .performer)
+        for query in ["別名", "Hidden Track", "Searchable Artist", "Blue Note", "Listening Room", "CAT-1"] {
+            #expect(try await database.albums(matching: query).map(\.id) == [album.id])
+        }
+    }
+
     @Test("External metadata selection is persisted and applies only selected proposal fields")
     func externalMetadataSelection() async throws {
         let database = try MusicDatabase(url: temporaryDatabaseURL())

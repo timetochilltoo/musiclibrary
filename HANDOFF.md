@@ -218,7 +218,7 @@ This database is user data. Do not remove it during development. If a destructiv
 
 ## 8. Current tests and verification baseline
 
-The last verified baseline contains 46 tests in 5 suites, run with a rebuilt `swift test` followed by `swift test --skip-build` on 23 July 2026. Run `swift test`; do not rely on this handoff alone.
+The last verified baseline contains 47 tests in 5 suites, run with a rebuilt `swift test` followed by `swift test --skip-build` on 23 July 2026. Run `swift test`; do not rely on this handoff alone.
 
 `MusicDomainTests/AlbumTests.swift` verifies:
 
