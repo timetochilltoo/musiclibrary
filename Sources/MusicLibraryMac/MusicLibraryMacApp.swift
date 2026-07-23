@@ -59,6 +59,7 @@ private struct LibraryShellView: View {
     @State private var selectedImportBatchID: ImportBatchID?
     @State private var selectedPlaylistID: PlaylistID?
     @State private var searchText = ""
+    @State private var contributorSearchText = ""
     @State private var showsAlbumEditor = false
     @State private var showsLocationEditor = false
     @State private var showsBoxSetEditor = false
@@ -128,12 +129,13 @@ private struct LibraryShellView: View {
         case .locations:
             LocationList(library: library)
         case .contributors:
-            List(library.contributors, selection: $selectedContributorID) { contributor in
+            List(filteredContributors, selection: $selectedContributorID) { contributor in
                 VStack(alignment: .leading) {
                     Text(contributor.name)
                     if let sortName = contributor.sortName, sortName != contributor.name { Text(sortName).font(.caption).foregroundStyle(.secondary) }
                 }.tag(contributor.id)
             }
+            .searchable(text: $contributorSearchText, prompt: "Contributor name or sort name")
             .overlay { if library.isReady && library.contributors.isEmpty { ContentUnavailableView("No contributors", systemImage: "person.2", description: Text("Add contributors from an album or track credit.")) } }
         case .boxSets:
             List(library.boxSets, selection: $selectedBoxSetID) { box in
@@ -180,6 +182,12 @@ private struct LibraryShellView: View {
         default:
             ContentUnavailableView(section?.title ?? "Music Library", systemImage: section?.symbol ?? "music.note")
         }
+    }
+
+    private var filteredContributors: [Contributor] {
+        let term = contributorSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !term.isEmpty else { return library.contributors }
+        return library.contributors.filter { $0.name.localizedCaseInsensitiveContains(term) || ($0.sortName?.localizedCaseInsensitiveContains(term) ?? false) }
     }
 
     @ViewBuilder private var detail: some View {
