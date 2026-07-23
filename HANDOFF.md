@@ -403,11 +403,7 @@ database without explicit permission.
 
 Do not silently choose these when their implementation becomes necessary:
 
-- Exact supported audio containers and metadata write-back matrix.
-- Whether read-only client-local favourites and play history are allowed, since they cannot alter the Mac catalogue under the current writer rule.
-- Snapshot retention count and automatic-publication debounce duration.
-- Whether a standalone CD album may intentionally have an unknown physical location, and how that must appear in the UI.
-- Rating scale and whether ratings remain album-only or also become track-level.
-- Which metadata provider(s), lyrics provider(s), and AI provider(s) will be used after their adapter boundaries are implemented.
+- Exact supported audio containers and metadata write-back matrix, deferred until the opt-in write-back feature is built.
+- Exact external metadata, lyrics, and AI provider selections, deferred until their respective manually triggered adapter screens are built.
 
-The user has already decided: iPad first, SMB for companion audio access, no CD ripping, and both manual and automatic Mac snapshot publishing.
+The user has already decided: iPad first; SMB for companion audio access; no CD ripping; manual and automatic Mac snapshot publishing; current plus three prior published snapshots with a five-second automatic-publish delay; explicit NAS master backups; manual preview-only metadata lookup; managed artwork storage; device-local companion listening preferences; explicit unknown CD locations; and shared 1–5 catalogue ratings.
