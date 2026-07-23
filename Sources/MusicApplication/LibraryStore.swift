@@ -11,6 +11,7 @@ public final class LibraryStore: ObservableObject {
     @Published public private(set) var contributors: [Contributor] = []
     @Published public private(set) var locations: [PhysicalLocation] = []
     @Published public private(set) var boxSets: [BoxSet] = []
+    @Published public private(set) var deletedBoxSets: [BoxSet] = []
     @Published public private(set) var storageRoots: [StorageRoot] = []
     @Published public private(set) var importBatches: [ImportBatch] = []
     @Published public private(set) var libraryHealthIssues: [LibraryHealthIssue] = []
@@ -76,6 +77,7 @@ public final class LibraryStore: ObservableObject {
         async let loadedContributors = database.contributors()
         async let loadedLocations = database.locations()
         async let loadedBoxSets = database.boxSets()
+        async let loadedDeletedBoxSets = database.deletedBoxSets()
         async let loadedStorageRoots = database.storageRoots()
         async let loadedImportBatches = database.importBatches()
         async let loadedHealth = database.libraryHealthIssues()
@@ -86,6 +88,7 @@ public final class LibraryStore: ObservableObject {
         contributors = try await loadedContributors
         locations = try await loadedLocations
         boxSets = try await loadedBoxSets
+        deletedBoxSets = try await loadedDeletedBoxSets
         storageRoots = try await loadedStorageRoots
         importBatches = try await loadedImportBatches
         libraryHealthIssues = try await loadedHealth
@@ -152,6 +155,8 @@ public final class LibraryStore: ObservableObject {
     public func albumAliases(albumID: AlbumID) async throws -> [AlbumAlias] { guard let database else { throw DatabaseError.notFound("Catalogue database") }; return try await database.albumAliases(albumID: albumID) }
     public func albumArtwork(albumID: AlbumID) async throws -> [Artwork] { guard let database else { throw DatabaseError.notFound("Catalogue database") }; return try await database.albumArtwork(albumID: albumID) }
     public func addDisc(albumID: AlbumID, title: String?) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; _ = try await database.createDisc(albumID: albumID, title: title); try await reload() }
+    public func softDeleteEmptyBoxSet(_ id: BoxSetID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.softDeleteEmptyBoxSet(id); try await reload() }
+    public func restoreBoxSet(_ id: BoxSetID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.restoreBoxSet(id); try await reload() }
     public func reorderDisc(_ discID: DiscID, in albumID: AlbumID, to number: Int) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.reorderDisc(discID, in: albumID, to: number); try await reload() }
     public func deleteDisc(_ discID: DiscID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.deleteDisc(discID); try await reload() }
     public func addTrack(discID: DiscID, draft: NewTrack) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; _ = try await database.createTrack(discID: discID, draft: draft); try await reload() }

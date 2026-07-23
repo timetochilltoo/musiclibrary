@@ -210,6 +210,19 @@ struct MusicDatabaseTests {
         #expect(try await database.boxMembers(of: box.id).map(\.album.id) == [album.id])
     }
 
+    @Test("Only empty box sets can be soft-deleted and restored")
+    func emptyBoxSetRecovery() async throws {
+        let database = try MusicDatabase(url: temporaryDatabaseURL())
+        try await database.migrate()
+        let location = try await database.createLocation(.init(name: "Shelf"))
+        let empty = try await database.createBoxSet(.init(title: "Empty", physicalLocationID: location.id))
+        try await database.softDeleteEmptyBoxSet(empty.id)
+        #expect(try await database.boxSets().isEmpty)
+        #expect(try await database.deletedBoxSets().map(\.id) == [empty.id])
+        try await database.restoreBoxSet(empty.id)
+        #expect(try await database.boxSets().map(\.id) == [empty.id])
+    }
+
     @Test("Discs, tracks, aliases, and contributor roles preserve catalogue order")
     func catalogueContent() async throws {
         let database = try MusicDatabase(url: temporaryDatabaseURL())

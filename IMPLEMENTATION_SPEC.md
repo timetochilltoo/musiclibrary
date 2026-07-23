@@ -22,7 +22,7 @@ Completed and verified:
 - Atomic album creation inside a box set, including inherited physical-location behaviour.
 - Album editing plus box-member browse, confirmed move, removal with a standalone placement, and reorder workflows.
 - Schema migration 2 adds `physical_location_unknown`, removing ambiguity between a boxed album and a standalone CD whose location is unknown.
-- Forty-nine automated tests across five test suites, last verified with a rebuilt `swift test` on 23 July 2026.
+- Fifty automated tests across five test suites, last verified with a rebuilt `swift test` on 23 July 2026.
 - Catalogue-content foundation complete: ordered discs/tracks, aliases, contributor roles at album and track level, selected album artwork with local-path provenance, and safe track/alias removal. Album detail supports manual creation of each of these relationships and user-selected front artwork without modifying source files.
 - Storage-root foundation complete: migration 3, persisted root records, security-scoped bookmark creation/resolution, availability checks, and Settings management. Offline and authorization-required roots are retained rather than removed.
 - Import Inbox foundation complete: migration 4, cancellable system-content-type scanning of available authorized roots, persistent batches/candidates/errors, recovery of interrupted scans, and Inbox cancellation/retry UI. Scans never create albums, tracks, or digital assets.
@@ -48,7 +48,7 @@ Completed and verified:
 - Manual lookup reliability complete: identical title/artist requests reuse a session-only in-memory MusicBrainz response cache, while temporary HTTP 429/5xx and URL-loading failures use up to two bounded retries. No retry is scheduled unless the user already initiated the lookup.
 - Extended MusicBrainz field review complete: country/region and catalogue number are independently selectable, persisted in schema 9, and transferred into the resulting album only through the existing explicit proposal approval and creation workflow.
 - Broad catalogue search complete: album search now matches title, edition, catalogue number, barcode, aliases, track titles, album/track contributors, box-set titles, direct physical locations, and inherited box locations.
-- Recently Deleted recovery complete for albums and playlists: Albums can be moved to Recently Deleted from their context menu, and Settings lists deleted albums and playlists with restore actions. Playlist recovery retains its ordered items; recovery never changes media files.
+- Recently Deleted recovery complete for albums, playlists, and empty box sets: Albums can be moved to Recently Deleted from their context menu, and Settings lists deleted albums, playlists, and empty box sets with restore actions. Playlist recovery retains its ordered items. A box set must be empty before deletion, preventing invalid inherited physical placement. Recovery never changes media files.
 - JSON export UI complete: Settings opens a standard macOS Save dialog to export the current catalogue's portable JSON representation. Export does not copy audio or alter catalogue data.
 - CSV export complete: Settings can export album-level catalogue data as quoted CSV for spreadsheet use, including edition, release, country, catalogue, and availability fields.
 - Album rating/favourite UI complete: add/edit forms expose the agreed shared 1–5 rating and favourite marker, album detail displays the saved values, and the published read-only album payload carries the rating.
@@ -59,7 +59,7 @@ Completed and verified:
 
 Not yet implemented:
 
-- General deletion/recovery, tag write-back, lyrics, and AI.
+- General deletion/recovery beyond albums, playlists, and empty box sets; tag write-back, lyrics, and AI.
 
 Remaining general recovery should be designed specifically for box sets before implementation, because hiding a box set without changing or hiding its member albums would violate the physical-placement model. Keep source media untouched; preserve identity and ordering invariants; and require explicit user action. A Mac recheck refreshes the derived availability of reachable root-relative files without changing paths or catalogue revision. A reviewed individual relink can be explicitly applied as a catalogue-only path update; it must never move or rename media. Playlists support create, ordered membership, rename, soft delete, item removal, reordering, and playback. Do not allow companion clients to alter the catalogue.
 

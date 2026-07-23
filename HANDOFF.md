@@ -218,7 +218,7 @@ This database is user data. Do not remove it during development. If a destructiv
 
 ## 8. Current tests and verification baseline
 
-The last verified baseline contains 49 tests in 5 suites, run with a rebuilt `swift test` on 23 July 2026. Run `swift test`; do not rely on this handoff alone.
+The last verified baseline contains 50 tests in 5 suites, run with a rebuilt `swift test` on 23 July 2026. Run `swift test`; do not rely on this handoff alone.
 
 Albums now expose **Move to Recently Deleted** in the Albums list context menu. Settings displays a **Recently Deleted** section and its Restore action. This uses the existing soft-delete records, preserves album relationships, and never deletes or changes source media files.
 
@@ -345,6 +345,7 @@ Schema 9 extends the selected external result and review sheet with country/regi
 **Online lookup/privacy decision (23 July 2026):** textual metadata lookup runs only after an explicit user action. Scanning never contacts the internet automatically; source audio files are never uploaded by default. Any future acoustic fingerprint lookup is disabled by default and requires a clearly labelled user action plus approval before sending a derived fingerprint to a provider.
 Playlists now have persistent rename and soft-delete operations, exposed from the playlist list's context menu. These operations increment the catalogue revision and are reflected in the next published snapshot.
 Settings now also lists **Recently Deleted Playlists**. Restore returns the playlist and its existing ordered items, without touching tracks or media files.
+An empty box set can also be moved to Recently Deleted and restored in Settings. The database refuses to delete a non-empty box set, so a visible album never loses its inherited physical placement; no media file is touched.
 Playlist detail now supports moving an item earlier/later and removing it. The persistence layer renumbers its ordered items safely inside one transaction and increments the catalogue revision once per user action.
 The Mac playlist detail has a Play action. It resolves saved items in playlist order and skips files that are currently unavailable; if none can be resolved it shows an error instead of replacing the current queue.
 Possible duplicate assets are shown in Settings by shared verified content hash and path list. This is review-only: no duplicate is removed, moved, or relinked automatically.
@@ -357,7 +358,7 @@ Automatic publication is already observable and bounded; do not regress it while
 
 ### Next safe slice
 
-Do not implement soft-deleting box sets until its member-album semantics are explicitly designed: a hidden box cannot leave visible members with an invalid inherited physical placement. The next safe implementation slice can instead be a narrowly scoped, independently reviewable feature. Preserve stable identities and ordering, make each action explicit and transactional, and keep all corrections catalogue-only. Do not begin artwork migration or snapshot-to-master reconstruction without a new reviewed design.
+Only empty box sets are currently recoverable. Do not extend box-set deletion to member-containing boxes until their member-album semantics are explicitly designed: a hidden box cannot leave visible members with an invalid inherited physical placement. The next safe implementation slice can instead be a narrowly scoped, independently reviewable feature. Preserve stable identities and ordering, make each action explicit and transactional, and keep all corrections catalogue-only. Do not begin artwork migration or snapshot-to-master reconstruction without a new reviewed design.
 
 ## 12. Planned implementation order after the next slice
 

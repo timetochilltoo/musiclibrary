@@ -858,6 +858,39 @@ public actor MusicDatabase {
         return results
     }
 
+    public func deletedBoxSets() throws -> [BoxSet] {
+        let statement = try Self.prepare("SELECT id, title, edition_label, physical_location_id FROM box_set WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC;", on: connection)
+        defer { sqlite3_finalize(statement) }
+        var results: [BoxSet] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let rawID = Self.text(at: 0, from: statement), let id = UUID(uuidString: rawID), let rawLocationID = Self.text(at: 3, from: statement), let locationID = UUID(uuidString: rawLocationID) else { throw DatabaseError.invalidIdentifier("box_set") }
+            results.append(.init(id: .init(rawValue: id), title: Self.text(at: 1, from: statement) ?? "", editionLabel: Self.text(at: 2, from: statement), physicalLocationID: .init(rawValue: locationID)))
+        }
+        return results
+    }
+
+    public func softDeleteEmptyBoxSet(_ id: BoxSetID) throws {
+        try transaction {
+            guard try Self.exists("SELECT 1 FROM box_set WHERE id = ? AND deleted_at IS NULL;", value: id.description, on: connection) else { throw DatabaseError.notFound("Box set") }
+            guard !(try Self.exists("SELECT 1 FROM box_set_album WHERE box_set_id = ?;", value: id.description, on: connection)) else { throw DatabaseError.invalidOperation("Remove or relocate every album before moving a box set to Recently Deleted.") }
+            let statement = try Self.prepare("UPDATE box_set SET deleted_at = ?, updated_at = ? WHERE id = ?;", on: connection)
+            defer { sqlite3_finalize(statement) }
+            let now = Self.milliseconds(Date()); try Self.bind(now, at: 1, to: statement); try Self.bind(now, at: 2, to: statement); try Self.bind(id.description, at: 3, to: statement)
+            try Self.stepDone(statement, connection: connection); try incrementRevision()
+        }
+    }
+
+    public func restoreBoxSet(_ id: BoxSetID) throws {
+        try transaction {
+            let statement = try Self.prepare("UPDATE box_set SET deleted_at = NULL, updated_at = ? WHERE id = ? AND deleted_at IS NOT NULL;", on: connection)
+            defer { sqlite3_finalize(statement) }
+            try Self.bind(Self.milliseconds(Date()), at: 1, to: statement); try Self.bind(id.description, at: 2, to: statement)
+            try Self.stepDone(statement, connection: connection)
+            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Deleted box set") }
+            try incrementRevision()
+        }
+    }
+
     public func boxMembers(of boxSetID: BoxSetID) throws -> [BoxSetMembership] {
         let sql = Self.albumSelect + " JOIN box_set_album ON box_set_album.album_id = album.id WHERE box_set_album.box_set_id = ? AND album.deleted_at IS NULL ORDER BY box_set_album.position;"
         let statement = try Self.prepare(sql, on: connection)

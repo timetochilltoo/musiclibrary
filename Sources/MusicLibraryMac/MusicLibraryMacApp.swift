@@ -140,7 +140,9 @@ private struct LibraryShellView: View {
                 VStack(alignment: .leading) {
                     Text(box.title).font(.headline)
                     if let edition = box.editionLabel, !edition.isEmpty { Text(edition).foregroundStyle(.secondary) }
-                }.tag(box.id)
+                }.tag(box.id).contextMenu {
+                    Button("Move Empty Box Set to Recently Deleted", role: .destructive) { Task { do { try await library.softDeleteEmptyBoxSet(box.id); if selectedBoxSetID == box.id { selectedBoxSetID = nil } } catch { library.presentError(error) } } }
+                }
             }
         case .importInbox:
             List(library.importBatches, selection: $selectedImportBatchID) { batch in
@@ -375,6 +377,17 @@ private struct StorageRootList: View {
                             VStack(alignment: .leading) { Text(playlist.name); Text("Restore returns this playlist with its saved ordered items.").font(.caption).foregroundStyle(.secondary) }
                             Spacer()
                             Button("Restore") { Task { do { try await library.restorePlaylist(playlist.id) } catch { library.presentError(error) } } }
+                        }
+                    }
+                }
+            }
+            if !library.deletedBoxSets.isEmpty {
+                Section("Recently Deleted Empty Box Sets") {
+                    ForEach(library.deletedBoxSets) { box in
+                        HStack {
+                            VStack(alignment: .leading) { Text(box.title); Text("Restore returns this empty box set at its saved location.").font(.caption).foregroundStyle(.secondary) }
+                            Spacer()
+                            Button("Restore") { Task { do { try await library.restoreBoxSet(box.id) } catch { library.presentError(error) } } }
                         }
                     }
                 }
