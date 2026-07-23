@@ -889,6 +889,65 @@ public actor MusicDatabase {
         return values
     }
 
+    public func reorderDisc(_ discID: DiscID, in albumID: AlbumID, to targetNumber: Int) throws {
+        try transaction {
+            let existing = try Self.prepare("SELECT number FROM disc WHERE id = ? AND album_id = ?;", on: connection)
+            defer { sqlite3_finalize(existing) }
+            try Self.bind(discID.description, at: 1, to: existing)
+            try Self.bind(albumID.description, at: 2, to: existing)
+            guard sqlite3_step(existing) == SQLITE_ROW else { throw DatabaseError.notFound("Disc") }
+            let currentNumber = Int(Self.int(at: 0, from: existing) ?? 0)
+            let count = try Self.nextNumber("SELECT COALESCE(MAX(number), 0) FROM disc WHERE album_id = ?;", ownerID: albumID.description, on: connection)
+            guard (1...count).contains(targetNumber) else { throw DatabaseError.invalidOperation("Disc position is outside this album.") }
+            guard targetNumber != currentNumber else { return }
+
+            let park = try Self.prepare("UPDATE disc SET number = -1 WHERE id = ?;", on: connection)
+            defer { sqlite3_finalize(park) }
+            try Self.bind(discID.description, at: 1, to: park)
+            try Self.stepDone(park, connection: connection)
+            let offset: Int64 = 1_000_000
+            let offsetOthers = try Self.prepare("UPDATE disc SET number = number + ? WHERE album_id = ? AND id != ?;", on: connection)
+            defer { sqlite3_finalize(offsetOthers) }
+            try Self.bind(offset, at: 1, to: offsetOthers); try Self.bind(albumID.description, at: 2, to: offsetOthers); try Self.bind(discID.description, at: 3, to: offsetOthers)
+            try Self.stepDone(offsetOthers, connection: connection)
+            if targetNumber < currentNumber {
+                let shift = try Self.prepare("UPDATE disc SET number = CASE WHEN number >= ? AND number < ? THEN number - ? ELSE number - ? END WHERE album_id = ?;", on: connection)
+                defer { sqlite3_finalize(shift) }
+                try Self.bind(offset + Int64(targetNumber), at: 1, to: shift); try Self.bind(offset + Int64(currentNumber), at: 2, to: shift); try Self.bind(offset - 1, at: 3, to: shift); try Self.bind(offset, at: 4, to: shift); try Self.bind(albumID.description, at: 5, to: shift)
+                try Self.stepDone(shift, connection: connection)
+            } else {
+                let shift = try Self.prepare("UPDATE disc SET number = CASE WHEN number > ? AND number <= ? THEN number - ? ELSE number - ? END WHERE album_id = ?;", on: connection)
+                defer { sqlite3_finalize(shift) }
+                try Self.bind(offset + Int64(currentNumber), at: 1, to: shift); try Self.bind(offset + Int64(targetNumber), at: 2, to: shift); try Self.bind(offset + 1, at: 3, to: shift); try Self.bind(offset, at: 4, to: shift); try Self.bind(albumID.description, at: 5, to: shift)
+                try Self.stepDone(shift, connection: connection)
+            }
+            let place = try Self.prepare("UPDATE disc SET number = ? WHERE id = ?;", on: connection)
+            defer { sqlite3_finalize(place) }
+            try Self.bind(Int64(targetNumber), at: 1, to: place); try Self.bind(discID.description, at: 2, to: place)
+            try Self.stepDone(place, connection: connection)
+            try incrementRevision()
+        }
+    }
+
+    public func deleteDisc(_ discID: DiscID) throws {
+        try transaction {
+            let existing = try Self.prepare("SELECT album_id, number FROM disc WHERE id = ?;", on: connection)
+            defer { sqlite3_finalize(existing) }
+            try Self.bind(discID.description, at: 1, to: existing)
+            guard sqlite3_step(existing) == SQLITE_ROW, let albumID = Self.text(at: 0, from: existing) else { throw DatabaseError.notFound("Disc") }
+            let number = Self.int(at: 1, from: existing) ?? 0
+            let delete = try Self.prepare("DELETE FROM disc WHERE id = ?;", on: connection)
+            defer { sqlite3_finalize(delete) }
+            try Self.bind(discID.description, at: 1, to: delete)
+            try Self.stepDone(delete, connection: connection)
+            let reorder = try Self.prepare("UPDATE disc SET number = number - 1 WHERE album_id = ? AND number > ?;", on: connection)
+            defer { sqlite3_finalize(reorder) }
+            try Self.bind(albumID, at: 1, to: reorder); try Self.bind(number, at: 2, to: reorder)
+            try Self.stepDone(reorder, connection: connection)
+            try incrementRevision()
+        }
+    }
+
     public func createTrack(discID: DiscID, draft: NewTrack) throws -> Track {
         let valid = try draft.validated(); let id = TrackID(); var number = 0
         try transaction {

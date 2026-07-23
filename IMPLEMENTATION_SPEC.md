@@ -22,7 +22,7 @@ Completed and verified:
 - Atomic album creation inside a box set, including inherited physical-location behaviour.
 - Album editing plus box-member browse, confirmed move, removal with a standalone placement, and reorder workflows.
 - Schema migration 2 adds `physical_location_unknown`, removing ambiguity between a boxed album and a standalone CD whose location is unknown.
-- Forty-eight automated tests across five test suites, last verified with a rebuilt `swift test` on 23 July 2026.
+- Forty-nine automated tests across five test suites, last verified with a rebuilt `swift test` on 23 July 2026.
 - Catalogue-content foundation complete: ordered discs/tracks, aliases, contributor roles at album and track level, selected album artwork with local-path provenance, and safe track/alias removal. Album detail supports manual creation of each of these relationships and user-selected front artwork without modifying source files.
 - Storage-root foundation complete: migration 3, persisted root records, security-scoped bookmark creation/resolution, availability checks, and Settings management. Offline and authorization-required roots are retained rather than removed.
 - Import Inbox foundation complete: migration 4, cancellable system-content-type scanning of available authorized roots, persistent batches/candidates/errors, recovery of interrupted scans, and Inbox cancellation/retry UI. Scans never create albums, tracks, or digital assets.
@@ -54,12 +54,13 @@ Completed and verified:
 - Album rating/favourite UI complete: add/edit forms expose the agreed shared 1–5 rating and favourite marker, and album detail displays the saved values.
 - Detailed track-editor UI complete: the Mac editor corrects a track's title, display position, duration, work, movement number/name, and instrumental flag. These are catalogue-only corrections and never modify source audio tags.
 - Contributor-credit removal complete: album and track credits have explicit destructive controls. Removing a credit preserves the shared contributor record, other credits, and source audio files.
+- Disc management complete: album detail supports moving a disc earlier/later and an explicit confirmation before removing a disc and its catalogue tracks. Reordering is SQLite-unique-safe; deleting a disc cannot bypass protected digital assets and never changes source files.
 
 Not yet implemented:
 
-- General deletion/recovery, disc reordering/deletion, contributor-credit role/credited-name editing, tag write-back, lyrics, and AI.
+- General deletion/recovery, contributor-credit role/credited-name editing, tag write-back, lyrics, and AI.
 
-The next coding slice should safely delete or reorder discs. Preserve identity and ordering invariants, require explicit user action, and never write source tags. A Mac recheck refreshes the derived availability of reachable root-relative files without changing paths or catalogue revision. A reviewed individual relink can be explicitly applied as a catalogue-only path update; it must never move or rename media. Playlists support create, ordered membership, rename, soft delete, item removal, reordering, and playback. Do not allow companion clients to alter the catalogue.
+The next coding slice should edit contributor-credit role or credited name without replacing the shared contributor record. Preserve identity and ordering invariants, require explicit user action, and never write source tags. A Mac recheck refreshes the derived availability of reachable root-relative files without changing paths or catalogue revision. A reviewed individual relink can be explicitly applied as a catalogue-only path update; it must never move or rename media. Playlists support create, ordered membership, rename, soft delete, item removal, reordering, and playback. Do not allow companion clients to alter the catalogue.
 
 ## 1. Fixed decisions
 

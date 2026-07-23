@@ -221,6 +221,23 @@ struct MusicDatabaseTests {
         #expect(try await database.albumContributors(albumID: album.id).first?.contributor.name == "Miles Davis")
     }
 
+    @Test("Discs can be reordered and deleted while preserving remaining order")
+    func discManagement() async throws {
+        let database = try MusicDatabase(url: temporaryDatabaseURL())
+        try await database.migrate()
+        let album = try await database.createAlbum(.init(title: "Multi-disc"))
+        let first = try await database.createDisc(albumID: album.id, title: "One")
+        let second = try await database.createDisc(albumID: album.id, title: "Two")
+        let third = try await database.createDisc(albumID: album.id, title: "Three")
+
+        try await database.reorderDisc(third.id, in: album.id, to: 1)
+        #expect(try await database.discs(albumID: album.id).map(\.id) == [third.id, first.id, second.id])
+        try await database.deleteDisc(first.id)
+        let remaining = try await database.discs(albumID: album.id)
+        #expect(remaining.map(\.id) == [third.id, second.id])
+        #expect(remaining.map(\.number) == [1, 2])
+    }
+
     @Test("Track credits, artwork selection, and content removal are persisted safely")
     func detailedCatalogueContent() async throws {
         let database = try MusicDatabase(url: temporaryDatabaseURL())

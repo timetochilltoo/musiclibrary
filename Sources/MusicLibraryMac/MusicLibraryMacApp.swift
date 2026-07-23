@@ -755,6 +755,7 @@ private struct AlbumDetail: View {
     @State private var trackToEdit: Track?
     @State private var contributorToEdit: Contributor?
     @State private var showsArtworkPicker = false
+    @State private var discPendingDeletion: Disc?
 
     var body: some View {
         Form {
@@ -781,7 +782,16 @@ private struct AlbumDetail: View {
             if !discs.isEmpty {
                 Section("Tracks") {
                     ForEach(discs) { disc in
-                        Text(disc.title ?? "Disc \(disc.number)").font(.headline)
+                        HStack {
+                            Text(disc.title ?? "Disc \(disc.number)").font(.headline)
+                            Spacer()
+                            Button("Move disc earlier", systemImage: "arrow.up") { Task { try? await library.reorderDisc(disc.id, in: album.id, to: disc.number - 1); await loadContent() } }
+                                .labelStyle(.iconOnly).disabled(disc.number <= 1)
+                            Button("Move disc later", systemImage: "arrow.down") { Task { try? await library.reorderDisc(disc.id, in: album.id, to: disc.number + 1); await loadContent() } }
+                                .labelStyle(.iconOnly).disabled(disc.number >= discs.count)
+                            Button("Remove disc", systemImage: "trash", role: .destructive) { discPendingDeletion = disc }
+                                .labelStyle(.iconOnly)
+                        }
                         ForEach(tracksByDisc[disc.id] ?? []) { track in
                             VStack(alignment: .leading, spacing: 3) {
                                 HStack {
@@ -851,6 +861,11 @@ private struct AlbumDetail: View {
         .sheet(item: $trackForContributor) { track in AddTrackContributorEditor(library: library, track: track, onAdded: { await loadContent() }) }
         .sheet(item: $trackToEdit) { track in EditTrackEditor(library: library, track: track, onSaved: { await loadContent() }) }
         .sheet(item: $contributorToEdit) { contributor in EditContributorEditor(library: library, contributor: contributor, onSaved: { await loadContent() }) }
+        .confirmationDialog("Remove this disc?", isPresented: Binding(get: { discPendingDeletion != nil }, set: { if !$0 { discPendingDeletion = nil } }), titleVisibility: .visible, presenting: discPendingDeletion) { disc in
+            Button("Remove Disc and Its Tracks", role: .destructive) { Task { try? await library.deleteDisc(disc.id); await loadContent(); discPendingDeletion = nil } }
+        } message: { disc in
+            Text("This removes Disc \(disc.number) and its catalogue tracks. Source audio files are not changed. A disc with protected digital assets cannot be removed.")
+        }
         .fileImporter(isPresented: $showsArtworkPicker, allowedContentTypes: [.image]) { result in
             if case let .success(url) = result {
                 Task {
