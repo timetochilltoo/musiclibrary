@@ -515,7 +515,7 @@ private struct StorageRootRenameEditor: View {
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button("Save") { save() }.disabled(name.nilIfBlank == nil) } }
     }
 
-    private func save() { Task { try? await library.renameStorageRoot(root.id, to: name); dismiss() } }
+    private func save() { Task { do { try await library.renameStorageRoot(root.id, to: name); dismiss() } catch { library.presentError(error) } } }
 }
 
 private struct ScanRootPicker: View {
@@ -536,14 +536,14 @@ private struct ScanRootPicker: View {
         .frame(width: 520, height: 360)
     }
 
-    private func scan(_ root: StorageRoot) { Task { try? await library.startImportScan(rootID: root.id); dismiss() } }
+    private func scan(_ root: StorageRoot) { Task { do { try await library.startImportScan(rootID: root.id); dismiss() } catch { library.presentError(error) } } }
 }
 
 private struct PlaylistEditor: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var library: LibraryStore
     @State private var name = ""
-    var body: some View { Form { TextField("Playlist name", text: $name) }.padding().frame(width: 360).toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button("Create") { Task { try? await library.addPlaylist(name: name); dismiss() } }.disabled(name.nilIfBlank == nil) } } }
+    var body: some View { Form { TextField("Playlist name", text: $name) }.padding().frame(width: 360).toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button("Create") { Task { do { try await library.addPlaylist(name: name); dismiss() } catch { library.presentError(error) } } }.disabled(name.nilIfBlank == nil) } } }
 }
 
 private struct PlaylistRenameEditor: View {
