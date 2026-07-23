@@ -24,6 +24,23 @@ struct MusicDatabaseTests {
         #expect(try await database.currentRevision() == 1)
     }
 
+    @Test("Consistent master backup is readable while the source catalogue remains open")
+    func consistentMasterBackup() async throws {
+        let database = try MusicDatabase(url: temporaryDatabaseURL())
+        try await database.migrate()
+        let album = try await database.createAlbum(.init(title: "Backed up"))
+        let backupURL = FileManager.default.temporaryDirectory.appending(path: "MusicDatabaseBackup-\(UUID().uuidString).sqlite")
+        defer { try? FileManager.default.removeItem(at: backupURL) }
+
+        try await database.createConsistentBackup(at: backupURL)
+
+        let restored = try MusicDatabase(url: backupURL)
+        try await restored.migrate()
+        #expect(try await restored.albums().map(\.id) == [album.id])
+        let sourceRevision = try await database.currentRevision()
+        #expect(try await restored.currentRevision() == sourceRevision)
+    }
+
     @Test("Adding an album to a box clears its direct location")
     func boxMembershipInheritsLocation() async throws {
         let database = try MusicDatabase(url: temporaryDatabaseURL())

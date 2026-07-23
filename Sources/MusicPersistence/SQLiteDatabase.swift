@@ -60,6 +60,30 @@ public actor MusicDatabase {
         try Self.scalarInt("SELECT catalogue_revision FROM catalogue_state WHERE singleton_id = 1;", on: connection)
     }
 
+    public func createConsistentBackup(at url: URL) throws {
+        var destination: OpaquePointer?
+        guard sqlite3_open_v2(url.path, &destination, SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX, nil) == SQLITE_OK, let destination else {
+            defer { if let destination { sqlite3_close(destination) } }
+            throw DatabaseError.sqlite(message: "Unable to create backup database at \(url.path).")
+        }
+        defer { sqlite3_close(destination) }
+        guard let backup = sqlite3_backup_init(destination, "main", connection, "main") else {
+            throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(destination)))
+        }
+        let stepResult = sqlite3_backup_step(backup, -1)
+        let finishResult = sqlite3_backup_finish(backup)
+        guard stepResult == SQLITE_DONE else {
+            throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(destination)))
+        }
+        guard finishResult == SQLITE_OK else {
+            throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(destination)))
+        }
+        try Self.execute("PRAGMA foreign_keys = ON;", on: destination)
+        guard Self.textResult("PRAGMA integrity_check;", on: destination) == "ok" else {
+            throw DatabaseError.sqlite(message: "Backup integrity check failed.")
+        }
+    }
+
     public func createStorageRoot(_ draft: NewStorageRoot) throws -> StorageRoot {
         let valid = try draft.validated()
         let id = StorageRootID(); let now = Date()
@@ -1178,6 +1202,13 @@ public actor MusicDatabase {
         defer { sqlite3_finalize(statement) }
         guard sqlite3_step(statement) == SQLITE_ROW else { throw DatabaseError.sqlite(message: "Expected a SQLite scalar result.") }
         return sqlite3_column_int64(statement, 0)
+    }
+
+    private static func textResult(_ sql: String, on connection: OpaquePointer) -> String? {
+        guard let statement = try? prepare(sql, on: connection) else { return nil }
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
+        return text(at: 0, from: statement)
     }
 
     private static func exists(_ sql: String, value: String, on connection: OpaquePointer) throws -> Bool {
