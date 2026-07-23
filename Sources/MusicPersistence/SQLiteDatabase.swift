@@ -382,6 +382,15 @@ public actor MusicDatabase {
         }
         let data = try JSONSerialization.data(withJSONObject: ["format": "music-library-json", "schemaVersion": try schemaVersion(), "catalogueRevision": try currentRevision(), "albums": rows], options: [.prettyPrinted, .sortedKeys]); return String(decoding: data, as: UTF8.self)
     }
+    public func catalogueExportCSV() throws -> String {
+        let header = ["id", "title", "edition_label", "release_year", "country_code", "catalogue_number", "has_cd", "digital_availability"]
+        let digital = try albumIDsWithDigitalAssets()
+        let rows = try albums().map { album in
+            [album.id.description, album.title, album.editionLabel ?? "", album.releaseYear.map(String.init) ?? "", album.countryCode ?? "", album.catalogueNumber ?? "", album.hasCD ? "true" : "false", digital.contains(album.id.description) ? "available" : "none"]
+                .map(Self.csvValue).joined(separator: ",")
+        }
+        return ([header.map(Self.csvValue).joined(separator: ",")] + rows).joined(separator: "\n") + "\n"
+    }
     public func publicationRevisionAndJSON() throws -> (Int64, String) { (try currentRevision(), try catalogueExportJSON()) }
 
     private func albumIDsWithDigitalAssets() throws -> Set<String> {
@@ -1173,6 +1182,7 @@ public actor MusicDatabase {
     }
 
     private static let albumSelect = "SELECT id, title, edition_label, release_year, country_code, label_name, catalogue_number, barcode, remaster_year, media_format, disc_count, has_cd, physical_location_id, physical_location_unknown, physical_note, notes, rating, is_favourite, created_at, updated_at, deleted_at FROM album"
+    private static func csvValue(_ value: String) -> String { "\"\(value.replacingOccurrences(of: "\"", with: "\"\""))\"" }
 
     private static func album(from statement: OpaquePointer) throws -> Album {
         guard let rawID = text(at: 0, from: statement), let uuid = UUID(uuidString: rawID) else { throw DatabaseError.invalidIdentifier("album.id") }

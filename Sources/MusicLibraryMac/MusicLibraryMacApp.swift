@@ -271,6 +271,7 @@ private struct StorageRootList: View {
             Section("Export") {
                 Text("Export a portable JSON view of the current catalogue. Source media files are never copied.").font(.caption).foregroundStyle(.secondary)
                 Button("Export Catalogue JSON…", systemImage: "square.and.arrow.up") { exportCatalogue() }
+                Button("Export Catalogue CSV…", systemImage: "tablecells") { exportCatalogueCSV() }
             }
             Section("Music Folders") {
                 Button("Recheck Library Health", systemImage: "arrow.clockwise") {
@@ -418,6 +419,14 @@ private struct StorageRootList: View {
         panel.allowedContentTypes = [.json]
         guard panel.runModal() == .OK, let url = panel.url else { return }
         Task { do { try await library.exportCatalogue(to: url) } catch { library.presentError(error) } }
+    }
+    private func exportCatalogueCSV() {
+        let panel = NSSavePanel()
+        panel.title = "Export Catalogue CSV"
+        panel.nameFieldStringValue = "MusicLibraryCatalogue.csv"
+        panel.allowedContentTypes = [.commaSeparatedText]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        Task { do { try await library.exportCatalogueCSV(to: url) } catch { library.presentError(error) } }
     }
 }
 

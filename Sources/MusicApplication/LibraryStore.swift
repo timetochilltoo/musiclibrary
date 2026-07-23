@@ -314,6 +314,7 @@ public final class LibraryStore: ObservableObject {
     public func movePlaylistItem(_ id: UUID, to position: Int) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.movePlaylistItem(id, to: position); try await reload() }
     public func softDeleteAlbum(_ id: AlbumID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.softDeleteAlbum(id); try await reload() }
     public func exportCatalogue(to url: URL) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; let json = try await database.catalogueExportJSON(); try json.write(to: url, atomically: true, encoding: .utf8) }
+    public func exportCatalogueCSV(to url: URL) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; let csv = try await database.catalogueExportCSV(); try csv.write(to: url, atomically: true, encoding: .utf8) }
     public func publishSnapshot(to directory: URL) async throws -> SnapshotManifest { guard let database else { throw DatabaseError.notFound("Catalogue database") }; let value = try await database.publicationRevisionAndJSON(); return try SnapshotPublisher.publish(json: value.1, revision: value.0, to: directory) }
     public func setSnapshotDestination(_ url: URL) throws {
         let bookmark = try makeSecurityScopedBookmark(for: url)

@@ -224,6 +224,8 @@ Albums now expose **Move to Recently Deleted** in the Albums list context menu. 
 
 Settings also provides **Export Catalogue JSON…**, which uses the system Save dialog and writes only a portable catalogue JSON file to the user-selected destination. It never copies audio or changes catalogue data.
 
+**Export Catalogue CSV…** writes a quoted, spreadsheet-friendly album-level export to a user-selected location. It includes identity, edition, release/country/catalogue fields and CD/digital availability; it never copies media.
+
 `MusicDomainTests/AlbumTests.swift` verifies:
 
 - Album title validation.
