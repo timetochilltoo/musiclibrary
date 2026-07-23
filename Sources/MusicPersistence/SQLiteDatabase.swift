@@ -377,6 +377,7 @@ public actor MusicDatabase {
             if let editionLabel = $0.editionLabel, !editionLabel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { row["editionLabel"] = editionLabel }
             if let releaseYear = $0.releaseYear { row["releaseYear"] = releaseYear }
             if let catalogueNumber = $0.catalogueNumber, !catalogueNumber.isEmpty { row["catalogueNumber"] = catalogueNumber }
+            if let rating = $0.rating { row["rating"] = rating }
             row["discs"] = try snapshotDiscRows(albumID: $0.id)
             return row
         }

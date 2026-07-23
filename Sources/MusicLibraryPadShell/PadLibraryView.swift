@@ -161,6 +161,7 @@ public struct PadAlbumRow: View {
             Text(album.displayTitle)
             HStack(spacing: 6) {
                 if let releaseYear = album.releaseYear { Text(String(releaseYear)) }
+                if let rating = album.rating { Text("\(rating)★") }
                 if album.hasCD { Text("CD") }
                 if album.hasDigital { Text("Digital") }
             }
@@ -188,6 +189,7 @@ public struct PadAlbumDetailView: View {
                 if let editionLabel = album.editionLabel { LabeledContent("Edition", value: editionLabel) }
                 if let releaseYear = album.releaseYear { LabeledContent("Release year", value: String(releaseYear)) }
                 if let catalogueNumber = album.catalogueNumber { LabeledContent("Catalogue number", value: catalogueNumber) }
+                if let rating = album.rating { LabeledContent("Rating", value: "\(rating) / 5") }
             }
             Section("Availability") {
                 LabeledContent("CD", value: album.hasCD ? "Available" : "Not catalogued")

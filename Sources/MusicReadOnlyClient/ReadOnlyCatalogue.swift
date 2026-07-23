@@ -21,16 +21,18 @@ public struct ReadOnlyAlbum: Codable, Equatable, Identifiable, Sendable {
     public let editionLabel: String?
     public let releaseYear: Int?
     public let catalogueNumber: String?
+    public let rating: Int?
     public let hasCD: Bool
     public let hasDigital: Bool
     public let discs: [ReadOnlyDisc]
 
-    public init(id: String, title: String, editionLabel: String? = nil, releaseYear: Int? = nil, catalogueNumber: String? = nil, hasCD: Bool, hasDigital: Bool, discs: [ReadOnlyDisc] = []) {
+    public init(id: String, title: String, editionLabel: String? = nil, releaseYear: Int? = nil, catalogueNumber: String? = nil, rating: Int? = nil, hasCD: Bool, hasDigital: Bool, discs: [ReadOnlyDisc] = []) {
         self.id = id
         self.title = title
         self.editionLabel = editionLabel
         self.releaseYear = releaseYear
         self.catalogueNumber = catalogueNumber
+        self.rating = rating
         self.hasCD = hasCD
         self.hasDigital = hasDigital
         self.discs = discs
