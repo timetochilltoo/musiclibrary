@@ -186,7 +186,7 @@ private struct LibraryShellView: View {
 
     @ViewBuilder private var detail: some View {
         if section == .contributors, let selectedContributorID, let contributor = library.contributors.first(where: { $0.id == selectedContributorID }) {
-            ContributorDetail(library: library, contributor: contributor)
+            ContributorDetail(library: library, contributor: contributor, onShowAlbum: { albumID in selectedAlbumID = albumID; section = .albums })
         } else if section == .boxSets, let selectedBoxSetID, let box = library.boxSets.first(where: { $0.id == selectedBoxSetID }) {
             BoxSetDetail(library: library, boxSet: box)
         } else if section == .importInbox, let selectedImportBatchID, let batch = library.importBatches.first(where: { $0.id == selectedImportBatchID }) {
@@ -219,6 +219,7 @@ private struct LibraryShellView: View {
 private struct ContributorDetail: View {
     @ObservedObject var library: LibraryStore
     let contributor: Contributor
+    let onShowAlbum: (AlbumID) -> Void
     @State private var albums: [Album] = []
 
     var body: some View {
@@ -230,10 +231,13 @@ private struct ContributorDetail: View {
             Section("Credited albums") {
                 if albums.isEmpty { Text("No active album credits").foregroundStyle(.secondary) }
                 ForEach(albums) { album in
-                    VStack(alignment: .leading) {
-                        Text(album.displayTitle)
-                        Text("Includes album or track credits").font(.caption).foregroundStyle(.secondary)
+                    Button { onShowAlbum(album.id) } label: {
+                        VStack(alignment: .leading) {
+                            Text(album.displayTitle)
+                            Text("Includes album or track credits").font(.caption).foregroundStyle(.secondary)
+                        }
                     }
+                    .buttonStyle(.plain)
                 }
             }
         }
