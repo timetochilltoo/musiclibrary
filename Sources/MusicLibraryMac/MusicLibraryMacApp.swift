@@ -178,7 +178,7 @@ private struct LibraryShellView: View {
         } else if section == .importInbox, let selectedImportBatchID, let batch = library.importBatches.first(where: { $0.id == selectedImportBatchID }) {
             ImportBatchDetail(library: library, batch: batch)
         } else if section == .playlists, let selectedPlaylistID, let playlist = library.playlists.first(where: { $0.id == selectedPlaylistID }) {
-            PlaylistDetail(library: library, playlist: playlist)
+            PlaylistDetail(library: library, playback: playback, playlist: playlist)
         } else if let selectedAlbumID, let album = library.albums.first(where: { $0.id == selectedAlbumID }) {
             AlbumDetail(library: library, playback: playback, album: album, locations: library.locations, onEdit: { albumToEdit = album })
         } else {
@@ -455,6 +455,7 @@ private struct PlaylistRenameEditor: View {
 
 private struct PlaylistDetail: View {
     @ObservedObject var library: LibraryStore
+    @ObservedObject var playback: PlaybackController
     let playlist: Playlist
     @State private var items: [PlaylistItem] = []
     var body: some View {
@@ -471,6 +472,7 @@ private struct PlaylistDetail: View {
             }
         }
         .navigationTitle(playlist.name)
+        .toolbar { Button("Play", systemImage: "play.fill") { play() }.disabled(items.isEmpty) }
         .task(id: playlist.id) { await load() }
     }
 
@@ -490,6 +492,16 @@ private struct PlaylistDetail: View {
         Task {
             do { try await library.removePlaylistItem(item.id); await load() }
             catch { library.presentError(error) }
+        }
+    }
+
+    private func play() {
+        Task {
+            do {
+                try playback.play(items: try await library.playbackURLs(playlistID: playlist.id), startingAt: 0)
+            } catch {
+                library.presentError(error)
+            }
         }
     }
 }

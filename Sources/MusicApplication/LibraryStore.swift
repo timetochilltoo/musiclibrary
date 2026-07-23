@@ -247,6 +247,16 @@ public final class LibraryStore: ObservableObject {
         for track in discTracks { let asset = try await playbackURL(for: track.id); results.append((asset.url, track.id, asset.title)) }
         return results
     }
+    public func playbackURLs(playlistID: PlaylistID) async throws -> [(url: URL, trackID: TrackID, title: String)] {
+        var results: [(url: URL, trackID: TrackID, title: String)] = []
+        for item in try await playlistItems(playlistID) {
+            if let asset = try? await playbackURL(for: item.trackID) {
+                results.append((asset.url, item.trackID, asset.title))
+            }
+        }
+        guard !results.isEmpty else { throw DatabaseError.invalidOperation("This playlist has no currently playable tracks.") }
+        return results
+    }
     public func playlistItems(_ id: PlaylistID) async throws -> [PlaylistItem] { guard let database else { throw DatabaseError.notFound("Catalogue database") }; return try await database.playlistItems(playlistID: id) }
     public func addPlaylist(name: String) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; _ = try await database.createPlaylist(name: name); try await reload() }
     public func renamePlaylist(_ id: PlaylistID, to name: String) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.renamePlaylist(id, to: name); try await reload() }
