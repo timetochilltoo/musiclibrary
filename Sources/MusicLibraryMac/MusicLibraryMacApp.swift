@@ -820,6 +820,7 @@ private struct AlbumDetail: View {
     @State private var showsAddContributor = false
     @State private var trackForContributor: Track?
     @State private var trackToEdit: Track?
+    @State private var trackPendingDeletion: Track?
     @State private var contributorToEdit: Contributor?
     @State private var albumCreditToEdit: ContributorCredit?
     @State private var trackCreditToEdit: TrackCreditSelection?
@@ -872,7 +873,7 @@ private struct AlbumDetail: View {
                                     Menu("Add to Playlist") { ForEach(library.playlists) { playlist in Button(playlist.name) { Task { do { try await library.addTrack(track.id, toPlaylist: playlist.id) } catch { library.presentError(error) } } } } }.labelStyle(.iconOnly)
                                     Button("Credit", systemImage: "person.badge.plus") { trackForContributor = track }
                                         .labelStyle(.iconOnly)
-                                    Button("Remove", systemImage: "trash", role: .destructive) { Task { do { try await library.deleteTrack(track.id); await loadContent() } catch { library.presentError(error) } } }
+                                    Button("Remove", systemImage: "trash", role: .destructive) { trackPendingDeletion = track }
                                         .labelStyle(.iconOnly)
                                 }
                                 if let credits = trackCredits[track.id], !credits.isEmpty {
@@ -940,6 +941,11 @@ private struct AlbumDetail: View {
             Button("Remove Disc and Its Tracks", role: .destructive) { Task { do { try await library.deleteDisc(disc.id); await loadContent(); discPendingDeletion = nil } catch { library.presentError(error) } } }
         } message: { disc in
             Text("This removes Disc \(disc.number) and its catalogue tracks. Source audio files are not changed. A disc with protected digital assets cannot be removed.")
+        }
+        .confirmationDialog("Remove this track?", isPresented: Binding(get: { trackPendingDeletion != nil }, set: { if !$0 { trackPendingDeletion = nil } }), titleVisibility: .visible, presenting: trackPendingDeletion) { track in
+            Button("Remove Track", role: .destructive) { Task { do { try await library.deleteTrack(track.id); await loadContent(); trackPendingDeletion = nil } catch { library.presentError(error) } } }
+        } message: { track in
+            Text("This removes \(track.title) from the catalogue. Source audio files are not changed. A track with protected digital assets cannot be removed.")
         }
         .fileImporter(isPresented: $showsArtworkPicker, allowedContentTypes: [.image]) { result in
             if case let .success(url) = result {
