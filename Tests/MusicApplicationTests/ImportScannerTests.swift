@@ -2,6 +2,7 @@ import Foundation
 import Testing
 @testable import MusicApplication
 @testable import MusicDomain
+@testable import MusicPersistence
 
 @Suite("Import scanner")
 struct ImportScannerTests {
@@ -67,6 +68,22 @@ struct ImportScannerTests {
         #expect(destination.deletingLastPathComponent().lastPathComponent == "Artwork")
         #expect(destination != source)
         #expect(try Data(contentsOf: destination) == Data([1, 2, 3]))
+    }
+
+    @Test("Master archive writes a checksummed verified SQLite backup")
+    func writesMasterArchive() async throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let database = try MusicDatabase(url: directory.appending(path: "source.sqlite"))
+        try await database.migrate()
+        _ = try await database.createAlbum(.init(title: "Archived"))
+
+        let archiveDirectory = directory.appending(path: "Backups")
+        let manifest = try await MasterBackupArchive.create(database: database, in: archiveDirectory, now: Date(timeIntervalSince1970: 1_700_000_000))
+
+        #expect(FileManager.default.fileExists(atPath: archiveDirectory.appending(path: manifest.fileName).path))
+        try await MasterBackupArchive.verify(manifest, in: archiveDirectory)
     }
 
     @Test("Snapshot publisher retains only the configured recent revisions")
