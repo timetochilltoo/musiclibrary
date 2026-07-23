@@ -1068,13 +1068,27 @@ public actor MusicDatabase {
         }
     }
 
-    public func updateAlbumContributorCredit(_ contributorID: ContributorID, in albumID: AlbumID, role: ContributorRole, position: Int, creditedName: String?) throws {
+    public func updateAlbumContributorCredit(_ contributorID: ContributorID, in albumID: AlbumID, role: ContributorRole, position: Int, creditedName: String?, newRole: ContributorRole? = nil) throws {
         try transaction {
-            let statement = try Self.prepare("UPDATE album_contributor SET credited_name = ? WHERE album_id = ? AND contributor_id = ? AND role = ? AND position = ?;", on: connection)
-            defer { sqlite3_finalize(statement) }
-            try Self.bind(creditedName, at: 1, to: statement); try Self.bind(albumID.description, at: 2, to: statement); try Self.bind(contributorID.description, at: 3, to: statement); try Self.bind(role.rawValue, at: 4, to: statement); try Self.bind(Int64(position), at: 5, to: statement)
-            try Self.stepDone(statement, connection: connection)
-            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Album contributor credit") }
+            let targetRole = newRole ?? role
+            if targetRole == role {
+                let statement = try Self.prepare("UPDATE album_contributor SET credited_name = ? WHERE album_id = ? AND contributor_id = ? AND role = ? AND position = ?;", on: connection)
+                defer { sqlite3_finalize(statement) }
+                try Self.bind(creditedName, at: 1, to: statement); try Self.bind(albumID.description, at: 2, to: statement); try Self.bind(contributorID.description, at: 3, to: statement); try Self.bind(role.rawValue, at: 4, to: statement); try Self.bind(Int64(position), at: 5, to: statement)
+                try Self.stepDone(statement, connection: connection)
+                guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Album contributor credit") }
+            } else {
+                let delete = try Self.prepare("DELETE FROM album_contributor WHERE album_id = ? AND contributor_id = ? AND role = ? AND position = ?;", on: connection)
+                defer { sqlite3_finalize(delete) }
+                try Self.bind(albumID.description, at: 1, to: delete); try Self.bind(contributorID.description, at: 2, to: delete); try Self.bind(role.rawValue, at: 3, to: delete); try Self.bind(Int64(position), at: 4, to: delete)
+                try Self.stepDone(delete, connection: connection)
+                guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Album contributor credit") }
+                let targetPosition = try Self.nextNumber("SELECT COALESCE(MAX(position), -1) + 1 FROM album_contributor WHERE album_id = ? AND role = ?;", ownerID: albumID.description, on: connection, additionalValue: targetRole.rawValue)
+                let insert = try Self.prepare("INSERT INTO album_contributor (album_id, contributor_id, role, credited_name, position) VALUES (?, ?, ?, ?, ?);", on: connection)
+                defer { sqlite3_finalize(insert) }
+                try Self.bind(albumID.description, at: 1, to: insert); try Self.bind(contributorID.description, at: 2, to: insert); try Self.bind(targetRole.rawValue, at: 3, to: insert); try Self.bind(creditedName, at: 4, to: insert); try Self.bind(Int64(targetPosition), at: 5, to: insert)
+                try Self.stepDone(insert, connection: connection)
+            }
             try incrementRevision()
         }
     }
@@ -1114,13 +1128,27 @@ public actor MusicDatabase {
         }
     }
 
-    public func updateTrackContributorCredit(_ contributorID: ContributorID, in trackID: TrackID, role: ContributorRole, position: Int, creditedName: String?) throws {
+    public func updateTrackContributorCredit(_ contributorID: ContributorID, in trackID: TrackID, role: ContributorRole, position: Int, creditedName: String?, newRole: ContributorRole? = nil) throws {
         try transaction {
-            let statement = try Self.prepare("UPDATE track_contributor SET credited_name = ? WHERE track_id = ? AND contributor_id = ? AND role = ? AND position = ?;", on: connection)
-            defer { sqlite3_finalize(statement) }
-            try Self.bind(creditedName, at: 1, to: statement); try Self.bind(trackID.description, at: 2, to: statement); try Self.bind(contributorID.description, at: 3, to: statement); try Self.bind(role.rawValue, at: 4, to: statement); try Self.bind(Int64(position), at: 5, to: statement)
-            try Self.stepDone(statement, connection: connection)
-            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Track contributor credit") }
+            let targetRole = newRole ?? role
+            if targetRole == role {
+                let statement = try Self.prepare("UPDATE track_contributor SET credited_name = ? WHERE track_id = ? AND contributor_id = ? AND role = ? AND position = ?;", on: connection)
+                defer { sqlite3_finalize(statement) }
+                try Self.bind(creditedName, at: 1, to: statement); try Self.bind(trackID.description, at: 2, to: statement); try Self.bind(contributorID.description, at: 3, to: statement); try Self.bind(role.rawValue, at: 4, to: statement); try Self.bind(Int64(position), at: 5, to: statement)
+                try Self.stepDone(statement, connection: connection)
+                guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Track contributor credit") }
+            } else {
+                let delete = try Self.prepare("DELETE FROM track_contributor WHERE track_id = ? AND contributor_id = ? AND role = ? AND position = ?;", on: connection)
+                defer { sqlite3_finalize(delete) }
+                try Self.bind(trackID.description, at: 1, to: delete); try Self.bind(contributorID.description, at: 2, to: delete); try Self.bind(role.rawValue, at: 3, to: delete); try Self.bind(Int64(position), at: 4, to: delete)
+                try Self.stepDone(delete, connection: connection)
+                guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Track contributor credit") }
+                let targetPosition = try Self.nextNumber("SELECT COALESCE(MAX(position), -1) + 1 FROM track_contributor WHERE track_id = ? AND role = ?;", ownerID: trackID.description, on: connection, additionalValue: targetRole.rawValue)
+                let insert = try Self.prepare("INSERT INTO track_contributor (track_id, contributor_id, role, credited_name, position) VALUES (?, ?, ?, ?, ?);", on: connection)
+                defer { sqlite3_finalize(insert) }
+                try Self.bind(trackID.description, at: 1, to: insert); try Self.bind(contributorID.description, at: 2, to: insert); try Self.bind(targetRole.rawValue, at: 3, to: insert); try Self.bind(creditedName, at: 4, to: insert); try Self.bind(Int64(targetPosition), at: 5, to: insert)
+                try Self.stepDone(insert, connection: connection)
+            }
             try incrementRevision()
         }
     }

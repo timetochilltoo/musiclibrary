@@ -1098,6 +1098,7 @@ private struct EditAlbumCreditedNameEditor: View {
     let credit: ContributorCredit
     let onSaved: () async -> Void
     @State private var creditedName: String
+    @State private var role: ContributorRole
     @State private var errorMessage: String?
 
     init(library: LibraryStore, albumID: AlbumID, credit: ContributorCredit, onSaved: @escaping () async -> Void) {
@@ -1106,12 +1107,14 @@ private struct EditAlbumCreditedNameEditor: View {
         self.credit = credit
         self.onSaved = onSaved
         _creditedName = State(initialValue: credit.creditedName ?? credit.contributor.name)
+        _role = State(initialValue: credit.role)
     }
 
     var body: some View {
         Form {
             TextField("Credited name", text: $creditedName)
-            Text("This changes only how this album credit is displayed. The shared contributor record and audio-file tags are not changed.")
+            Picker("Role", selection: $role) { ForEach(ContributorRole.allCases, id: \.self) { Text($0.rawValue).tag($0) } }
+            Text("This changes only this album credit. The shared contributor record and audio-file tags are not changed. A changed role is placed last within its new role.")
                 .font(.caption).foregroundStyle(.secondary)
         }
         .padding().frame(width: 440)
@@ -1119,7 +1122,7 @@ private struct EditAlbumCreditedNameEditor: View {
         .alert("Unable to update credit", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) { Button("OK", role: .cancel) {} } message: { Text(errorMessage ?? "") }
     }
 
-    private func save() { Task { do { try await library.updateAlbumContributorCredit(credit, in: albumID, creditedName: creditedName.nilIfBlank); await onSaved(); dismiss() } catch { errorMessage = error.localizedDescription } } }
+    private func save() { Task { do { try await library.updateAlbumContributorCredit(credit, in: albumID, creditedName: creditedName.nilIfBlank, newRole: role); await onSaved(); dismiss() } catch { errorMessage = error.localizedDescription } } }
 }
 
 private struct EditTrackCreditedNameEditor: View {
@@ -1129,6 +1132,7 @@ private struct EditTrackCreditedNameEditor: View {
     let credit: ContributorCredit
     let onSaved: () async -> Void
     @State private var creditedName: String
+    @State private var role: ContributorRole
     @State private var errorMessage: String?
 
     init(library: LibraryStore, track: Track, credit: ContributorCredit, onSaved: @escaping () async -> Void) {
@@ -1137,12 +1141,14 @@ private struct EditTrackCreditedNameEditor: View {
         self.credit = credit
         self.onSaved = onSaved
         _creditedName = State(initialValue: credit.creditedName ?? credit.contributor.name)
+        _role = State(initialValue: credit.role)
     }
 
     var body: some View {
         Form {
             TextField("Credited name", text: $creditedName)
-            Text("This changes only how this track credit is displayed. The shared contributor record and audio-file tags are not changed.")
+            Picker("Role", selection: $role) { ForEach(ContributorRole.allCases, id: \.self) { Text($0.rawValue).tag($0) } }
+            Text("This changes only this track credit. The shared contributor record and audio-file tags are not changed. A changed role is placed last within its new role.")
                 .font(.caption).foregroundStyle(.secondary)
         }
         .padding().frame(width: 440)
@@ -1150,7 +1156,7 @@ private struct EditTrackCreditedNameEditor: View {
         .alert("Unable to update credit", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) { Button("OK", role: .cancel) {} } message: { Text(errorMessage ?? "") }
     }
 
-    private func save() { Task { do { try await library.updateTrackContributorCredit(credit, in: track.id, creditedName: creditedName.nilIfBlank); await onSaved(); dismiss() } catch { errorMessage = error.localizedDescription } } }
+    private func save() { Task { do { try await library.updateTrackContributorCredit(credit, in: track.id, creditedName: creditedName.nilIfBlank, newRole: role); await onSaved(); dismiss() } catch { errorMessage = error.localizedDescription } } }
 }
 
 private struct LocationList: View {
