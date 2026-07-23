@@ -145,7 +145,10 @@ private struct LibraryShellView: View {
                 }
             }
         case .settings:
-            StorageRootList(library: library)
+            StorageRootList(library: library) { albumID in
+                selectedAlbumID = albumID
+                section = .albums
+            }
         default:
             ContentUnavailableView(section?.title ?? "Music Library", systemImage: section?.symbol ?? "music.note")
         }
@@ -214,6 +217,7 @@ private func relinkConfirmationMessage(_ proposal: AssetRelinkProposal) -> Strin
 
 private struct StorageRootList: View {
     @ObservedObject var library: LibraryStore
+    let onShowAlbum: (AlbumID) -> Void
     @State private var rootToRename: StorageRoot?
     @State private var relinkProposalToApply: AssetRelinkProposal?
     @State private var showsSnapshotDestinationPicker = false
@@ -253,7 +257,12 @@ private struct StorageRootList: View {
             if !library.libraryHealthIssues.isEmpty {
                 Section("Library Health") {
                     ForEach(library.libraryHealthIssues) { issue in
-                        VStack(alignment: .leading) { Label(issue.albumTitle, systemImage: issue.kind == .offline ? "externaldrive.badge.exclamationmark" : "exclamationmark.triangle"); Text(issue.detail).font(.caption).foregroundStyle(.secondary) }
+                        VStack(alignment: .leading) {
+                            Label(issue.albumTitle, systemImage: issue.kind == .offline ? "externaldrive.badge.exclamationmark" : "exclamationmark.triangle")
+                            Text(issue.detail).font(.caption).foregroundStyle(.secondary)
+                            Button("Show Album") { onShowAlbum(issue.albumID) }
+                                .font(.caption)
+                        }
                     }
                 }
             }
