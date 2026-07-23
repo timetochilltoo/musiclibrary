@@ -441,7 +441,7 @@ private struct StorageRootList: View {
             if !library.duplicateAssets.isEmpty { Section("Duplicate fingerprints") { ForEach(library.duplicateAssets) { duplicate in Text("\(duplicate.paths.count) files share fingerprint \(duplicate.contentHash.prefix(12))…") } } }
         }
         .fileImporter(isPresented: $showsSnapshotDestinationPicker, allowedContentTypes: [.folder]) { result in
-            if case let .success(url) = result { try? library.setSnapshotDestination(url) }
+            if case let .success(url) = result { do { try library.setSnapshotDestination(url) } catch { library.presentError(error) } }
         }
         .fileImporter(isPresented: $showsMasterRestorePicker, allowedContentTypes: [.json]) { result in
             if case let .success(url) = result { restoreManifestURL = url }

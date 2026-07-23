@@ -295,6 +295,7 @@ Album-detail track and disc removal now require explicit confirmation, and remov
 The add-disc, add-track, add-alias, add-credit, and add-to-playlist actions use the same rule: on failure they keep the current UI open where applicable and surface the error.
 Selecting a music folder for a new storage root also surfaces authorization/addition failures through the shared app alert.
 Creating a playlist, renaming a storage root, and starting an import scan now follow the same visible-error rule.
+Selecting a snapshot/NAS destination follows the same visible-error rule.
 The macOS sidebar includes a Contributors section, backed by a deterministic name/sort-name query and local name/sort-name search. Selecting a contributor lists all active albums where they hold either an album or track credit; selecting one of those rows opens its normal album detail. Contributor corrections remain available through existing album/track credit editing.
 
 ### Digital media
