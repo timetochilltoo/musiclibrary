@@ -813,7 +813,7 @@ private struct AlbumDetail: View {
                                     Spacer()
                                     Button("Edit", systemImage: "pencil") { trackToEdit = track }.labelStyle(.iconOnly)
                                     Button("Play", systemImage: "play.fill") { play(track) }.labelStyle(.iconOnly)
-                                    Menu("Add to Playlist") { ForEach(library.playlists) { playlist in Button(playlist.name) { Task { try? await library.addTrack(track.id, toPlaylist: playlist.id) } } } }.labelStyle(.iconOnly)
+                                    Menu("Add to Playlist") { ForEach(library.playlists) { playlist in Button(playlist.name) { Task { do { try await library.addTrack(track.id, toPlaylist: playlist.id) } catch { library.presentError(error) } } } } }.labelStyle(.iconOnly)
                                     Button("Credit", systemImage: "person.badge.plus") { trackForContributor = track }
                                         .labelStyle(.iconOnly)
                                     Button("Remove", systemImage: "trash", role: .destructive) { Task { do { try await library.deleteTrack(track.id); await loadContent() } catch { library.presentError(error) } } }
@@ -943,7 +943,7 @@ private struct AddDiscEditor: View {
             .padding().frame(width: 360)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button("Add") { add() } } }
     }
-    private func add() { Task { try? await library.addDisc(albumID: albumID, title: title.nilIfBlank); await onAdded(); dismiss() } }
+    private func add() { Task { do { try await library.addDisc(albumID: albumID, title: title.nilIfBlank); await onAdded(); dismiss() } catch { library.presentError(error) } } }
 }
 
 private struct AddTrackEditor: View {
@@ -958,7 +958,7 @@ private struct AddTrackEditor: View {
             .padding().frame(width: 360)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button("Add") { add() }.disabled(title.nilIfBlank == nil) } }
     }
-    private func add() { Task { try? await library.addTrack(discID: disc.id, draft: .init(title: title, rating: rating == 0 ? nil : rating)); await onAdded(); dismiss() } }
+    private func add() { Task { do { try await library.addTrack(discID: disc.id, draft: .init(title: title, rating: rating == 0 ? nil : rating)); await onAdded(); dismiss() } catch { library.presentError(error) } } }
 }
 
 private struct EditTrackEditor: View {
@@ -1029,7 +1029,7 @@ private struct AddAliasEditor: View {
             .padding().frame(width: 380)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button("Add") { add() }.disabled(name.nilIfBlank == nil) } }
     }
-    private func add() { Task { try? await library.addAlbumAlias(albumID: albumID, name: name, kind: kind, locale: locale.nilIfBlank); await onAdded(); dismiss() } }
+    private func add() { Task { do { try await library.addAlbumAlias(albumID: albumID, name: name, kind: kind, locale: locale.nilIfBlank); await onAdded(); dismiss() } catch { library.presentError(error) } } }
 }
 
 private struct AddContributorEditor: View {
@@ -1045,7 +1045,7 @@ private struct AddContributorEditor: View {
             .padding().frame(width: 400)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button("Add") { add() }.disabled(name.nilIfBlank == nil) } }
     }
-    private func add() { Task { try? await library.addAlbumContributor(albumID: albumID, name: name, role: role, creditedName: creditedName.nilIfBlank); await onAdded(); dismiss() } }
+    private func add() { Task { do { try await library.addAlbumContributor(albumID: albumID, name: name, role: role, creditedName: creditedName.nilIfBlank); await onAdded(); dismiss() } catch { library.presentError(error) } } }
 }
 
 private struct EditContributorEditor: View {
@@ -1104,7 +1104,7 @@ private struct AddTrackContributorEditor: View {
             .padding().frame(width: 400)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button("Add") { add() }.disabled(name.nilIfBlank == nil) } }
     }
-    private func add() { Task { try? await library.addTrackContributor(trackID: track.id, name: name, role: role, creditedName: creditedName.nilIfBlank); await onAdded(); dismiss() } }
+    private func add() { Task { do { try await library.addTrackContributor(trackID: track.id, name: name, role: role, creditedName: creditedName.nilIfBlank); await onAdded(); dismiss() } catch { library.presentError(error) } } }
 }
 
 private struct EditAlbumCreditedNameEditor: View {
