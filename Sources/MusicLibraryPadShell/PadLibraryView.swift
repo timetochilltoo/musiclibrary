@@ -50,7 +50,11 @@ public struct PadLibraryView: View {
                     if let catalogue {
                         Text("Revision \(catalogue.catalogueRevision) · \(catalogue.albums.count) albums").font(.caption).foregroundStyle(.secondary)
                         if !recentlyPlayedAlbums.isEmpty {
-                            Text("Recently played").font(.caption).foregroundStyle(.secondary)
+                            HStack {
+                                Text("Recently played").font(.caption).foregroundStyle(.secondary)
+                                Spacer()
+                                Button("Clear") { clearRecentlyPlayed() }.font(.caption)
+                            }
                             ForEach(recentlyPlayedAlbums) { album in
                                 albumLink(album)
                             }
@@ -170,7 +174,7 @@ public struct PadLibraryView: View {
     private var recentlyPlayedAlbums: [ReadOnlyAlbum] {
         guard let catalogue else { return [] }
         let albumsByID = Dictionary(uniqueKeysWithValues: catalogue.albums.map { ($0.id, $0) })
-        return recentlyPlayedAlbumIDs.compactMap { albumsByID[$0] }.filter { !showsFavouritesOnly || favouriteAlbumIDs.contains($0.id) }
+        return recentlyPlayedAlbumIDs.compactMap { albumsByID[$0] }.filter { $0.matches(searchText) && (!showsFavouritesOnly || favouriteAlbumIDs.contains($0.id)) }
     }
 
     @ViewBuilder private func albumLink(_ album: ReadOnlyAlbum) -> some View {
@@ -205,6 +209,15 @@ public struct PadLibraryView: View {
             recentlyPlayedAlbumIDs.insert(albumID, at: 0)
         } catch {
             message = "Could not save device-local play history: \(error.localizedDescription)"
+        }
+    }
+
+    private func clearRecentlyPlayed() {
+        do {
+            try preferenceStore.clearRecentlyPlayed()
+            recentlyPlayedAlbumIDs = []
+        } catch {
+            message = "Could not clear device-local play history: \(error.localizedDescription)"
         }
     }
 }

@@ -37,6 +37,12 @@ public final class CompanionPreferenceStore {
         try save(updated)
     }
 
+    public func clearRecentlyPlayed() throws {
+        var updated = try preferences()
+        updated.recentlyPlayedAlbumIDs = []
+        try save(updated)
+    }
+
     private func preferences() throws -> Preferences {
         guard FileManager.default.fileExists(atPath: url.path) else { return .init(favouriteAlbumIDs: [], recentlyPlayedAlbumIDs: []) }
         let data = try Data(contentsOf: url)
