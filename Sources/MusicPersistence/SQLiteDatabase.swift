@@ -433,6 +433,35 @@ public actor MusicDatabase {
         return values
     }
 
+    public func renamePlaylist(_ id: PlaylistID, to name: String) throws {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw ValidationError.requiredField("Playlist name") }
+        try transaction {
+            let statement = try Self.prepare("UPDATE playlist SET name = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL;", on: connection)
+            defer { sqlite3_finalize(statement) }
+            try Self.bind(trimmed, at: 1, to: statement)
+            try Self.bind(Self.milliseconds(Date()), at: 2, to: statement)
+            try Self.bind(id.description, at: 3, to: statement)
+            try Self.stepDone(statement, connection: connection)
+            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Playlist") }
+            try incrementRevision()
+        }
+    }
+
+    public func deletePlaylist(_ id: PlaylistID) throws {
+        try transaction {
+            let statement = try Self.prepare("UPDATE playlist SET deleted_at = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL;", on: connection)
+            defer { sqlite3_finalize(statement) }
+            let now = Self.milliseconds(Date())
+            try Self.bind(now, at: 1, to: statement)
+            try Self.bind(now, at: 2, to: statement)
+            try Self.bind(id.description, at: 3, to: statement)
+            try Self.stepDone(statement, connection: connection)
+            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Playlist") }
+            try incrementRevision()
+        }
+    }
+
     public func addTrack(_ trackID: TrackID, to playlistID: PlaylistID) throws {
         try transaction { guard try Self.exists("SELECT 1 FROM playlist WHERE id = ? AND deleted_at IS NULL;", value: playlistID.description, on: connection) else { throw DatabaseError.notFound("Playlist") }; guard try Self.exists("SELECT 1 FROM track WHERE id = ?;", value: trackID.description, on: connection) else { throw DatabaseError.notFound("Track") }; let position = try Self.nextNumber("SELECT COALESCE(MAX(position), 0) + 1 FROM playlist_item WHERE playlist_id = ?;", ownerID: playlistID.description, on: connection); let statement = try Self.prepare("INSERT INTO playlist_item (id, playlist_id, track_id, position) VALUES (?, ?, ?, ?);", on: connection); defer { sqlite3_finalize(statement) }; try Self.bind(UUID().uuidString.lowercased(), at: 1, to: statement); try Self.bind(playlistID.description, at: 2, to: statement); try Self.bind(trackID.description, at: 3, to: statement); try Self.bind(Int64(position), at: 4, to: statement); try Self.stepDone(statement, connection: connection); try incrementRevision() }
     }

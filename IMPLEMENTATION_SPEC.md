@@ -47,7 +47,7 @@ Not yet implemented:
 - Precise Mac publication scheduling, last-published revision tracking, and orderly-quit flush.
 - General deletion/recovery, disc reordering/deletion, contributor-credit maintenance, full track-editor UI, tag write-back, lyrics, and AI.
 
-The next coding slice is **Library Health recovery review**. A Mac recheck now refreshes the derived availability of reachable root-relative files without changing paths or catalogue revision. A reviewed individual relink can be explicitly applied as a catalogue-only path update; it must never move or rename media. Do not allow companion clients to alter the catalogue.
+The next coding slice is **Library Health recovery review and playlist refinement**. A Mac recheck now refreshes the derived availability of reachable root-relative files without changing paths or catalogue revision. A reviewed individual relink can be explicitly applied as a catalogue-only path update; it must never move or rename media. Playlists support create, ordered membership, rename, and soft delete; item removal/reordering remain future work. Do not allow companion clients to alter the catalogue.
 
 ## 1. Fixed decisions
 

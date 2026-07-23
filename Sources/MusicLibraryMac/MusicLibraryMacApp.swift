@@ -62,6 +62,7 @@ private struct LibraryShellView: View {
     @State private var showsScanRootPicker = false
     @State private var showsPlaylistEditor = false
     @State private var albumToEdit: Album?
+    @State private var playlistToRename: Playlist?
 
     var body: some View {
         NavigationSplitView {
@@ -87,6 +88,7 @@ private struct LibraryShellView: View {
         .sheet(isPresented: $showsScanRootPicker) { ScanRootPicker(library: library) }
         .sheet(isPresented: $showsPlaylistEditor) { PlaylistEditor(library: library) }
         .sheet(item: $albumToEdit) { album in EditAlbumEditor(library: library, album: album) }
+        .sheet(item: $playlistToRename) { playlist in PlaylistRenameEditor(library: library, playlist: playlist) }
         .fileImporter(isPresented: $showsStorageRootPicker, allowedContentTypes: [.folder]) { result in
             if case let .success(url) = result { Task { try? await library.addStorageRoot(url: url) } }
         }
@@ -137,7 +139,23 @@ private struct LibraryShellView: View {
             }
             .overlay { if library.isReady && library.importBatches.isEmpty { ContentUnavailableView("No import batches", systemImage: "tray", description: Text("Choose an available music folder to scan into the review inbox.")) } }
         case .playlists:
-            List(library.playlists, selection: $selectedPlaylistID) { playlist in Text(playlist.name).tag(playlist.id) }
+            List(library.playlists, selection: $selectedPlaylistID) { playlist in
+                Text(playlist.name)
+                    .tag(playlist.id)
+                    .contextMenu {
+                        Button("Rename") { playlistToRename = playlist }
+                        Button("Delete", role: .destructive) {
+                            Task {
+                                do {
+                                    try await library.deletePlaylist(playlist.id)
+                                    if selectedPlaylistID == playlist.id { selectedPlaylistID = nil }
+                                } catch {
+                                    library.presentError(error)
+                                }
+                            }
+                        }
+                    }
+            }
             .overlay { if library.isReady && library.playlists.isEmpty { ContentUnavailableView("No playlists", systemImage: "music.note.list", description: Text("Create a playlist, then add tracks from an album.")) } }
             .overlay {
                 if library.isReady && library.boxSets.isEmpty {
@@ -396,6 +414,43 @@ private struct PlaylistEditor: View {
     @ObservedObject var library: LibraryStore
     @State private var name = ""
     var body: some View { Form { TextField("Playlist name", text: $name) }.padding().frame(width: 360).toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button("Create") { Task { try? await library.addPlaylist(name: name); dismiss() } }.disabled(name.nilIfBlank == nil) } } }
+}
+
+private struct PlaylistRenameEditor: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var library: LibraryStore
+    let playlist: Playlist
+    @State private var name: String
+    @State private var errorMessage: String?
+
+    init(library: LibraryStore, playlist: Playlist) {
+        self.library = library
+        self.playlist = playlist
+        _name = State(initialValue: playlist.name)
+    }
+
+    var body: some View {
+        Form { TextField("Playlist name", text: $name) }
+            .padding().frame(width: 360)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) { Button("Save") { save() }.disabled(name.nilIfBlank == nil) }
+            }
+            .alert("Unable to rename playlist", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
+                Button("OK", role: .cancel) { errorMessage = nil }
+            } message: { Text(errorMessage ?? "") }
+    }
+
+    private func save() {
+        Task {
+            do {
+                try await library.renamePlaylist(playlist.id, to: name)
+                dismiss()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
 }
 
 private struct PlaylistDetail: View {
