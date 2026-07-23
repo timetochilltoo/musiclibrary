@@ -46,4 +46,29 @@ public enum MasterBackupArchive {
         let backup = try MusicDatabase(url: fileURL)
         try await backup.migrate()
     }
+
+    public static func retain(in directory: URL, daily: Int = 7, monthly: Int = 12) throws {
+        let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.contentModificationDateKey])
+        let manifests = files.filter { $0.lastPathComponent.hasPrefix("MusicLibrary-master-") && $0.lastPathComponent.hasSuffix(".manifest.json") }
+            .compactMap { url -> (URL, MasterBackupManifest)? in
+                guard let manifest = try? JSONDecoder().decode(MasterBackupManifest.self, from: Data(contentsOf: url)) else { return nil }
+                return (url, manifest)
+            }
+            .sorted { $0.1.createdAt > $1.1.createdAt }
+        var keep = Set<String>()
+        var days = Set<String>()
+        var months = Set<String>()
+        let calendar = Calendar(identifier: .gregorian)
+        for (_, manifest) in manifests {
+            let day = calendar.dateComponents([.year, .month, .day], from: manifest.createdAt)
+            let dayKey = "\(day.year ?? 0)-\(day.month ?? 0)-\(day.day ?? 0)"
+            let monthKey = "\(day.year ?? 0)-\(day.month ?? 0)"
+            if days.count < daily, days.insert(dayKey).inserted { keep.insert(manifest.fileName) }
+            if months.count < monthly, months.insert(monthKey).inserted { keep.insert(manifest.fileName) }
+        }
+        for (manifestURL, manifest) in manifests where !keep.contains(manifest.fileName) {
+            try? FileManager.default.removeItem(at: directory.appending(path: manifest.fileName))
+            try? FileManager.default.removeItem(at: manifestURL)
+        }
+    }
 }

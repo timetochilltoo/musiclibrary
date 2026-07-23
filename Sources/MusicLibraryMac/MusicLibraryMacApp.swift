@@ -238,7 +238,9 @@ private struct StorageRootList: View {
     let onShowAlbum: (AlbumID) -> Void
     @State private var rootToRename: StorageRoot?
     @State private var relinkProposalToApply: AssetRelinkProposal?
+    @State private var restoreManifestURL: URL?
     @State private var showsSnapshotDestinationPicker = false
+    @State private var showsMasterRestorePicker = false
 
     var body: some View {
         List {
@@ -255,6 +257,15 @@ private struct StorageRootList: View {
                         catch { library.presentError(error) }
                     }
                 }.disabled(library.snapshotDestinationPath == nil)
+                Divider()
+                Text(library.masterBackupStatus).font(.caption).foregroundStyle(.secondary)
+                Button("Back Up Master Database") {
+                    Task {
+                        do { try await library.createMasterBackupNow() }
+                        catch { library.presentError(error) }
+                    }
+                }.disabled(library.snapshotDestinationPath == nil)
+                Button("Restore Master Backup…", role: .destructive) { showsMasterRestorePicker = true }
             }
             Section("Music Folders") {
                 Button("Recheck Library Health", systemImage: "arrow.clockwise") {
@@ -343,6 +354,21 @@ private struct StorageRootList: View {
         }
         .fileImporter(isPresented: $showsSnapshotDestinationPicker, allowedContentTypes: [.folder]) { result in
             if case let .success(url) = result { try? library.setSnapshotDestination(url) }
+        }
+        .fileImporter(isPresented: $showsMasterRestorePicker, allowedContentTypes: [.json]) { result in
+            if case let .success(url) = result { restoreManifestURL = url }
+        }
+        .confirmationDialog("Restore master database?", isPresented: Binding(get: { restoreManifestURL != nil }, set: { if !$0 { restoreManifestURL = nil } }), titleVisibility: .visible) {
+            if let manifestURL = restoreManifestURL {
+                Button("Restore Verified Backup", role: .destructive) {
+                    Task {
+                        do { try await library.restoreMasterBackup(from: manifestURL); restoreManifestURL = nil }
+                        catch { library.presentError(error) }
+                    }
+                }
+            }
+        } message: {
+            Text("The selected backup will be verified first. The current master database will be kept in the local Recovery folder before replacement.")
         }
         .confirmationDialog("Apply catalogue path?", isPresented: Binding(get: { relinkProposalToApply != nil }, set: { if !$0 { relinkProposalToApply = nil } }), titleVisibility: .visible) {
             if let proposal = relinkProposalToApply {

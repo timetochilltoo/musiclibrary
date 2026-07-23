@@ -84,6 +84,10 @@ public actor MusicDatabase {
         }
     }
 
+    public func checkpointWAL() throws {
+        try Self.execute("PRAGMA wal_checkpoint(TRUNCATE);", on: connection)
+    }
+
     public func createStorageRoot(_ draft: NewStorageRoot) throws -> StorageRoot {
         let valid = try draft.validated()
         let id = StorageRootID(); let now = Date()

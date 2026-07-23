@@ -218,7 +218,7 @@ This database is user data. Do not remove it during development. If a destructiv
 
 ## 8. Current tests and verification baseline
 
-The last verified baseline contains 37 tests in 4 suites, run with a rebuilt `swift test` followed by `swift test --skip-build` on 23 July 2026. Run `swift test`; do not rely on this handoff alone.
+The last verified baseline contains 42 tests in 4 suites, run with a rebuilt `swift test` followed by `swift test --skip-build` on 23 July 2026. Run `swift test`; do not rely on this handoff alone.
 
 `MusicDomainTests/AlbumTests.swift` verifies:
 
@@ -246,7 +246,7 @@ The last verified baseline contains 37 tests in 4 suites, run with a rebuilt `sw
 - Queue ordering/repeat and Codable state restoration.
 - Playlist ordered membership persistence.
 
-`MusicApplicationTests/ImportScannerTests.swift` verifies content-type audio discovery, hidden-file exclusion, cancellation before enumeration, Unicode/multi-disc proposal grouping, manifest-last publication, and bounded revision retention.
+`MusicApplicationTests/ImportScannerTests.swift` verifies content-type audio discovery, hidden-file exclusion, cancellation before enumeration, Unicode/multi-disc proposal grouping, manifest-last publication, bounded snapshot retention, verified master-archive creation, and daily master-backup retention.
 
 `MusicReadOnlyClientTests/SnapshotClientTests.swift` verifies verified snapshot replacement, checksum-failure fallback to the prior local cache, device-local SMB mapping replacement semantics, snapshot-source bookmark persistence/clear behavior, verified-payload Unicode/search decoding, root-relative asset resolution (including unmapped, unavailable, and traversal-path refusal states), selection of a playable URL only from a mapped available asset, and manifest-date refresh indication without cache mutation.
 
@@ -311,7 +311,7 @@ Enforce these with transactions, validation, constraints, and tests where possib
 
 If an invariant needs to change, stop and document the proposed migration and user-facing impact before implementing it.
 
-## 11. Exact next slice: publication failure history and recovery review
+## 11. Current recovery and backup workflow; next safe slice
 
 The Mac now persists the latest publication failure, shows it in Settings after relaunch, and changes the manual action to Retry Publish. Settings also provides a safe Library Health recheck: it refreshes root authorization and, for reachable authorized roots, checks each stored relative path to mark an asset available or missing. This never modifies media files or stored paths, and availability refreshes do not increment catalogue revision.
 Each Library Health issue has a **Show Album** action, which changes the Mac shell to Albums and selects the affected record; the health list is therefore a repair starting point rather than a dead-end report.
@@ -321,7 +321,7 @@ Health-panel actions (recheck, fingerprint verification, root access/removal, re
 **Physical location decision (23 July 2026):** a CD-bearing album may intentionally have an unknown physical location. Use the explicit `locationUnknown` state and display “Unknown location”; do not overload an empty field, which would be ambiguous with a digital-only album or incomplete entry.
 **Rating decision (23 July 2026):** catalogue ratings use a shared 1–5 star scale for albums and tracks. Deliver album ratings first; use the same scale for tracks when that UI is added. Ratings are Mac-authored/published catalogue data, unlike device-local companion favourites and play history.
 **Backup and rollback decision (23 July 2026):** NAS-published snapshots are read-only iPad distribution/rollback artefacts, not direct backups of the live Mac master. Before tag write-back, implement explicit dated, checksummed master SQLite backups to the NAS and a verified restore workflow that retains the current master as a recovery copy. Create a backup before risky operations (especially tag write-back) and daily only after catalogue changes; retain 7 daily and 12 monthly master backups. Do not present snapshot import as normal master restoration.
-The persistence layer now creates a consistent standalone SQLite backup through SQLite's online-backup API and verifies its integrity while the live catalogue remains open. The archive layer writes a timestamped master `.sqlite` copy with a SHA-256 manifest and reopens/verifies it. NAS destination selection, retention scheduling, and restore workflow remain the next layer.
+The persistence layer creates a consistent standalone SQLite backup through SQLite's online-backup API and verifies its integrity while the live catalogue remains open. In Settings, **Back Up Master Database** stores a timestamped `.sqlite` file and SHA-256 `.manifest.json` under the selected snapshot/NAS destination's `MasterBackups` folder. Retention keeps the newest manifest-backed backup for each of the seven most recent days and twelve most recent months. A changed catalogue also creates at most one automatic backup on a day after a destination has been configured. **Restore Master Backup…** asks the user to select a backup manifest, verifies both checksum and SQLite integrity, checkpoints the live WAL, moves the current master into `~/Library/Application Support/MusicLibrary/Recovery`, then replaces and reopens it. A failed replacement attempts to restore the recovery copy. This covers the SQLite master only: managed artwork and future tag-write backups need their own recovery design.
 **Snapshot publication decision (23 July 2026):** retain the current published snapshot plus three prior revisions (four revision payloads total), and automatically publish five seconds after the final catalogue change. Manual Publish Now remains immediate.
 **External metadata decision (23 July 2026):** external metadata lookup is manually triggered only in version 1. Scanning/import never contacts a provider automatically, and every returned value remains a preview until the user explicitly accepts it into the catalogue.
 **Artwork storage decision (23 July 2026):** new selected artwork is copied into managed catalogue storage, making it resilient to moved source folders and eligible for master backups and later iPad publication. Existing legacy local-path records still need migration before full artwork portability can be claimed.
@@ -335,27 +335,11 @@ The macOS Import Inbox view was refactored into small row/summary helpers and no
 
 ### Goal
 
-Make automatic publication reliable and observable without delaying normal UI work or quit indefinitely.
+Automatic publication is already observable and bounded; do not regress it while working on the next capability.
 
-### Required persistence work
+### Next safe slice
 
-1. Schedule only after successful catalogue-mutating use cases, not read-only reload/access checks.
-2. Add last-published revision metadata and bounded orderly-quit flush behavior.
-3. Preserve failed-publish diagnostics and never block quitting indefinitely.
-
-### Required UI work
-
-1. Display current vs. last-published revision, pending state, and retryable errors.
-2. Do not alter iPad catalogue, mapping, or playback logic in this slice.
-
-### Required tests
-
-Add persistence tests for at least:
-
-- Read-only reloads do not schedule publication; successful mutations coalesce one publication.
-- Quit flush is bounded and failed destination access preserves prior manifest/revisions.
-
-Run `swift test` after the slice. Update this document's completed/not-implemented sections, tests, limitations, and next task before committing.
+Implement Mac catalogue-only metadata correction UI: edit album title/edition and selected track titles/contributor display names without changing source audio files. Maintain existing write semantics and add focused persistence/UI tests. Do not begin tag write-back, artwork migration, or snapshot-to-master reconstruction without a new reviewed design.
 
 ## 12. Planned implementation order after the next slice
 

@@ -86,6 +86,26 @@ struct ImportScannerTests {
         try await MasterBackupArchive.verify(manifest, in: archiveDirectory)
     }
 
+    @Test("Master backup retention keeps the newest backup from each recent day")
+    func retainsDailyMasterBackups() throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let calendar = Calendar(identifier: .gregorian)
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        for day in 0..<8 {
+            let createdAt = calendar.date(byAdding: .day, value: day, to: start)!
+            let fileName = "MusicLibrary-master-r\(day)-\(day).sqlite"
+            try Data([UInt8(day)]).write(to: directory.appending(path: fileName))
+            let manifest = MasterBackupManifest(revision: Int64(day), createdAt: createdAt, fileName: fileName, sha256: "unused")
+            try JSONEncoder().encode(manifest).write(to: directory.appending(path: "\(fileName).manifest.json"))
+        }
+        try MasterBackupArchive.retain(in: directory, daily: 7, monthly: 0)
+        let backups = try FileManager.default.contentsOfDirectory(atPath: directory.path).filter { $0.hasSuffix(".sqlite") }
+        #expect(backups.count == 7)
+        #expect(!backups.contains("MusicLibrary-master-r0-0.sqlite"))
+    }
+
     @Test("Snapshot publisher retains only the configured recent revisions")
     func retainsSnapshotRevisions() throws {
         let directory = temporaryDirectory()

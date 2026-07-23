@@ -24,6 +24,7 @@ public final class LibraryStore: ObservableObject {
     @Published public private(set) var lastPublishedAt: Date?
     @Published public private(set) var lastSnapshotPublishFailure: String?
     @Published public private(set) var isSnapshotPublishPending = false
+    @Published public private(set) var masterBackupStatus = "Master backup destination not configured"
 
     private var database: MusicDatabase?
     private var hasStarted = false
@@ -34,7 +35,10 @@ public final class LibraryStore: ObservableObject {
     private let lastPublishedRevisionKey = "MusicLibrary.lastPublishedRevision"
     private let lastPublishedAtKey = "MusicLibrary.lastPublishedAt"
     private let lastSnapshotPublishFailureKey = "MusicLibrary.lastSnapshotPublishFailure"
+    private let lastMasterBackupRevisionKey = "MusicLibrary.lastMasterBackupRevision"
+    private let lastMasterBackupAtKey = "MusicLibrary.lastMasterBackupAt"
     private var publicationSchedule = SnapshotPublicationSchedule()
+    private var catalogueURL: URL?
 
     public init() {}
 
@@ -43,9 +47,11 @@ public final class LibraryStore: ObservableObject {
         hasStarted = true
         do {
             let directory = try applicationSupportDirectory()
-            let database = try MusicDatabase(url: directory.appending(path: "MusicLibrary.sqlite"))
+            let catalogueURL = directory.appending(path: "MusicLibrary.sqlite")
+            let database = try MusicDatabase(url: catalogueURL)
             try await database.migrate()
             self.database = database
+            self.catalogueURL = catalogueURL
             self.managedArtworkStore = .init(directory: directory.appending(path: "Artwork"))
             loadSnapshotDestination()
             try await database.recoverInterruptedImportBatches()
@@ -78,6 +84,7 @@ public final class LibraryStore: ObservableObject {
         let revision = try await database.currentRevision()
         catalogueRevision = revision
         if publicationSchedule.observe(revision) { scheduleSnapshotPublication() }
+        scheduleDailyMasterBackupIfNeeded(for: revision)
     }
 
     public func search(_ term: String) async {
@@ -286,6 +293,7 @@ public final class LibraryStore: ObservableObject {
         UserDefaults.standard.set(bookmark, forKey: snapshotDestinationBookmarkKey)
         snapshotDestinationPath = url.path
         snapshotPublishStatus = "Ready to publish"
+        masterBackupStatus = "Ready to back up master database"
     }
     public func publishSnapshotNow() async throws {
         guard let destination = resolvedSnapshotDestination() else { throw DatabaseError.invalidOperation("Choose a snapshot destination first.") }
@@ -301,6 +309,53 @@ public final class LibraryStore: ObservableObject {
         lastSnapshotPublishFailure = nil
         UserDefaults.standard.removeObject(forKey: lastSnapshotPublishFailureKey)
         isSnapshotPublishPending = false
+    }
+
+    public func createMasterBackupNow() async throws {
+        guard let destination = resolvedSnapshotDestination(), let database else { throw DatabaseError.invalidOperation("Choose a snapshot destination first.") }
+        let accessed = destination.startAccessingSecurityScopedResource()
+        defer { if accessed { destination.stopAccessingSecurityScopedResource() } }
+        let archive = destination.appending(path: "MasterBackups", directoryHint: .isDirectory)
+        let manifest = try await MasterBackupArchive.create(database: database, in: archive)
+        try MasterBackupArchive.retain(in: archive)
+        UserDefaults.standard.set(manifest.revision, forKey: lastMasterBackupRevisionKey)
+        UserDefaults.standard.set(manifest.createdAt, forKey: lastMasterBackupAtKey)
+        masterBackupStatus = "Backed up revision \(manifest.revision) at \(manifest.createdAt.formatted(date: .abbreviated, time: .shortened))"
+    }
+
+    public func restoreMasterBackup(from manifestURL: URL) async throws {
+        guard let catalogueURL else { throw DatabaseError.notFound("Catalogue database") }
+        let accessed = manifestURL.startAccessingSecurityScopedResource()
+        defer { if accessed { manifestURL.stopAccessingSecurityScopedResource() } }
+        let archive = manifestURL.deletingLastPathComponent()
+        let manifest = try JSONDecoder().decode(MasterBackupManifest.self, from: Data(contentsOf: manifestURL))
+        try await MasterBackupArchive.verify(manifest, in: archive)
+        let backupURL = archive.appending(path: manifest.fileName)
+        let recoveryDirectory = catalogueURL.deletingLastPathComponent().appending(path: "Recovery", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: recoveryDirectory, withIntermediateDirectories: true)
+        let recoveryURL = recoveryDirectory.appending(path: "MusicLibrary-before-restore-\(Int64(Date.now.timeIntervalSince1970)).sqlite")
+        try await database?.checkpointWAL()
+        database = nil
+        try? FileManager.default.removeItem(at: URL(fileURLWithPath: catalogueURL.path + "-wal"))
+        try? FileManager.default.removeItem(at: URL(fileURLWithPath: catalogueURL.path + "-shm"))
+        if FileManager.default.fileExists(atPath: catalogueURL.path) {
+            try FileManager.default.moveItem(at: catalogueURL, to: recoveryURL)
+        }
+        do {
+            try FileManager.default.copyItem(at: backupURL, to: catalogueURL)
+            let restored = try MusicDatabase(url: catalogueURL)
+            try await restored.migrate()
+            database = restored
+            try await reload()
+            masterBackupStatus = "Restored revision \(manifest.revision); previous master kept in Recovery"
+        } catch {
+            if FileManager.default.fileExists(atPath: catalogueURL.path) { try? FileManager.default.removeItem(at: catalogueURL) }
+            if FileManager.default.fileExists(atPath: recoveryURL.path) { try? FileManager.default.moveItem(at: recoveryURL, to: catalogueURL) }
+            let recovered = try MusicDatabase(url: catalogueURL)
+            try await recovered.migrate()
+            database = recovered
+            throw error
+        }
     }
     public func flushPendingSnapshotPublication(maximumWait: Duration = .seconds(3)) async {
         guard publicationSchedule.needsPublication else { return }
@@ -423,6 +478,7 @@ public final class LibraryStore: ObservableObject {
         lastPublishedAt = UserDefaults.standard.object(forKey: lastPublishedAtKey) as? Date
         lastSnapshotPublishFailure = UserDefaults.standard.string(forKey: lastSnapshotPublishFailureKey)
         snapshotPublishStatus = "Ready to publish"
+        masterBackupStatus = "Ready to back up master database"
     }
 
     private func resolvedSnapshotDestination() -> URL? {
@@ -440,6 +496,18 @@ public final class LibraryStore: ObservableObject {
             guard !Task.isCancelled, let self else { return }
             do { if self.publicationSchedule.needsPublication { try await self.publishSnapshotNow() } else { self.isSnapshotPublishPending = false } }
             catch { self.recordSnapshotPublishFailure(error, prefix: "Automatic publish failed") }
+        }
+    }
+
+    private func scheduleDailyMasterBackupIfNeeded(for revision: Int64) {
+        guard resolvedSnapshotDestination() != nil else { return }
+        let lastRevision = Int64(UserDefaults.standard.integer(forKey: lastMasterBackupRevisionKey))
+        let lastBackup = UserDefaults.standard.object(forKey: lastMasterBackupAtKey) as? Date
+        guard lastBackup == nil || !Calendar.current.isDateInToday(lastBackup!) else { return }
+        guard lastBackup == nil || lastRevision != revision else { return }
+        Task { [weak self] in
+            do { try await self?.createMasterBackupNow() }
+            catch { self?.masterBackupStatus = "Automatic daily backup failed: \(error.localizedDescription)" }
         }
     }
 
