@@ -22,7 +22,7 @@ Completed and verified:
 - Atomic album creation inside a box set, including inherited physical-location behaviour.
 - Album editing plus box-member browse, confirmed move, removal with a standalone placement, and reorder workflows.
 - Schema migration 2 adds `physical_location_unknown`, removing ambiguity between a boxed album and a standalone CD whose location is unknown.
-- Forty-five automated tests across five test suites, last verified with a rebuilt `swift test` followed by `swift test --skip-build` on 23 July 2026.
+- Forty-six automated tests across five test suites, last verified with a rebuilt `swift test` followed by `swift test --skip-build` on 23 July 2026.
 - Catalogue-content foundation complete: ordered discs/tracks, aliases, contributor roles at album and track level, selected album artwork with local-path provenance, and safe track/alias removal. Album detail supports manual creation of each of these relationships and user-selected front artwork without modifying source files.
 - Storage-root foundation complete: migration 3, persisted root records, security-scoped bookmark creation/resolution, availability checks, and Settings management. Offline and authorization-required roots are retained rather than removed.
 - Import Inbox foundation complete: migration 4, cancellable system-content-type scanning of available authorized roots, persistent batches/candidates/errors, recovery of interrupted scans, and Inbox cancellation/retry UI. Scans never create albums, tracks, or digital assets.
@@ -45,6 +45,7 @@ Completed and verified:
 - Catalogue-only correction UI complete: the Mac album editor corrects album title/edition fields; Album Detail now edits track titles and shows track credits; contributor-name editing updates the shared catalogue contributor record and clearly states that source audio tags are not changed.
 - Manual external metadata lookup foundation complete: an Import Inbox proposal can explicitly open a MusicBrainz text-only search. The user must press Search before any request is sent; the provider has an identifying User-Agent and a one-request-per-second gate. Results are ephemeral previews with no accept/apply action, no catalogue writes, and no audio upload.
 - Reviewable external metadata selection complete: a MusicBrainz result can be saved against an import proposal, then title, artist, and disc-count differences can be accepted independently. Applying selections updates only the pending import proposal with provenance; later catalogue creation remains separately approved.
+- Manual lookup reliability complete: identical title/artist requests reuse a session-only in-memory MusicBrainz response cache, while temporary HTTP 429/5xx and URL-loading failures use up to two bounded retries. No retry is scheduled unless the user already initiated the lookup.
 
 Not yet implemented:
 

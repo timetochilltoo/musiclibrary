@@ -15,4 +15,12 @@ struct MusicBrainzMetadataProviderTests {
         let results = try MusicBrainzMetadataProvider.decodeReleases(from: data)
         #expect(results == [.init(id: "e7a1", title: "Kind of Blue", artist: "Miles Davis", releaseDate: "1959-08-17", countryCode: "JP", catalogueNumber: "SRCS 9701", mediaCount: 2)])
     }
+
+    @Test("MusicBrainz response cache returns a stored manual-search result")
+    func cachesResults() async {
+        let cache = MusicBrainzResponseCache()
+        let preview = ExternalReleasePreview(id: "release", title: "Album", artist: nil, releaseDate: nil, countryCode: nil, catalogueNumber: nil, mediaCount: 1)
+        await cache.store([preview], for: "album|")
+        #expect(await cache.value(for: "album|") == [preview])
+    }
 }

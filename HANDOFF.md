@@ -218,7 +218,7 @@ This database is user data. Do not remove it during development. If a destructiv
 
 ## 8. Current tests and verification baseline
 
-The last verified baseline contains 45 tests in 5 suites, run with a rebuilt `swift test` followed by `swift test --skip-build` on 23 July 2026. Run `swift test`; do not rely on this handoff alone.
+The last verified baseline contains 46 tests in 5 suites, run with a rebuilt `swift test` followed by `swift test --skip-build` on 23 July 2026. Run `swift test`; do not rely on this handoff alone.
 
 `MusicDomainTests/AlbumTests.swift` verifies:
 
@@ -326,6 +326,7 @@ The persistence layer creates a consistent standalone SQLite backup through SQLi
 **External metadata decision (23 July 2026):** external metadata lookup is manually triggered only in version 1. Scanning/import never contacts a provider automatically, and every returned value remains a preview until the user explicitly accepts it into the catalogue.
 The MusicBrainz adapter is available from each Import Inbox release proposal's **Search MusicBrainz…** button. It sends only the user-visible title and optional artist text after the user presses **Search MusicBrainz**, uses an identifiable User-Agent and a one-request-per-second request gate, and displays title/artist/date/country/catalogue-number/disc-count results in a preview sheet. It does not upload audio, alter catalogue data directly, or modify source files.
 Selected MusicBrainz results are now persisted in schema 8 against their import proposal. **Use for Field Comparison** stores the chosen release; **Review MusicBrainz Fields…** provides independent title, artist, and disc-count toggles. Applying only updates the import proposal and appends `musicbrainz` provenance; catalogue records are still created only through the existing explicit approval and confirmation workflow. No source tag is changed.
+The lookup provider keeps a session-only in-memory cache keyed by normalized title/artist, so repeating the same manual search reuses the prior response without another request. Temporary 429/5xx service responses and URL-loading failures retry at most twice with bounded delay; malformed/non-transient responses fail immediately. The cache does not persist search data across app relaunch, and no lookup occurs without an explicit Search action.
 **Artwork storage decision (23 July 2026):** new selected artwork is copied into managed catalogue storage, making it resilient to moved source folders and eligible for master backups and later iPad publication. Existing legacy local-path records still need migration before full artwork portability can be claimed.
 **Online lookup/privacy decision (23 July 2026):** textual metadata lookup runs only after an explicit user action. Scanning never contacts the internet automatically; source audio files are never uploaded by default. Any future acoustic fingerprint lookup is disabled by default and requires a clearly labelled user action plus approval before sending a derived fingerprint to a provider.
 Playlists now have persistent rename and soft-delete operations, exposed from the playlist list's context menu. These operations increment the catalogue revision and are reflected in the next published snapshot.
@@ -341,7 +342,7 @@ Automatic publication is already observable and bounded; do not regress it while
 
 ### Next safe slice
 
-Extend external-result handling with cached search results, retries for transient provider failures, and additional reviewable fields only when the import proposal and final album-creation mapping support them. Keep every lookup manual and every field acceptance explicit. Do not begin artwork migration or snapshot-to-master reconstruction without a new reviewed design.
+Add additional reviewable fields only when both the import proposal and final album-creation mapping support them—especially country and catalogue number. Keep every lookup manual and every field acceptance explicit. Do not begin artwork migration or snapshot-to-master reconstruction without a new reviewed design.
 
 ## 12. Planned implementation order after the next slice
 

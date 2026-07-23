@@ -34,10 +34,12 @@ public enum MetadataLookupError: LocalizedError, Equatable, Sendable {
 public struct MusicBrainzMetadataProvider: MetadataLookupProviding {
     private let session: URLSession
     private let rateLimiter: MusicBrainzRateLimiter
+    private let cache: MusicBrainzResponseCache
 
-    public init(session: URLSession = .shared, rateLimiter: MusicBrainzRateLimiter = .init()) {
+    public init(session: URLSession = .shared, rateLimiter: MusicBrainzRateLimiter = .init(), cache: MusicBrainzResponseCache = .init()) {
         self.session = session
         self.rateLimiter = rateLimiter
+        self.cache = cache
     }
 
     public func searchRelease(title: String, artist: String?) async throws -> [ExternalReleasePreview] {
@@ -46,21 +48,52 @@ public struct MusicBrainzMetadataProvider: MetadataLookupProviding {
         var components = URLComponents(string: "https://musicbrainz.org/ws/2/release/")!
         let trimmedArtist = artist?.trimmingCharacters(in: .whitespacesAndNewlines)
         let query = trimmedArtist?.isEmpty == false ? "release:\"\(trimmedTitle)\" AND artist:\"\(trimmedArtist!)\"" : "release:\"\(trimmedTitle)\""
+        let cacheKey = "\(trimmedTitle.lowercased())|\(trimmedArtist?.lowercased() ?? "")"
+        if let cached = await cache.value(for: cacheKey) { return cached }
         components.queryItems = [URLQueryItem(name: "query", value: query), URLQueryItem(name: "fmt", value: "json"), URLQueryItem(name: "limit", value: "12")]
         guard let url = components.url else { throw MetadataLookupError.invalidResponse }
-        try await rateLimiter.waitForTurn()
-        var request = URLRequest(url: url)
-        request.setValue("MusicLibrary/0.1 (+https://github.com/timetochilltoo/musiclibrary)", forHTTPHeaderField: "User-Agent")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse else { throw MetadataLookupError.invalidResponse }
-        guard (200...299).contains(http.statusCode) else { throw MetadataLookupError.serviceStatus(http.statusCode) }
-        return try Self.decodeReleases(from: data)
+        let results = try await fetch(url: url)
+        await cache.store(results, for: cacheKey)
+        return results
+    }
+
+    private func fetch(url: URL) async throws -> [ExternalReleasePreview] {
+        for attempt in 0..<3 {
+            do {
+                try await rateLimiter.waitForTurn()
+                var request = URLRequest(url: url)
+                request.setValue("MusicLibrary/0.1 (+https://github.com/timetochilltoo/musiclibrary)", forHTTPHeaderField: "User-Agent")
+                request.setValue("application/json", forHTTPHeaderField: "Accept")
+                let (data, response) = try await session.data(for: request)
+                guard let http = response as? HTTPURLResponse else { throw MetadataLookupError.invalidResponse }
+                guard (200...299).contains(http.statusCode) else { throw MetadataLookupError.serviceStatus(http.statusCode) }
+                return try Self.decodeReleases(from: data)
+            } catch let error as MetadataLookupError where error.isTransient && attempt < 2 {
+                try await Task.sleep(for: .seconds(Double(attempt + 1)))
+            } catch _ as URLError where attempt < 2 {
+                try await Task.sleep(for: .seconds(Double(attempt + 1)))
+            }
+        }
+        throw MetadataLookupError.invalidResponse
     }
 
     static func decodeReleases(from data: Data) throws -> [ExternalReleasePreview] {
         let payload = try JSONDecoder().decode(Response.self, from: data)
         return payload.releases.map { .init(id: $0.id, title: $0.title, artist: $0.artistCredit?.map(\.name).joined(separator: ", "), releaseDate: $0.date, countryCode: $0.country ?? $0.releaseEvents?.first?.area?.iso31661Codes?.first, catalogueNumber: $0.labelInfo?.compactMap(\.catalogueNumber).first, mediaCount: $0.media?.count ?? 0) }
+    }
+}
+
+public actor MusicBrainzResponseCache {
+    private var values: [String: [ExternalReleasePreview]] = [:]
+    public init() {}
+    public func value(for key: String) -> [ExternalReleasePreview]? { values[key] }
+    public func store(_ value: [ExternalReleasePreview], for key: String) { values[key] = value }
+}
+
+private extension MetadataLookupError {
+    var isTransient: Bool {
+        if case .serviceStatus(let status) = self { return status == 429 || (500...599).contains(status) }
+        return false
     }
 }
 
