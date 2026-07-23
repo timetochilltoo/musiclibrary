@@ -51,6 +51,7 @@ Completed and verified:
 - Recently Deleted UI complete: Albums can be moved to Recently Deleted from their context menu, and Settings lists deleted albums with a restore action. Recovery preserves the existing catalogue relationships and leaves media files untouched.
 - JSON export UI complete: Settings opens a standard macOS Save dialog to export the current catalogue's portable JSON representation. Export does not copy audio or alter catalogue data.
 - CSV export complete: Settings can export album-level catalogue data as quoted CSV for spreadsheet use, including edition, release, country, catalogue, and availability fields.
+- Album rating/favourite UI complete: add/edit forms expose the agreed shared 1–5 rating and favourite marker, and album detail displays the saved values.
 
 Not yet implemented:
 

@@ -226,6 +226,8 @@ Settings also provides **Export Catalogue JSON…**, which uses the system Save 
 
 **Export Catalogue CSV…** writes a quoted, spreadsheet-friendly album-level export to a user-selected location. It includes identity, edition, release/country/catalogue fields and CD/digital availability; it never copies media.
 
+The Mac Add/Edit Album forms now expose the agreed 1–5 catalogue rating and favourite flag; Album Detail displays both. These remain Mac-authored catalogue data, distinct from future device-local companion favourites.
+
 `MusicDomainTests/AlbumTests.swift` verifies:
 
 - Album title validation.

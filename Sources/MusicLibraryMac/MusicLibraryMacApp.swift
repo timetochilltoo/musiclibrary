@@ -766,6 +766,8 @@ private struct AlbumDetail: View {
                 if let catalogueNumber = album.catalogueNumber { LabeledContent("Catalogue no.", value: catalogueNumber) }
                 if let labelName = album.labelName { LabeledContent("Label", value: labelName) }
                 LabeledContent("Discs", value: String(album.discCount))
+                if let rating = album.rating { LabeledContent("Rating", value: "\(rating) / 5") }
+                if album.isFavourite { Label("Favourite", systemImage: "heart.fill").foregroundStyle(.pink) }
             }
             Section("Availability") {
                 AvailabilityBadge(title: "CD", isAvailable: album.hasCD)
@@ -1069,6 +1071,8 @@ private struct AlbumEditor: View {
     @State private var catalogueNumber = ""
     @State private var discCount = 1
     @State private var hasCD = false
+    @State private var rating = 0
+    @State private var isFavourite = false
     @State private var selectedLocationID: PhysicalLocationID?
     @State private var selectedBoxSetID: BoxSetID?
     @State private var errorMessage: String?
@@ -1082,6 +1086,8 @@ private struct AlbumEditor: View {
                 TextField("Country/region", text: $countryCode)
                 TextField("Catalogue number", text: $catalogueNumber)
                 Stepper("Discs: \(discCount)", value: $discCount, in: 1...99)
+                Picker("Rating", selection: $rating) { Text("Not rated").tag(0); ForEach(1...5, id: \.self) { Text("\($0) star\($0 == 1 ? "" : "s")").tag($0) } }
+                Toggle("Favourite", isOn: $isFavourite)
             }
             Section("Physical CD") {
                 Toggle("CD is available", isOn: $hasCD)
@@ -1123,7 +1129,9 @@ private struct AlbumEditor: View {
                     catalogueNumber: catalogueNumber.nilIfBlank,
                     discCount: discCount,
                     hasCD: hasCD,
-                    physicalLocationID: selectedBoxSetID == nil ? selectedLocationID : nil
+                    physicalLocationID: selectedBoxSetID == nil ? selectedLocationID : nil,
+                    rating: rating == 0 ? nil : rating,
+                    isFavourite: isFavourite
                 )
                 try await library.addAlbum(draft, toBoxSet: selectedBoxSetID)
                 dismiss()
@@ -1248,6 +1256,8 @@ private struct EditAlbumEditor: View {
     @State private var catalogueNumber: String
     @State private var discCount: Int
     @State private var hasCD: Bool
+    @State private var rating: Int
+    @State private var isFavourite: Bool
     @State private var locationID: PhysicalLocationID?
     @State private var locationUnknown: Bool
     @State private var placement: AlbumBoxPlacement?
@@ -1263,6 +1273,8 @@ private struct EditAlbumEditor: View {
         _catalogueNumber = State(initialValue: album.catalogueNumber ?? "")
         _discCount = State(initialValue: album.discCount)
         _hasCD = State(initialValue: album.hasCD)
+        _rating = State(initialValue: album.rating ?? 0)
+        _isFavourite = State(initialValue: album.isFavourite)
         _locationID = State(initialValue: album.physicalLocationID)
         _locationUnknown = State(initialValue: album.isPhysicalLocationUnknown)
     }
@@ -1276,6 +1288,8 @@ private struct EditAlbumEditor: View {
                 TextField("Country/region", text: $countryCode)
                 TextField("Catalogue number", text: $catalogueNumber)
                 Stepper("Discs: \(discCount)", value: $discCount, in: 1...99)
+                Picker("Rating", selection: $rating) { Text("Not rated").tag(0); ForEach(1...5, id: \.self) { Text("\($0) star\($0 == 1 ? "" : "s")").tag($0) } }
+                Toggle("Favourite", isOn: $isFavourite)
             }
             Section("Physical CD") {
                 if let placement {
@@ -1317,6 +1331,8 @@ private struct EditAlbumEditor: View {
                 draft.countryCode = countryCode.nilIfBlank
                 draft.catalogueNumber = catalogueNumber.nilIfBlank
                 draft.discCount = discCount
+                draft.rating = rating == 0 ? nil : rating
+                draft.isFavourite = isFavourite
                 if placement == nil {
                     draft.hasCD = hasCD
                     draft.physicalLocationID = hasCD && !locationUnknown ? locationID : nil
