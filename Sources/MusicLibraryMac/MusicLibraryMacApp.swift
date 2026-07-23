@@ -754,6 +754,8 @@ private struct AlbumDetail: View {
     @State private var trackForContributor: Track?
     @State private var trackToEdit: Track?
     @State private var contributorToEdit: Contributor?
+    @State private var albumCreditToEdit: ContributorCredit?
+    @State private var trackCreditToEdit: TrackCreditSelection?
     @State private var showsArtworkPicker = false
     @State private var discPendingDeletion: Disc?
 
@@ -811,6 +813,8 @@ private struct AlbumDetail: View {
                                             Text("\(credit.creditedName ?? credit.contributor.name) — \(credit.role.rawValue)")
                                                 .font(.caption).foregroundStyle(.secondary)
                                             Spacer()
+                                            Button("Edit credited name", systemImage: "pencil") { trackCreditToEdit = .init(track: track, credit: credit) }
+                                                .labelStyle(.iconOnly)
                                             Button("Remove credit", systemImage: "trash", role: .destructive) { Task { try? await library.deleteTrackContributor(credit, from: track.id); await loadContent() } }
                                                 .labelStyle(.iconOnly)
                                         }
@@ -830,6 +834,7 @@ private struct AlbumDetail: View {
                         Text("\(credit.creditedName ?? credit.contributor.name) — \(credit.role.rawValue)")
                         Spacer()
                         Button("Edit name", systemImage: "pencil") { contributorToEdit = credit.contributor }.labelStyle(.iconOnly)
+                        Button("Edit credited name", systemImage: "text.cursor") { albumCreditToEdit = credit }.labelStyle(.iconOnly)
                         Button("Remove credit", systemImage: "trash", role: .destructive) { Task { try? await library.deleteAlbumContributor(credit, from: album.id); await loadContent() } }.labelStyle(.iconOnly)
                     }
                 }
@@ -861,6 +866,8 @@ private struct AlbumDetail: View {
         .sheet(item: $trackForContributor) { track in AddTrackContributorEditor(library: library, track: track, onAdded: { await loadContent() }) }
         .sheet(item: $trackToEdit) { track in EditTrackEditor(library: library, track: track, onSaved: { await loadContent() }) }
         .sheet(item: $contributorToEdit) { contributor in EditContributorEditor(library: library, contributor: contributor, onSaved: { await loadContent() }) }
+        .sheet(item: $albumCreditToEdit) { credit in EditAlbumCreditedNameEditor(library: library, albumID: album.id, credit: credit, onSaved: { await loadContent() }) }
+        .sheet(item: $trackCreditToEdit) { selection in EditTrackCreditedNameEditor(library: library, track: selection.track, credit: selection.credit, onSaved: { await loadContent() }) }
         .confirmationDialog("Remove this disc?", isPresented: Binding(get: { discPendingDeletion != nil }, set: { if !$0 { discPendingDeletion = nil } }), titleVisibility: .visible, presenting: discPendingDeletion) { disc in
             Button("Remove Disc and Its Tracks", role: .destructive) { Task { try? await library.deleteDisc(disc.id); await loadContent(); discPendingDeletion = nil } }
         } message: { disc in
@@ -905,6 +912,12 @@ private struct AlbumDetail: View {
             if let items = try? await library.playbackURLs(discID: track.discID), let index = items.firstIndex(where: { $0.trackID == track.id }) { try? playback.play(items: items, startingAt: index) }
         }
     }
+}
+
+private struct TrackCreditSelection: Identifiable {
+    let track: Track
+    let credit: ContributorCredit
+    var id: String { "\(track.id.description)-\(credit.id)" }
 }
 
 private struct AddDiscEditor: View {
@@ -1076,6 +1089,68 @@ private struct AddTrackContributorEditor: View {
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button("Add") { add() }.disabled(name.nilIfBlank == nil) } }
     }
     private func add() { Task { try? await library.addTrackContributor(trackID: track.id, name: name, role: role, creditedName: creditedName.nilIfBlank); await onAdded(); dismiss() } }
+}
+
+private struct EditAlbumCreditedNameEditor: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var library: LibraryStore
+    let albumID: AlbumID
+    let credit: ContributorCredit
+    let onSaved: () async -> Void
+    @State private var creditedName: String
+    @State private var errorMessage: String?
+
+    init(library: LibraryStore, albumID: AlbumID, credit: ContributorCredit, onSaved: @escaping () async -> Void) {
+        self.library = library
+        self.albumID = albumID
+        self.credit = credit
+        self.onSaved = onSaved
+        _creditedName = State(initialValue: credit.creditedName ?? credit.contributor.name)
+    }
+
+    var body: some View {
+        Form {
+            TextField("Credited name", text: $creditedName)
+            Text("This changes only how this album credit is displayed. The shared contributor record and audio-file tags are not changed.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .padding().frame(width: 440)
+        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button("Save") { save() } } }
+        .alert("Unable to update credit", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) { Button("OK", role: .cancel) {} } message: { Text(errorMessage ?? "") }
+    }
+
+    private func save() { Task { do { try await library.updateAlbumContributorCredit(credit, in: albumID, creditedName: creditedName.nilIfBlank); await onSaved(); dismiss() } catch { errorMessage = error.localizedDescription } } }
+}
+
+private struct EditTrackCreditedNameEditor: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var library: LibraryStore
+    let track: Track
+    let credit: ContributorCredit
+    let onSaved: () async -> Void
+    @State private var creditedName: String
+    @State private var errorMessage: String?
+
+    init(library: LibraryStore, track: Track, credit: ContributorCredit, onSaved: @escaping () async -> Void) {
+        self.library = library
+        self.track = track
+        self.credit = credit
+        self.onSaved = onSaved
+        _creditedName = State(initialValue: credit.creditedName ?? credit.contributor.name)
+    }
+
+    var body: some View {
+        Form {
+            TextField("Credited name", text: $creditedName)
+            Text("This changes only how this track credit is displayed. The shared contributor record and audio-file tags are not changed.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .padding().frame(width: 440)
+        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button("Save") { save() } } }
+        .alert("Unable to update credit", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) { Button("OK", role: .cancel) {} } message: { Text(errorMessage ?? "") }
+    }
+
+    private func save() { Task { do { try await library.updateTrackContributorCredit(credit, in: track.id, creditedName: creditedName.nilIfBlank); await onSaved(); dismiss() } catch { errorMessage = error.localizedDescription } } }
 }
 
 private struct LocationList: View {

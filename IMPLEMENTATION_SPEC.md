@@ -53,14 +53,14 @@ Completed and verified:
 - CSV export complete: Settings can export album-level catalogue data as quoted CSV for spreadsheet use, including edition, release, country, catalogue, and availability fields.
 - Album rating/favourite UI complete: add/edit forms expose the agreed shared 1–5 rating and favourite marker, and album detail displays the saved values.
 - Detailed track-editor UI complete: the Mac editor corrects a track's title, display position, duration, work, movement number/name, and instrumental flag. These are catalogue-only corrections and never modify source audio tags.
-- Contributor-credit removal complete: album and track credits have explicit destructive controls. Removing a credit preserves the shared contributor record, other credits, and source audio files.
+- Contributor-credit maintenance complete: album and track credits have explicit destructive controls plus a catalogue-only credited-name editor. Removing a credit preserves the shared contributor record and other credits; editing the displayed name does not alter the shared person or source audio files.
 - Disc management complete: album detail supports moving a disc earlier/later and an explicit confirmation before removing a disc and its catalogue tracks. Reordering is SQLite-unique-safe; deleting a disc cannot bypass protected digital assets and never changes source files.
 
 Not yet implemented:
 
-- General deletion/recovery, contributor-credit role/credited-name editing, tag write-back, lyrics, and AI.
+- General deletion/recovery, contributor-credit role editing, tag write-back, lyrics, and AI.
 
-The next coding slice should edit contributor-credit role or credited name without replacing the shared contributor record. Preserve identity and ordering invariants, require explicit user action, and never write source tags. A Mac recheck refreshes the derived availability of reachable root-relative files without changing paths or catalogue revision. A reviewed individual relink can be explicitly applied as a catalogue-only path update; it must never move or rename media. Playlists support create, ordered membership, rename, soft delete, item removal, reordering, and playback. Do not allow companion clients to alter the catalogue.
+The next coding slice should edit contributor-credit roles without replacing the shared contributor record. Preserve identity and ordering invariants, require explicit user action, and never write source tags. A Mac recheck refreshes the derived availability of reachable root-relative files without changing paths or catalogue revision. A reviewed individual relink can be explicitly applied as a catalogue-only path update; it must never move or rename media. Playlists support create, ordered membership, rename, soft delete, item removal, reordering, and playback. Do not allow companion clients to alter the catalogue.
 
 ## 1. Fixed decisions
 

@@ -1068,6 +1068,17 @@ public actor MusicDatabase {
         }
     }
 
+    public func updateAlbumContributorCredit(_ contributorID: ContributorID, in albumID: AlbumID, role: ContributorRole, position: Int, creditedName: String?) throws {
+        try transaction {
+            let statement = try Self.prepare("UPDATE album_contributor SET credited_name = ? WHERE album_id = ? AND contributor_id = ? AND role = ? AND position = ?;", on: connection)
+            defer { sqlite3_finalize(statement) }
+            try Self.bind(creditedName, at: 1, to: statement); try Self.bind(albumID.description, at: 2, to: statement); try Self.bind(contributorID.description, at: 3, to: statement); try Self.bind(role.rawValue, at: 4, to: statement); try Self.bind(Int64(position), at: 5, to: statement)
+            try Self.stepDone(statement, connection: connection)
+            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Album contributor credit") }
+            try incrementRevision()
+        }
+    }
+
     public func addTrackContributor(_ contributorID: ContributorID, to trackID: TrackID, role: ContributorRole, creditedName: String? = nil) throws {
         try transaction {
             guard try Self.exists("SELECT 1 FROM track WHERE id = ?;", value: trackID.description, on: connection) else { throw DatabaseError.notFound("Track") }
@@ -1097,6 +1108,17 @@ public actor MusicDatabase {
             try Self.bind(contributorID.description, at: 2, to: statement)
             try Self.bind(role.rawValue, at: 3, to: statement)
             try Self.bind(Int64(position), at: 4, to: statement)
+            try Self.stepDone(statement, connection: connection)
+            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Track contributor credit") }
+            try incrementRevision()
+        }
+    }
+
+    public func updateTrackContributorCredit(_ contributorID: ContributorID, in trackID: TrackID, role: ContributorRole, position: Int, creditedName: String?) throws {
+        try transaction {
+            let statement = try Self.prepare("UPDATE track_contributor SET credited_name = ? WHERE track_id = ? AND contributor_id = ? AND role = ? AND position = ?;", on: connection)
+            defer { sqlite3_finalize(statement) }
+            try Self.bind(creditedName, at: 1, to: statement); try Self.bind(trackID.description, at: 2, to: statement); try Self.bind(contributorID.description, at: 3, to: statement); try Self.bind(role.rawValue, at: 4, to: statement); try Self.bind(Int64(position), at: 5, to: statement)
             try Self.stepDone(statement, connection: connection)
             guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Track contributor credit") }
             try incrementRevision()

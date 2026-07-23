@@ -162,6 +162,10 @@ struct MusicDatabaseTests {
 
         let albumCredit = try #require(await database.albumContributors(albumID: album.id).first)
         let trackCredit = try #require(await database.trackContributors(trackID: track.id).first)
+        try await database.updateAlbumContributorCredit(albumCredit.contributor.id, in: album.id, role: albumCredit.role, position: albumCredit.position, creditedName: "Guest Album")
+        try await database.updateTrackContributorCredit(trackCredit.contributor.id, in: track.id, role: trackCredit.role, position: trackCredit.position, creditedName: "Guest Track")
+        #expect(try await database.albumContributors(albumID: album.id).first?.creditedName == "Guest Album")
+        #expect(try await database.trackContributors(trackID: track.id).first?.creditedName == "Guest Track")
         try await database.deleteAlbumContributor(albumCredit.contributor.id, from: album.id, role: albumCredit.role, position: albumCredit.position)
         try await database.deleteTrackContributor(trackCredit.contributor.id, from: track.id, role: trackCredit.role, position: trackCredit.position)
 
