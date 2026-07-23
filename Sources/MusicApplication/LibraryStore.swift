@@ -39,8 +39,11 @@ public final class LibraryStore: ObservableObject {
     private let lastMasterBackupAtKey = "MusicLibrary.lastMasterBackupAt"
     private var publicationSchedule = SnapshotPublicationSchedule()
     private var catalogueURL: URL?
+    private let metadataLookupProvider: any MetadataLookupProviding
 
-    public init() {}
+    public init(metadataLookupProvider: any MetadataLookupProviding = MusicBrainzMetadataProvider()) {
+        self.metadataLookupProvider = metadataLookupProvider
+    }
 
     public func start() async {
         guard !hasStarted else { return }
@@ -248,6 +251,10 @@ public final class LibraryStore: ObservableObject {
         let albumID = try await database.confirmImportReleaseProposal(id)
         try await reload()
         return albumID
+    }
+
+    public func searchMusicBrainz(title: String, artist: String?) async throws -> [ExternalReleasePreview] {
+        try await metadataLookupProvider.searchRelease(title: title, artist: artist)
     }
 
     public func playbackURL(for trackID: TrackID) async throws -> (url: URL, title: String) {

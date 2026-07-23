@@ -538,6 +538,7 @@ private struct ImportBatchDetail: View {
     @State private var candidates: [ImportCandidate] = []
     @State private var proposals: [ImportReleaseProposal] = []
     @State private var proposalToConfirm: ImportReleaseProposal?
+    @State private var proposalToLookUp: ImportReleaseProposal?
 
     var body: some View {
         List {
@@ -558,6 +559,7 @@ private struct ImportBatchDetail: View {
                         HStack { Text(proposal.title).font(.headline); Spacer(); Text(proposal.status.rawValue.capitalized).font(.caption).foregroundStyle(.secondary) }
                         Text(proposalSummary(proposal)).font(.caption).foregroundStyle(.secondary)
                         Text("Source: \(proposal.provenance). Approval only marks this proposal for later catalogue creation.").font(.caption2).foregroundStyle(.secondary)
+                        Button("Search MusicBrainz…", systemImage: "magnifyingglass") { proposalToLookUp = proposal }
                         if proposal.status == .proposed { HStack { Button("Approve for Later") { Task { try? await library.setImportReleaseProposal(proposal.id, status: .approved); await load() } }; Button("Dismiss", role: .destructive) { Task { try? await library.setImportReleaseProposal(proposal.id, status: .dismissed); await load() } } } }
                         if proposal.status == .approved && proposal.createdAlbumID == nil { Button("Create Catalogue Records…", systemImage: "checkmark.seal") { proposalToConfirm = proposal } }
                         if let albumID = proposal.createdAlbumID { Text("Created catalogue album: \(albumID.description)").font(.caption).foregroundStyle(.green) }
@@ -577,11 +579,75 @@ private struct ImportBatchDetail: View {
         } message: {
             Text(proposalToConfirm.map(proposalConfirmationMessage) ?? "")
         }
+        .sheet(item: $proposalToLookUp) { proposal in
+            ExternalMetadataLookupView(library: library, proposal: proposal)
+        }
     }
 
     private func load() async {
         candidates = (try? await library.importCandidates(batchID: batch.id)) ?? []
         proposals = (try? await library.importReleaseProposals(batchID: batch.id)) ?? []
+    }
+}
+
+private struct ExternalMetadataLookupView: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var library: LibraryStore
+    let proposal: ImportReleaseProposal
+    @State private var title: String
+    @State private var artist: String
+    @State private var results: [ExternalReleasePreview] = []
+    @State private var isSearching = false
+    @State private var errorMessage: String?
+    @State private var hasSearched = false
+
+    init(library: LibraryStore, proposal: ImportReleaseProposal) {
+        self.library = library
+        self.proposal = proposal
+        _title = State(initialValue: proposal.title)
+        _artist = State(initialValue: proposal.artist ?? "")
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Search") {
+                    TextField("Album title", text: $title)
+                    TextField("Artist (optional)", text: $artist)
+                    Text("Search sends only the text entered here to MusicBrainz. It does not upload audio, modify files, or change the catalogue.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Button("Search MusicBrainz") { search() }.disabled(isSearching || title.nilIfBlank == nil)
+                }
+                Section("Preview results") {
+                    if isSearching { ProgressView("Searching MusicBrainz…") }
+                    else if hasSearched && results.isEmpty { Text("No matching releases found.").foregroundStyle(.secondary) }
+                    ForEach(results) { result in
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(result.title).font(.headline)
+                            Text([result.artist, result.releaseDate, result.countryCode, result.catalogueNumber].compactMap { $0 }.joined(separator: " · "))
+                                .font(.caption).foregroundStyle(.secondary)
+                            if result.mediaCount > 0 { Text("\(result.mediaCount) disc(s)").font(.caption).foregroundStyle(.secondary) }
+                            Text("Preview only — no catalogue change has been made.").font(.caption2).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("MusicBrainz Lookup")
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
+            .alert("Search failed", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) { Button("OK", role: .cancel) {} } message: { Text(errorMessage ?? "") }
+        }
+        .frame(width: 560, height: 520)
+    }
+
+    private func search() {
+        isSearching = true
+        hasSearched = true
+        results = []
+        Task {
+            do { results = try await library.searchMusicBrainz(title: title, artist: artist.nilIfBlank) }
+            catch { errorMessage = error.localizedDescription }
+            isSearching = false
+        }
     }
 }
 
