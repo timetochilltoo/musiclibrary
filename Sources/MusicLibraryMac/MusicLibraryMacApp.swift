@@ -798,9 +798,9 @@ private struct AlbumDetail: View {
                         HStack {
                             Text(disc.title ?? "Disc \(disc.number)").font(.headline)
                             Spacer()
-                            Button("Move disc earlier", systemImage: "arrow.up") { Task { try? await library.reorderDisc(disc.id, in: album.id, to: disc.number - 1); await loadContent() } }
+                            Button("Move disc earlier", systemImage: "arrow.up") { Task { do { try await library.reorderDisc(disc.id, in: album.id, to: disc.number - 1); await loadContent() } catch { library.presentError(error) } } }
                                 .labelStyle(.iconOnly).disabled(disc.number <= 1)
-                            Button("Move disc later", systemImage: "arrow.down") { Task { try? await library.reorderDisc(disc.id, in: album.id, to: disc.number + 1); await loadContent() } }
+                            Button("Move disc later", systemImage: "arrow.down") { Task { do { try await library.reorderDisc(disc.id, in: album.id, to: disc.number + 1); await loadContent() } catch { library.presentError(error) } } }
                                 .labelStyle(.iconOnly).disabled(disc.number >= discs.count)
                             Button("Remove disc", systemImage: "trash", role: .destructive) { discPendingDeletion = disc }
                                 .labelStyle(.iconOnly)
@@ -816,7 +816,7 @@ private struct AlbumDetail: View {
                                     Menu("Add to Playlist") { ForEach(library.playlists) { playlist in Button(playlist.name) { Task { try? await library.addTrack(track.id, toPlaylist: playlist.id) } } } }.labelStyle(.iconOnly)
                                     Button("Credit", systemImage: "person.badge.plus") { trackForContributor = track }
                                         .labelStyle(.iconOnly)
-                                    Button("Remove", systemImage: "trash", role: .destructive) { Task { try? await library.deleteTrack(track.id); await loadContent() } }
+                                    Button("Remove", systemImage: "trash", role: .destructive) { Task { do { try await library.deleteTrack(track.id); await loadContent() } catch { library.presentError(error) } } }
                                         .labelStyle(.iconOnly)
                                 }
                                 if let credits = trackCredits[track.id], !credits.isEmpty {
@@ -827,7 +827,7 @@ private struct AlbumDetail: View {
                                             Spacer()
                                             Button("Edit credited name", systemImage: "pencil") { trackCreditToEdit = .init(track: track, credit: credit) }
                                                 .labelStyle(.iconOnly)
-                                            Button("Remove credit", systemImage: "trash", role: .destructive) { Task { try? await library.deleteTrackContributor(credit, from: track.id); await loadContent() } }
+                                            Button("Remove credit", systemImage: "trash", role: .destructive) { Task { do { try await library.deleteTrackContributor(credit, from: track.id); await loadContent() } catch { library.presentError(error) } } }
                                                 .labelStyle(.iconOnly)
                                         }
                                     }
@@ -847,14 +847,14 @@ private struct AlbumDetail: View {
                         Spacer()
                         Button("Edit name", systemImage: "pencil") { contributorToEdit = credit.contributor }.labelStyle(.iconOnly)
                         Button("Edit credited name", systemImage: "text.cursor") { albumCreditToEdit = credit }.labelStyle(.iconOnly)
-                        Button("Remove credit", systemImage: "trash", role: .destructive) { Task { try? await library.deleteAlbumContributor(credit, from: album.id); await loadContent() } }.labelStyle(.iconOnly)
+                        Button("Remove credit", systemImage: "trash", role: .destructive) { Task { do { try await library.deleteAlbumContributor(credit, from: album.id); await loadContent() } catch { library.presentError(error) } } }.labelStyle(.iconOnly)
                     }
                 }
                 Button("Add Contributor", systemImage: "plus") { showsAddContributor = true }
             }
             Section("Aliases") {
                 ForEach(aliases) { alias in
-                    HStack { Text("\(alias.name) (\(alias.kind.rawValue))"); Spacer(); Button("Remove", systemImage: "trash", role: .destructive) { Task { try? await library.deleteAlbumAlias(alias.id); await loadContent() } }.labelStyle(.iconOnly) }
+                    HStack { Text("\(alias.name) (\(alias.kind.rawValue))"); Spacer(); Button("Remove", systemImage: "trash", role: .destructive) { Task { do { try await library.deleteAlbumAlias(alias.id); await loadContent() } catch { library.presentError(error) } } }.labelStyle(.iconOnly) }
                 }
                 Button("Add Alias", systemImage: "plus") { showsAddAlias = true }
             }
@@ -881,7 +881,7 @@ private struct AlbumDetail: View {
         .sheet(item: $albumCreditToEdit) { credit in EditAlbumCreditedNameEditor(library: library, albumID: album.id, credit: credit, onSaved: { await loadContent() }) }
         .sheet(item: $trackCreditToEdit) { selection in EditTrackCreditedNameEditor(library: library, track: selection.track, credit: selection.credit, onSaved: { await loadContent() }) }
         .confirmationDialog("Remove this disc?", isPresented: Binding(get: { discPendingDeletion != nil }, set: { if !$0 { discPendingDeletion = nil } }), titleVisibility: .visible, presenting: discPendingDeletion) { disc in
-            Button("Remove Disc and Its Tracks", role: .destructive) { Task { try? await library.deleteDisc(disc.id); await loadContent(); discPendingDeletion = nil } }
+            Button("Remove Disc and Its Tracks", role: .destructive) { Task { do { try await library.deleteDisc(disc.id); await loadContent(); discPendingDeletion = nil } catch { library.presentError(error) } } }
         } message: { disc in
             Text("This removes Disc \(disc.number) and its catalogue tracks. Source audio files are not changed. A disc with protected digital assets cannot be removed.")
         }
