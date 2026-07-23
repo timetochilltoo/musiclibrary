@@ -952,12 +952,13 @@ private struct AddTrackEditor: View {
     let disc: Disc
     let onAdded: () async -> Void
     @State private var title = ""
+    @State private var rating = 0
     var body: some View {
-        Form { TextField("Track title", text: $title) }
+        Form { TextField("Track title", text: $title); Picker("Rating", selection: $rating) { Text("Not rated").tag(0); ForEach(1...5, id: \.self) { Text("\($0) star\($0 == 1 ? "" : "s")").tag($0) } } }
             .padding().frame(width: 360)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button("Add") { add() }.disabled(title.nilIfBlank == nil) } }
     }
-    private func add() { Task { try? await library.addTrack(discID: disc.id, draft: .init(title: title)); await onAdded(); dismiss() } }
+    private func add() { Task { try? await library.addTrack(discID: disc.id, draft: .init(title: title, rating: rating == 0 ? nil : rating)); await onAdded(); dismiss() } }
 }
 
 private struct EditTrackEditor: View {
