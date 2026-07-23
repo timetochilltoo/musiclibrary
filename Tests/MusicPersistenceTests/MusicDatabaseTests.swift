@@ -246,6 +246,14 @@ struct MusicDatabaseTests {
         #expect(try await database.relinkProposals().isEmpty)
         #expect(try await database.assetFingerprintCandidates().first(where: { $0.id == assetID })?.relativePath == "Album/new-song.mp3")
         #expect(try await database.currentRevision() == revisionBeforeApply + 1)
+
+        let rejected = try await database.proposeRelink(assetID: assetID, proposedRelativePath: "Album/not-used.mp3")
+        let revisionBeforeDiscard = try await database.currentRevision()
+        try await database.discardRelinkProposal(rejected.id)
+
+        #expect(try await database.relinkProposals().isEmpty)
+        #expect(try await database.assetFingerprintCandidates().first(where: { $0.id == assetID })?.relativePath == "Album/new-song.mp3")
+        #expect(try await database.currentRevision() == revisionBeforeDiscard)
     }
 
     @Test("Albums can be soft-deleted, restored, and exported")

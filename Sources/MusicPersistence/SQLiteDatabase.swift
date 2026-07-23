@@ -395,6 +395,13 @@ public actor MusicDatabase {
             try incrementRevision()
         }
     }
+    public func discardRelinkProposal(_ id: UUID) throws {
+        let statement = try Self.prepare("DELETE FROM asset_relink_proposal WHERE id = ?;", on: connection)
+        defer { sqlite3_finalize(statement) }
+        try Self.bind(id.uuidString.lowercased(), at: 1, to: statement)
+        try Self.stepDone(statement, connection: connection)
+        guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Relink proposal") }
+    }
     public func digitalAssetIDs(albumID: AlbumID) throws -> [DigitalAssetID] {
         let statement = try Self.prepare("SELECT digital_asset.id FROM digital_asset JOIN track ON track.id = digital_asset.track_id JOIN disc ON disc.id = track.disc_id WHERE disc.album_id = ? ORDER BY digital_asset.id;", on: connection); defer { sqlite3_finalize(statement) }; try Self.bind(albumID.description, at: 1, to: statement); var values: [DigitalAssetID] = []
         while sqlite3_step(statement) == SQLITE_ROW { guard let raw = Self.text(at: 0, from: statement), let uuid = UUID(uuidString: raw) else { throw DatabaseError.invalidIdentifier("digital_asset") }; values.append(.init(rawValue: uuid)) }

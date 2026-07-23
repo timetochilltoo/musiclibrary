@@ -315,7 +315,7 @@ If an invariant needs to change, stop and document the proposed migration and us
 
 The Mac now persists the latest publication failure, shows it in Settings after relaunch, and changes the manual action to Retry Publish. Settings also provides a safe Library Health recheck: it refreshes root authorization/availability and derived issues without modifying files or stored paths.
 Possible duplicate assets are shown in Settings by shared verified content hash and path list. This is review-only: no duplicate is removed, moved, or relinked automatically.
-Stored relink proposals are visible with before/after relative paths. The Mac requires an explicit confirmation before applying one; this is a database-only path correction, not a filesystem operation. The workflow does not yet verify that the proposed target exists, so future relink discovery must continue to make its evidence clear before proposing a correction.
+Stored relink proposals are visible with before/after relative paths. The Mac requires an explicit confirmation before applying one, and also provides a discard action; both are database-only operations. Applying updates the stored path and revision; discarding leaves the asset and revision unchanged. Neither moves or renames media. The workflow does not yet verify that the proposed target exists, so future relink discovery must continue to make its evidence clear before proposing a correction.
 The macOS Import Inbox view was refactored into small row/summary helpers and now uses the current SwiftUI confirmation-dialog API. This prevents the compiler type-check failures previously seen when launching `swift run MusicLibraryMac`.
 
 ### Goal

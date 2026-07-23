@@ -273,8 +273,11 @@ private struct StorageRootList: View {
                         VStack(alignment: .leading) {
                             Text(proposal.currentPath).font(.caption)
                             Text("Proposed: \(proposal.proposedPath)").font(.caption).foregroundStyle(.secondary)
-                            Button("Apply Catalogue Path") { relinkProposalToApply = proposal }
-                                .font(.caption)
+                            HStack {
+                                Button("Apply Catalogue Path") { relinkProposalToApply = proposal }
+                                Button("Discard", role: .destructive) { Task { try? await library.discardRelinkProposal(proposal.id) } }
+                            }
+                            .font(.caption)
                         }
                     }
                 }
