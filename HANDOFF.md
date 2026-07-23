@@ -297,6 +297,7 @@ Selecting a music folder for a new storage root also surfaces authorization/addi
 Creating a playlist, renaming a storage root, and starting an import scan now follow the same visible-error rule. Import Inbox retry, embedded-metadata analysis, proposal approval/dismissal, final catalogue-record creation, and detail reloads do too; the view reloads or dismisses only after a successful action, and a failed reload retains previously displayed candidates/proposals.
 Selecting a snapshot/NAS destination follows the same visible-error rule. Contributor and album-detail reads, box-placement reads, and local playback setup also report failures instead of quietly displaying incomplete information or doing nothing.
 The macOS sidebar includes a Contributors section, backed by a deterministic name/sort-name query and local name/sort-name search. Selecting a contributor lists all active albums where they hold either an album or track credit; selecting one of those rows opens its normal album detail. Contributor corrections remain available through existing album/track credit editing.
+Settings now includes **Recent Catalogue Activity**. `MusicDatabase.incrementRevision()` records one `edit_event` in the same transaction as every successful catalogue revision, and `recentCatalogueActivity(limit:)` reads the latest 30 generic revision/time records. This is deliberately a basic audit trail: it does not claim to identify every changed field, provide undo, or include pre-existing catalogue activity from before this implementation.
 
 ### Digital media
 
@@ -361,7 +362,7 @@ Automatic publication is already observable and bounded; do not regress it while
 
 ### Next safe slice
 
-Only empty box sets are currently recoverable. Do not extend box-set deletion to member-containing boxes until their member-album semantics are explicitly designed: a hidden box cannot leave visible members with an invalid inherited physical placement. The next safe implementation slice can instead be a narrowly scoped, independently reviewable feature. Preserve stable identities and ordering, make each action explicit and transactional, and keep all corrections catalogue-only. Do not begin artwork migration or snapshot-to-master reconstruction without a new reviewed design.
+Only empty box sets are currently recoverable. Do not extend box-set deletion to member-containing boxes until their member-album semantics are explicitly designed: a hidden box cannot leave visible members with an invalid inherited physical placement. The next safe implementation slice can instead be a narrowly scoped, independently reviewable feature. Preserve stable identities and ordering, make each action explicit and transactional, and keep all corrections catalogue-only. Do not begin artwork migration or snapshot-to-master reconstruction without a new reviewed design. If extending activity history, keep it append-only and transactional; do not imply field-level audit fidelity or undo until an explicit event model is designed.
 
 ## 12. Planned implementation order after the next slice
 

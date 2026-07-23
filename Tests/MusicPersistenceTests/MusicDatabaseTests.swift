@@ -22,6 +22,8 @@ struct MusicDatabaseTests {
         #expect(loaded?.displayTitle == "Kind of Blue — Japan version")
         #expect(loaded?.hasCD == true)
         #expect(try await database.currentRevision() == 1)
+        let activity = try await database.recentCatalogueActivity()
+        #expect(activity.map(\.revision) == [1])
     }
 
     @Test("Consistent master backup is readable while the source catalogue remains open")

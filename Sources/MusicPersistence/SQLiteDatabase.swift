@@ -60,6 +60,19 @@ public actor MusicDatabase {
         try Self.scalarInt("SELECT catalogue_revision FROM catalogue_state WHERE singleton_id = 1;", on: connection)
     }
 
+    public func recentCatalogueActivity(limit: Int = 30) throws -> [CatalogueActivity] {
+        guard (1...100).contains(limit) else { throw DatabaseError.invalidOperation("Activity history limit must be between 1 and 100.") }
+        let statement = try Self.prepare("SELECT id, new_value, occurred_at FROM edit_event WHERE entity_type = 'catalogue' AND field_name = 'catalogue_revision' ORDER BY occurred_at DESC, rowid DESC LIMIT ?;", on: connection)
+        defer { sqlite3_finalize(statement) }
+        try Self.bind(Int64(limit), at: 1, to: statement)
+        var activity: [CatalogueActivity] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let rawID = Self.text(at: 0, from: statement), let id = UUID(uuidString: rawID), let revision = Self.text(at: 1, from: statement), let revisionValue = Int64(revision), let occurredAt = Self.int(at: 2, from: statement) else { continue }
+            activity.append(.init(id: id, revision: revisionValue, occurredAt: Self.date(fromMilliseconds: occurredAt)))
+        }
+        return activity
+    }
+
     public func createConsistentBackup(at url: URL) throws {
         var destination: OpaquePointer?
         guard sqlite3_open_v2(url.path, &destination, SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX, nil) == SQLITE_OK, let destination else {
@@ -1383,6 +1396,14 @@ public actor MusicDatabase {
 
     private func incrementRevision() throws {
         try Self.execute("UPDATE catalogue_state SET catalogue_revision = catalogue_revision + 1 WHERE singleton_id = 1;", on: connection)
+        let revision = try currentRevision()
+        let statement = try Self.prepare("INSERT INTO edit_event (id, entity_type, entity_id, field_name, old_value, new_value, source, occurred_at) VALUES (?, 'catalogue', '1', 'catalogue_revision', ?, ?, 'mac', ?);", on: connection)
+        defer { sqlite3_finalize(statement) }
+        try Self.bind(UUID().uuidString.lowercased(), at: 1, to: statement)
+        try Self.bind(String(revision - 1), at: 2, to: statement)
+        try Self.bind(String(revision), at: 3, to: statement)
+        try Self.bind(Self.milliseconds(Date()), at: 4, to: statement)
+        try Self.stepDone(statement, connection: connection)
     }
 
     private func incrementImportProgress(batchID: ImportBatchID, candidates: Int64, errors: Int64) throws {

@@ -446,7 +446,20 @@ private struct StorageRootList: View {
                     }
                 }
             }
-            if !library.duplicateAssets.isEmpty { Section("Duplicate fingerprints") { ForEach(library.duplicateAssets) { duplicate in Text("\(duplicate.paths.count) files share fingerprint \(duplicate.contentHash.prefix(12))…") } } }
+            if !library.recentCatalogueActivity.isEmpty {
+                Section("Recent Catalogue Activity") {
+                    Text("Each row records one committed catalogue revision. Detailed field-by-field history is not recorded yet.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    ForEach(library.recentCatalogueActivity) { activity in
+                        HStack {
+                            Text("Revision \(activity.revision)")
+                            Spacer()
+                            Text(activity.occurredAt.formatted(date: .abbreviated, time: .shortened))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
         }
         .fileImporter(isPresented: $showsSnapshotDestinationPicker, allowedContentTypes: [.folder]) { result in
             if case let .success(url) = result { do { try library.setSnapshotDestination(url) } catch { library.presentError(error) } }
