@@ -67,13 +67,15 @@ public struct ReadOnlyTrack: Codable, Equatable, Identifiable, Sendable {
     public let number: Int
     public let title: String
     public let durationMilliseconds: Int?
+    public let rating: Int?
     public let assets: [ReadOnlyDigitalAsset]
 
-    public init(id: String, number: Int, title: String, durationMilliseconds: Int? = nil, assets: [ReadOnlyDigitalAsset] = []) {
+    public init(id: String, number: Int, title: String, durationMilliseconds: Int? = nil, rating: Int? = nil, assets: [ReadOnlyDigitalAsset] = []) {
         self.id = id
         self.number = number
         self.title = title
         self.durationMilliseconds = durationMilliseconds
+        self.rating = rating
         self.assets = assets
     }
 }

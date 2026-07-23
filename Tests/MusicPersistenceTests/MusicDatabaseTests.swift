@@ -9,7 +9,7 @@ struct MusicDatabaseTests {
     func migrationCreatesSchema() async throws {
         let database = try MusicDatabase(url: temporaryDatabaseURL())
         try await database.migrate()
-        #expect(try await database.schemaVersion() == 9)
+        #expect(try await database.schemaVersion() == 10)
         #expect(try await database.currentRevision() == 0)
     }
 
@@ -139,11 +139,12 @@ struct MusicDatabaseTests {
         let contributor = try await database.createContributor(.init(name: "日本語の歌手"))
         try await database.addTrackContributor(contributor.id, to: track.id, role: .performer)
 
-        let correctedTrack = try await database.updateTrack(track.id, with: .init(title: "Corrected title"))
+        let correctedTrack = try await database.updateTrack(track.id, with: .init(title: "Corrected title", rating: 5))
         let correctedContributor = try await database.updateContributor(contributor.id, with: .init(name: "Corrected artist", sortName: "Artist, Corrected"))
 
         #expect(correctedTrack.id == track.id)
         #expect(try await database.tracks(discID: disc.id).first?.title == "Corrected title")
+        #expect(try await database.tracks(discID: disc.id).first?.rating == 5)
         #expect(correctedContributor.id == contributor.id)
         #expect(try await database.trackContributors(trackID: track.id).first?.contributor.name == "Corrected artist")
         #expect(try await database.currentRevision() == 7)

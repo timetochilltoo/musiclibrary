@@ -415,6 +415,7 @@ public actor MusicDatabase {
         try tracks(discID: discID).map { track in
             var row: [String: Any] = ["id": track.id.description, "number": track.number, "title": track.title, "assets": try snapshotAssetRows(trackID: track.id)]
             if let durationMilliseconds = track.durationMilliseconds { row["durationMilliseconds"] = durationMilliseconds }
+            if let rating = track.rating { row["rating"] = rating }
             return row
         }
     }
@@ -970,12 +971,12 @@ public actor MusicDatabase {
         try transaction {
             guard try Self.exists("SELECT 1 FROM disc WHERE id = ?;", value: discID.description, on: connection) else { throw DatabaseError.notFound("Disc") }
             number = try Self.nextNumber("SELECT COALESCE(MAX(number), 0) + 1 FROM track WHERE disc_id = ?;", ownerID: discID.description, on: connection)
-            let statement = try Self.prepare("INSERT INTO track (id, disc_id, number, display_position, title, duration_ms, work_name, movement_number, movement_name, is_instrumental) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);", on: connection)
+            let statement = try Self.prepare("INSERT INTO track (id, disc_id, number, display_position, title, duration_ms, work_name, movement_number, movement_name, is_instrumental, rating) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);", on: connection)
             defer { sqlite3_finalize(statement) }
-            try Self.bind(id.description, at: 1, to: statement); try Self.bind(discID.description, at: 2, to: statement); try Self.bind(Int64(number), at: 3, to: statement); try Self.bind(valid.displayPosition, at: 4, to: statement); try Self.bind(valid.title, at: 5, to: statement); try Self.bind(valid.durationMilliseconds.map(Int64.init), at: 6, to: statement); try Self.bind(valid.workName, at: 7, to: statement); try Self.bind(valid.movementNumber.map(Int64.init), at: 8, to: statement); try Self.bind(valid.movementName, at: 9, to: statement); try Self.bind(valid.isInstrumental.map { Int64($0 ? 1 : 0) }, at: 10, to: statement)
+            try Self.bind(id.description, at: 1, to: statement); try Self.bind(discID.description, at: 2, to: statement); try Self.bind(Int64(number), at: 3, to: statement); try Self.bind(valid.displayPosition, at: 4, to: statement); try Self.bind(valid.title, at: 5, to: statement); try Self.bind(valid.durationMilliseconds.map(Int64.init), at: 6, to: statement); try Self.bind(valid.workName, at: 7, to: statement); try Self.bind(valid.movementNumber.map(Int64.init), at: 8, to: statement); try Self.bind(valid.movementName, at: 9, to: statement); try Self.bind(valid.isInstrumental.map { Int64($0 ? 1 : 0) }, at: 10, to: statement); try Self.bind(valid.rating.map(Int64.init), at: 11, to: statement)
             try Self.stepDone(statement, connection: connection); try incrementRevision()
         }
-        return .init(id: id, discID: discID, number: number, title: valid.title, displayPosition: valid.displayPosition, durationMilliseconds: valid.durationMilliseconds, workName: valid.workName, movementNumber: valid.movementNumber, movementName: valid.movementName, isInstrumental: valid.isInstrumental)
+        return .init(id: id, discID: discID, number: number, title: valid.title, displayPosition: valid.displayPosition, durationMilliseconds: valid.durationMilliseconds, workName: valid.workName, movementNumber: valid.movementNumber, movementName: valid.movementName, isInstrumental: valid.isInstrumental, rating: valid.rating)
     }
 
     public func updateTrack(_ trackID: TrackID, with draft: NewTrack) throws -> Track {
@@ -988,10 +989,10 @@ public actor MusicDatabase {
             guard sqlite3_step(existing) == SQLITE_ROW,
                   let rawDiscID = Self.text(at: 0, from: existing),
                   let discUUID = UUID(uuidString: rawDiscID) else { throw DatabaseError.notFound("Track") }
-            let statement = try Self.prepare("UPDATE track SET title = ?, display_position = ?, duration_ms = ?, work_name = ?, movement_number = ?, movement_name = ?, is_instrumental = ? WHERE id = ?;", on: connection)
+            let statement = try Self.prepare("UPDATE track SET title = ?, display_position = ?, duration_ms = ?, work_name = ?, movement_number = ?, movement_name = ?, is_instrumental = ?, rating = ? WHERE id = ?;", on: connection)
             defer { sqlite3_finalize(statement) }
-            try Self.bind(valid.title, at: 1, to: statement); try Self.bind(valid.displayPosition, at: 2, to: statement); try Self.bind(valid.durationMilliseconds.map(Int64.init), at: 3, to: statement); try Self.bind(valid.workName, at: 4, to: statement); try Self.bind(valid.movementNumber.map(Int64.init), at: 5, to: statement); try Self.bind(valid.movementName, at: 6, to: statement); try Self.bind(valid.isInstrumental.map { Int64($0 ? 1 : 0) }, at: 7, to: statement); try Self.bind(trackID.description, at: 8, to: statement); try Self.stepDone(statement, connection: connection)
-            result = .init(id: trackID, discID: .init(rawValue: discUUID), number: Int(Self.int(at: 1, from: existing) ?? 0), title: valid.title, displayPosition: valid.displayPosition, durationMilliseconds: valid.durationMilliseconds, workName: valid.workName, movementNumber: valid.movementNumber, movementName: valid.movementName, isInstrumental: valid.isInstrumental)
+            try Self.bind(valid.title, at: 1, to: statement); try Self.bind(valid.displayPosition, at: 2, to: statement); try Self.bind(valid.durationMilliseconds.map(Int64.init), at: 3, to: statement); try Self.bind(valid.workName, at: 4, to: statement); try Self.bind(valid.movementNumber.map(Int64.init), at: 5, to: statement); try Self.bind(valid.movementName, at: 6, to: statement); try Self.bind(valid.isInstrumental.map { Int64($0 ? 1 : 0) }, at: 7, to: statement); try Self.bind(valid.rating.map(Int64.init), at: 8, to: statement); try Self.bind(trackID.description, at: 9, to: statement); try Self.stepDone(statement, connection: connection)
+            result = .init(id: trackID, discID: .init(rawValue: discUUID), number: Int(Self.int(at: 1, from: existing) ?? 0), title: valid.title, displayPosition: valid.displayPosition, durationMilliseconds: valid.durationMilliseconds, workName: valid.workName, movementNumber: valid.movementNumber, movementName: valid.movementName, isInstrumental: valid.isInstrumental, rating: valid.rating)
             try incrementRevision()
         }
         guard let result else { throw DatabaseError.notFound("Track") }
@@ -1014,13 +1015,13 @@ public actor MusicDatabase {
     }
 
     public func tracks(discID: DiscID) throws -> [Track] {
-        let statement = try Self.prepare("SELECT id, number, title, display_position, duration_ms, work_name, movement_number, movement_name, is_instrumental FROM track WHERE disc_id = ? ORDER BY number;", on: connection)
+        let statement = try Self.prepare("SELECT id, number, title, display_position, duration_ms, work_name, movement_number, movement_name, is_instrumental, rating FROM track WHERE disc_id = ? ORDER BY number;", on: connection)
         defer { sqlite3_finalize(statement) }; try Self.bind(discID.description, at: 1, to: statement)
         var values: [Track] = []
         while sqlite3_step(statement) == SQLITE_ROW {
             guard let raw = Self.text(at: 0, from: statement), let uuid = UUID(uuidString: raw) else { throw DatabaseError.invalidIdentifier("track.id") }
             let instrumental = Self.int(at: 8, from: statement).map { $0 == 1 }
-            values.append(.init(id: .init(rawValue: uuid), discID: discID, number: Int(Self.int(at: 1, from: statement) ?? 0), title: Self.text(at: 2, from: statement) ?? "", displayPosition: Self.text(at: 3, from: statement), durationMilliseconds: Self.int(at: 4, from: statement).map(Int.init), workName: Self.text(at: 5, from: statement), movementNumber: Self.int(at: 6, from: statement).map(Int.init), movementName: Self.text(at: 7, from: statement), isInstrumental: instrumental))
+            values.append(.init(id: .init(rawValue: uuid), discID: discID, number: Int(Self.int(at: 1, from: statement) ?? 0), title: Self.text(at: 2, from: statement) ?? "", displayPosition: Self.text(at: 3, from: statement), durationMilliseconds: Self.int(at: 4, from: statement).map(Int.init), workName: Self.text(at: 5, from: statement), movementNumber: Self.int(at: 6, from: statement).map(Int.init), movementName: Self.text(at: 7, from: statement), isInstrumental: instrumental, rating: Self.int(at: 9, from: statement).map(Int.init)))
         }
         return values
     }

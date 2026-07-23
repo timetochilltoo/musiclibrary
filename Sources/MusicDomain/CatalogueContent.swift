@@ -26,8 +26,9 @@ public struct NewTrack: Equatable, Sendable {
     public var movementNumber: Int?
     public var movementName: String?
     public var isInstrumental: Bool?
+    public var rating: Int?
 
-    public init(title: String, displayPosition: String? = nil, durationMilliseconds: Int? = nil, workName: String? = nil, movementNumber: Int? = nil, movementName: String? = nil, isInstrumental: Bool? = nil) {
+    public init(title: String, displayPosition: String? = nil, durationMilliseconds: Int? = nil, workName: String? = nil, movementNumber: Int? = nil, movementName: String? = nil, isInstrumental: Bool? = nil, rating: Int? = nil) {
         self.title = title
         self.displayPosition = displayPosition
         self.durationMilliseconds = durationMilliseconds
@@ -35,11 +36,13 @@ public struct NewTrack: Equatable, Sendable {
         self.movementNumber = movementNumber
         self.movementName = movementName
         self.isInstrumental = isInstrumental
+        self.rating = rating
     }
 
     public func validated() throws -> NewTrack {
         guard !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw ValidationError.requiredField("Track title") }
         if let durationMilliseconds, durationMilliseconds < 0 { throw ValidationError.invalidDuration }
+        if let rating, !(1...5).contains(rating) { throw ValidationError.invalidRating }
         return self
     }
 }
@@ -55,8 +58,9 @@ public struct Track: Identifiable, Equatable, Sendable {
     public let movementNumber: Int?
     public let movementName: String?
     public let isInstrumental: Bool?
+    public let rating: Int?
 
-    public init(id: TrackID, discID: DiscID, number: Int, title: String, displayPosition: String?, durationMilliseconds: Int?, workName: String?, movementNumber: Int?, movementName: String?, isInstrumental: Bool?) { self.id = id; self.discID = discID; self.number = number; self.title = title; self.displayPosition = displayPosition; self.durationMilliseconds = durationMilliseconds; self.workName = workName; self.movementNumber = movementNumber; self.movementName = movementName; self.isInstrumental = isInstrumental }
+    public init(id: TrackID, discID: DiscID, number: Int, title: String, displayPosition: String?, durationMilliseconds: Int?, workName: String?, movementNumber: Int?, movementName: String?, isInstrumental: Bool?, rating: Int? = nil) { self.id = id; self.discID = discID; self.number = number; self.title = title; self.displayPosition = displayPosition; self.durationMilliseconds = durationMilliseconds; self.workName = workName; self.movementNumber = movementNumber; self.movementName = movementName; self.isInstrumental = isInstrumental; self.rating = rating }
 }
 
 public struct NewContributor: Equatable, Sendable {

@@ -809,6 +809,7 @@ private struct AlbumDetail: View {
                             VStack(alignment: .leading, spacing: 3) {
                                 HStack {
                                     Text("\(track.number). \(track.title)")
+                                    if let rating = track.rating { Text("\(rating)★").font(.caption).foregroundStyle(.secondary) }
                                     Spacer()
                                     Button("Edit", systemImage: "pencil") { trackToEdit = track }.labelStyle(.iconOnly)
                                     Button("Play", systemImage: "play.fill") { play(track) }.labelStyle(.iconOnly)
@@ -971,6 +972,7 @@ private struct EditTrackEditor: View {
     @State private var movementNumber: String
     @State private var movementName: String
     @State private var instrumental: Bool
+    @State private var rating: Int
     @State private var errorMessage: String?
 
     init(library: LibraryStore, track: Track, onSaved: @escaping () async -> Void) {
@@ -984,12 +986,14 @@ private struct EditTrackEditor: View {
         _movementNumber = State(initialValue: track.movementNumber.map(String.init) ?? "")
         _movementName = State(initialValue: track.movementName ?? "")
         _instrumental = State(initialValue: track.isInstrumental ?? false)
+        _rating = State(initialValue: track.rating ?? 0)
     }
 
     var body: some View {
         Form {
             Section("Track") { TextField("Track title", text: $title); TextField("Display position (optional)", text: $displayPosition); TextField("Duration in seconds (optional)", text: $durationSeconds) }
             Section("Classical / detailed metadata") { TextField("Work name (optional)", text: $workName); TextField("Movement number (optional)", text: $movementNumber); TextField("Movement name (optional)", text: $movementName); Toggle("Instrumental", isOn: $instrumental) }
+            Picker("Rating", selection: $rating) { Text("Not rated").tag(0); ForEach(1...5, id: \.self) { Text("\($0) star\($0 == 1 ? "" : "s")").tag($0) } }
             Text("These are catalogue corrections only; source audio tags are not changed.").font(.caption).foregroundStyle(.secondary)
         }
             .padding().frame(width: 440)
@@ -1003,7 +1007,7 @@ private struct EditTrackEditor: View {
     private func save() {
         Task {
             do {
-                try await library.updateTrack(track.id, draft: .init(title: title, displayPosition: displayPosition.nilIfBlank, durationMilliseconds: Int(durationSeconds).map { $0 * 1_000 }, workName: workName.nilIfBlank, movementNumber: Int(movementNumber), movementName: movementName.nilIfBlank, isInstrumental: instrumental))
+                try await library.updateTrack(track.id, draft: .init(title: title, displayPosition: displayPosition.nilIfBlank, durationMilliseconds: Int(durationSeconds).map { $0 * 1_000 }, workName: workName.nilIfBlank, movementNumber: Int(movementNumber), movementName: movementName.nilIfBlank, isInstrumental: instrumental, rating: rating == 0 ? nil : rating))
                 await onSaved()
                 dismiss()
             } catch { errorMessage = error.localizedDescription }
