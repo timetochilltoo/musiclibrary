@@ -248,7 +248,15 @@ private struct ContributorDetail: View {
             }
         }
         .navigationTitle(contributor.name)
-        .task(id: contributor.id) { albums = (try? await library.albums(creditedTo: contributor.id)) ?? [] }
+        .task(id: contributor.id) { await loadAlbums() }
+    }
+
+    private func loadAlbums() async {
+        do {
+            albums = try await library.albums(creditedTo: contributor.id)
+        } catch {
+            library.presentError(error)
+        }
     }
 }
 
@@ -974,7 +982,11 @@ private struct AlbumDetail: View {
         .navigationTitle(album.displayTitle)
         .toolbar { Button("Edit", action: onEdit); Button("Add Disc", systemImage: "plus") { showsAddDisc = true } }
         .task(id: album.id) {
-            placement = try? await library.boxPlacement(for: album.id)
+            do {
+                placement = try await library.boxPlacement(for: album.id)
+            } catch {
+                library.presentError(error)
+            }
             await loadContent()
         }
         .sheet(isPresented: $showsAddDisc) { AddDiscEditor(library: library, albumID: album.id, onAdded: { await loadContent() }) }
@@ -1014,25 +1026,40 @@ private struct AlbumDetail: View {
     }
 
     private func loadContent() async {
-        guard let loadedDiscs = try? await library.discs(albumID: album.id) else { return }
-        discs = loadedDiscs
-        var mapped: [DiscID: [Track]] = [:]
-        var loadedTrackCredits: [TrackID: [ContributorCredit]] = [:]
-        for disc in loadedDiscs {
-            let tracks = (try? await library.tracks(discID: disc.id)) ?? []
-            mapped[disc.id] = tracks
-            for track in tracks { loadedTrackCredits[track.id] = (try? await library.trackContributors(trackID: track.id)) ?? [] }
+        do {
+            let loadedDiscs = try await library.discs(albumID: album.id)
+            var mapped: [DiscID: [Track]] = [:]
+            var loadedTrackCredits: [TrackID: [ContributorCredit]] = [:]
+            for disc in loadedDiscs {
+                let tracks = try await library.tracks(discID: disc.id)
+                mapped[disc.id] = tracks
+                for track in tracks {
+                    loadedTrackCredits[track.id] = try await library.trackContributors(trackID: track.id)
+                }
+            }
+            let loadedCredits = try await library.albumContributors(albumID: album.id)
+            let loadedAliases = try await library.albumAliases(albumID: album.id)
+            let loadedArtwork = try await library.albumArtwork(albumID: album.id)
+            discs = loadedDiscs
+            tracksByDisc = mapped
+            trackCredits = loadedTrackCredits
+            credits = loadedCredits
+            aliases = loadedAliases
+            artwork = loadedArtwork
+        } catch {
+            library.presentError(error)
         }
-        tracksByDisc = mapped
-        trackCredits = loadedTrackCredits
-        credits = (try? await library.albumContributors(albumID: album.id)) ?? []
-        aliases = (try? await library.albumAliases(albumID: album.id)) ?? []
-        artwork = (try? await library.albumArtwork(albumID: album.id)) ?? []
     }
 
     private func play(_ track: Track) {
         Task {
-            if let items = try? await library.playbackURLs(discID: track.discID), let index = items.firstIndex(where: { $0.trackID == track.id }) { try? playback.play(items: items, startingAt: index) }
+            do {
+                let items = try await library.playbackURLs(discID: track.discID)
+                guard let index = items.firstIndex(where: { $0.trackID == track.id }) else { return }
+                try playback.play(items: items, startingAt: index)
+            } catch {
+                library.presentError(error)
+            }
         }
     }
 }
@@ -1558,7 +1585,13 @@ private struct EditAlbumEditor: View {
         }
         .formStyle(.grouped)
         .frame(width: 460)
-        .task { placement = try? await library.boxPlacement(for: album.id) }
+        .task {
+            do {
+                placement = try await library.boxPlacement(for: album.id)
+            } catch {
+                library.presentError(error)
+            }
+        }
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
             ToolbarItem(placement: .confirmationAction) { Button("Save") { save() }.keyboardShortcut(.defaultAction) }
