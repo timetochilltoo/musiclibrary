@@ -181,6 +181,33 @@ private struct LibraryShellView: View {
     }
 }
 
+private struct CandidateMetadataSummary: View {
+    let candidate: ImportCandidate
+    let fallback: String
+    var body: some View {
+        let summary = candidate.metadata?.rawTags.map { "\($0.key): \($0.value)" }.sorted().joined(separator: " · ") ?? fallback
+        Text(summary).font(.caption).foregroundStyle(.secondary)
+    }
+}
+
+private struct CandidateRow: View {
+    let candidate: ImportCandidate
+    var body: some View {
+        if let payload = candidate.payload { VStack(alignment: .leading) { Text(payload.relativePath); CandidateMetadataSummary(candidate: candidate, fallback: payload.contentTypeIdentifier) } }
+        else { Text(candidate.errorMessage ?? "Unreadable item").foregroundStyle(.secondary) }
+    }
+}
+
+private func proposalSummary(_ proposal: ImportReleaseProposal) -> String {
+    let artist = proposal.artist ?? "Unknown artist"
+    let confidence = Int((proposal.confidence * 100).rounded())
+    return "\(artist) · \(proposal.discCount) disc(s) · \(proposal.trackCount) files · \(confidence)% confidence"
+}
+
+private func proposalConfirmationMessage(_ proposal: ImportReleaseProposal) -> String {
+    "This will create one album, \(proposal.trackCount) tracks, and root-relative digital asset records. It will not copy, move, or modify any audio files."
+}
+
 private struct StorageRootList: View {
     @ObservedObject var library: LibraryStore
     @State private var rootToRename: StorageRoot?
@@ -192,7 +219,7 @@ private struct StorageRootList: View {
                 Text(library.snapshotPublishStatus).foregroundStyle(.secondary)
                 if let path = library.snapshotDestinationPath { Text(path).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
                 Text("Catalogue revision \(library.catalogueRevision) · last published \(library.lastPublishedRevision.map(String.init) ?? "never")\(library.isSnapshotPublishPending ? " · pending" : "")").font(.caption).foregroundStyle(.secondary)
-                if let lastPublishedAt { Text("Last successful publish \(lastPublishedAt.formatted(date: .abbreviated, time: .shortened))").font(.caption).foregroundStyle(.secondary) }
+                if let lastPublishedAt = library.lastPublishedAt { Text("Last successful publish \(lastPublishedAt.formatted(date: .abbreviated, time: .shortened))").font(.caption).foregroundStyle(.secondary) }
                 if let failure = library.lastSnapshotPublishFailure { Text(failure).font(.caption).foregroundStyle(.red) }
                 Button("Choose Snapshot Destination") { showsSnapshotDestinationPicker = true }
                 Button(library.lastSnapshotPublishFailure == nil ? "Publish Now" : "Retry Publish") { Task { try? await library.publishSnapshotNow() } }.disabled(library.snapshotDestinationPath == nil)
@@ -334,7 +361,7 @@ private struct ImportBatchDetail: View {
                 ForEach(proposals) { proposal in
                     VStack(alignment: .leading, spacing: 4) {
                         HStack { Text(proposal.title).font(.headline); Spacer(); Text(proposal.status.rawValue.capitalized).font(.caption).foregroundStyle(.secondary) }
-                        Text("\(proposal.artist ?? "Unknown artist") · \(proposal.discCount) disc(s) · \(proposal.trackCount) files · \(Int((proposal.confidence * 100).rounded()))% confidence").font(.caption).foregroundStyle(.secondary)
+                        Text(proposalSummary(proposal)).font(.caption).foregroundStyle(.secondary)
                         Text("Source: \(proposal.provenance). Approval only marks this proposal for later catalogue creation.").font(.caption2).foregroundStyle(.secondary)
                         if proposal.status == .proposed { HStack { Button("Approve for Later") { Task { try? await library.setImportReleaseProposal(proposal.id, status: .approved); await load() } }; Button("Dismiss", role: .destructive) { Task { try? await library.setImportReleaseProposal(proposal.id, status: .dismissed); await load() } } } }
                         if proposal.status == .approved && proposal.createdAlbumID == nil { Button("Create Catalogue Records…", systemImage: "checkmark.seal") { proposalToConfirm = proposal } }
@@ -343,18 +370,17 @@ private struct ImportBatchDetail: View {
                 }
             }
             Section("Candidates") {
-                ForEach(candidates) { candidate in
-                    if let payload = candidate.payload { VStack(alignment: .leading) { Text(payload.relativePath); Text(candidate.metadata?.rawTags.map { "\($0.key): \($0.value)" }.sorted().joined(separator: " · ") ?? payload.contentTypeIdentifier).font(.caption).foregroundStyle(.secondary) } }
-                    else { Text(candidate.errorMessage ?? "Unreadable item").foregroundStyle(.secondary) }
-                }
+                ForEach(candidates) { CandidateRow(candidate: $0) }
             }
         }
         .navigationTitle("Import Batch")
         .task(id: batch.id) { await load() }
-        .confirmationDialog("Create catalogue records?", item: $proposalToConfirm, titleVisibility: .visible) { proposal in
-            Button("Create Album, Tracks, and Assets") { Task { _ = try? await library.confirmImportReleaseProposal(proposal.id); await load() } }
-        } message: { proposal in
-            Text("This will create one album, \(proposal.trackCount) tracks, and root-relative digital asset records. It will not copy, move, or modify any audio files.")
+        .confirmationDialog("Create catalogue records?", isPresented: Binding(get: { proposalToConfirm != nil }, set: { if !$0 { proposalToConfirm = nil } }), titleVisibility: .visible) {
+            if let proposal = proposalToConfirm {
+                Button("Create Album, Tracks, and Assets") { Task { _ = try? await library.confirmImportReleaseProposal(proposal.id); await load(); proposalToConfirm = nil } }
+            }
+        } message: {
+            Text(proposalToConfirm.map(proposalConfirmationMessage) ?? "")
         }
     }
 
