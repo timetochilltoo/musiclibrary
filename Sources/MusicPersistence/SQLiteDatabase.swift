@@ -353,6 +353,12 @@ public actor MusicDatabase {
             default: break
             }
         }
+        let artworkStatement = try Self.prepare("SELECT id, title FROM album WHERE deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM artwork WHERE artwork.owner_type = 'album' AND artwork.owner_id = album.id AND artwork.role = 'front' AND artwork.is_selected = 1) ORDER BY title;", on: connection)
+        defer { sqlite3_finalize(artworkStatement) }
+        while sqlite3_step(artworkStatement) == SQLITE_ROW {
+            guard let rawID = Self.text(at: 0, from: artworkStatement), let id = UUID(uuidString: rawID) else { throw DatabaseError.invalidIdentifier("Library health artwork album") }
+            issues.append(.init(kind: .missingArtwork, albumID: .init(rawValue: id), albumTitle: Self.text(at: 1, from: artworkStatement) ?? "", detail: "No front artwork is selected. Open this album to choose artwork."))
+        }
         return issues.sorted { $0.albumTitle.localizedCaseInsensitiveCompare($1.albumTitle) == .orderedAscending }
     }
 

@@ -180,7 +180,7 @@ Implemented and tested:
 - The Settings UI lets the user choose a local/NAS folder, rename it, recheck access, or remove it when it has no digital assets. It labels roots as Available, Offline, or Permission required.
 - A cancellable Import Inbox scan creates batches and audio-file candidates only. It uses system content-type probing, skips hidden/package content, retains file-level errors, supports cancellation/retry, and recovers an interrupted scan as cancelled on relaunch. It never creates catalogue records or modifies audio files.
 - Embedded common tags and duration are read locally through AVFoundation, preserved with `embedded-tags` provenance, and grouped deterministically into release proposals. Review can approve-for-later or dismiss a proposal; neither action creates catalogue records, changes catalogue revision, contacts external services, nor writes audio tags.
-- Confirming an approved proposal explicitly creates an album, ordered discs/tracks, and root-relative digital assets in one idempotent transaction. A repeated confirmation returns the already created album. Library Health derives missing/offline/partial status from track assets and current root status; it never relocates or deletes a file.
+- Confirming an approved proposal explicitly creates an album, ordered discs/tracks, and root-relative digital assets in one idempotent transaction. A repeated confirmation returns the already created album. Library Health derives missing/offline/partial status from track assets and current root status, and flags any active album without selected front artwork; it never relocates or deletes a file.
 - Local Mac playback resolves only available, authorized root-relative assets, verifies file existence, and uses normal shared AVFoundation output. Playing a track queues its disc; the persisted queue supports previous/next, repeat, shuffle, volume, pause, stop, and seek API. Missing/offline files fail locally without any catalogue mutation.
 - Playlists use the existing ordered playlist tables. The UI supports playlist creation, listing/detail, and adding album tracks. Normal playback completion advances the resolved local queue; no queue failure changes catalogue data.
 - Snapshot publication writes a revisioned sanitized JSON payload and writes the SHA-256-protected manifest last. Its current payload contains a format, schema version, catalogue revision, album rows with ID, edition/year/catalogue/CD/digital data, ordered discs/tracks, and root-relative digital-asset references. It contains no Mac bookmark or absolute path. The read-only client refuses malformed formats, unsafe names, stale revisions, and checksum failures; it atomically retains the last verified cache after any failure.
@@ -203,7 +203,7 @@ Implemented:
 - Box-set list and create-box-set form.
 - Basic album detail view showing edition fields, CD status, and direct location or box/unknown state.
 - Import Inbox list/detail with scan progress, cancellation, retry, candidate paths/types, embedded tag values, grouped release proposals, confidence/provenance, explicit review controls, and an explicit create-catalogue-records confirmation.
-- Settings shows calculated Library Health issues for missing, offline, and partial digital albums.
+- Settings shows calculated Library Health issues for missing, offline, and partial digital albums, plus albums with no selected front artwork.
 - Album tracks have Play controls; a persistent Now Playing strip provides transport, Queue (shuffle/repeat), volume, and stop controls.
 - Playlist navigation provides playlist creation, membership detail, and add-track actions.
 - Error alerts and initial database-opening progress UI.
@@ -218,7 +218,7 @@ This database is user data. Do not remove it during development. If a destructiv
 
 ## 8. Current tests and verification baseline
 
-The last verified baseline contains 50 tests in 5 suites, run with a rebuilt `swift test` on 23 July 2026. Run `swift test`; do not rely on this handoff alone.
+The last verified baseline contains 51 tests in 5 suites, run with a rebuilt `swift test` on 24 July 2026. Run `swift test`; do not rely on this handoff alone.
 
 Albums now expose **Move to Recently Deleted** in the Albums list context menu. Settings displays a **Recently Deleted** section and its Restore action. This uses the existing soft-delete records, preserves album relationships, and never deletes or changes source media files.
 
@@ -329,7 +329,7 @@ If an invariant needs to change, stop and document the proposed migration and us
 ## 11. Current recovery and backup workflow; next safe slice
 
 The Mac now persists the latest publication failure, shows it in Settings after relaunch, and changes the manual action to Retry Publish. Settings also provides a safe Library Health recheck: it refreshes root authorization and, for reachable authorized roots, checks each stored relative path to mark an asset available or missing. This never modifies media files or stored paths, and availability refreshes do not increment catalogue revision.
-Each Library Health issue has a **Show Album** action, which changes the Mac shell to Albums and selects the affected record; the health list is therefore a repair starting point rather than a dead-end report.
+Each Library Health issue has a **Show Album** action, which changes the Mac shell to Albums and selects the affected record; the health list is therefore a repair starting point rather than a dead-end report. Missing-front-artwork rows use a dedicated photo warning and direct the user to the Album Detail artwork picker; deleted albums are excluded.
 Health-panel actions (recheck, fingerprint verification, root access/removal, relink apply/discard, and manual publishing) surface an app error alert if they fail; they do not silently absorb an error.
 **Metadata correction decision (23 July 2026):** Japanese CD rip tags may legitimately be correct for a Japanese pressing but unsuitable for this user's preferred catalogue display. The Mac catalogue must support corrections to album title, track title, and contributor names without writing into source audio files. File tag write-back is deferred and, if added, must be opt-in with a field-by-field preview and recoverable backup.
 **Companion preference decision (23 July 2026):** iPad/read-only clients may maintain device-local favourites, recent-play history, play counts, and resume positions. They do not change or sync into the Mac catalogue in version 1; shared playlists remain Mac-authored and companion read-only.

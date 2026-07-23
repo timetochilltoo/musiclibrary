@@ -416,7 +416,7 @@ private struct StorageRootList: View {
                 Section("Library Health") {
                     ForEach(library.libraryHealthIssues) { issue in
                         VStack(alignment: .leading) {
-                            Label(issue.albumTitle, systemImage: issue.kind == .offline ? "externaldrive.badge.exclamationmark" : "exclamationmark.triangle")
+                            Label(issue.albumTitle, systemImage: healthSymbol(for: issue.kind))
                             Text(issue.detail).font(.caption).foregroundStyle(.secondary)
                             Button("Show Album") { onShowAlbum(issue.albumID) }
                                 .font(.caption)
@@ -507,6 +507,14 @@ private struct StorageRootList: View {
             if library.isReady && library.storageRoots.isEmpty { ContentUnavailableView("No music folders", systemImage: "externaldrive", description: Text("Add a local or NAS folder. The app saves access permission, not NAS credentials.")) }
         }
         .sheet(item: $rootToRename) { root in StorageRootRenameEditor(library: library, root: root) }
+    }
+
+    private func healthSymbol(for kind: LibraryHealthKind) -> String {
+        switch kind {
+        case .offline: "externaldrive.badge.exclamationmark"
+        case .missingArtwork: "photo.badge.exclamationmark"
+        default: "exclamationmark.triangle"
+        }
     }
 
     private func label(for status: StorageRootStatus) -> String { switch status { case .available: "Available"; case .offline: "Offline"; case .permissionRequired: "Permission required" } }

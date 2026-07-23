@@ -358,7 +358,8 @@ struct MusicDatabaseTests {
         let secondAlbumID = try await database.confirmImportReleaseProposal(proposal.id)
         #expect(firstAlbumID == secondAlbumID)
         #expect(try await database.albums().map(\.id) == [firstAlbumID])
-        #expect(try await database.libraryHealthIssues().map(\.kind) == [.offline])
+        #expect(try await database.libraryHealthIssues().map(\.kind).contains(.offline))
+        #expect(try await database.libraryHealthIssues().map(\.kind).contains(.missingArtwork))
     }
 
     @Test("Applying a relink proposal changes only the stored catalogue path")
@@ -377,9 +378,9 @@ struct MusicDatabaseTests {
         let assetID = try #require(await database.digitalAssetIDs(albumID: albumID).first)
         let revisionBeforeHealthCheck = try await database.currentRevision()
         try await database.updateAssetAvailability(assetID, to: .missing)
-        #expect(try await database.libraryHealthIssues().map(\.kind) == [.missing])
+        #expect(try await database.libraryHealthIssues().map(\.kind).contains(.missing))
         try await database.updateAssetAvailability(assetID, to: .available)
-        #expect(try await database.libraryHealthIssues().isEmpty)
+        #expect(try await database.libraryHealthIssues().map(\.kind) == [.missingArtwork])
         #expect(try await database.currentRevision() == revisionBeforeHealthCheck)
         let relink = try await database.proposeRelink(assetID: assetID, proposedRelativePath: "Album/new-song.mp3")
         let revisionBeforeApply = try await database.currentRevision()
@@ -397,6 +398,16 @@ struct MusicDatabaseTests {
         #expect(try await database.relinkProposals().isEmpty)
         #expect(try await database.assetFingerprintCandidates().first(where: { $0.id == assetID })?.relativePath == "Album/new-song.mp3")
         #expect(try await database.currentRevision() == revisionBeforeDiscard)
+    }
+
+    @Test("Library Health identifies albums without selected front artwork")
+    func missingFrontArtworkHealth() async throws {
+        let database = try MusicDatabase(url: temporaryDatabaseURL())
+        try await database.migrate()
+        let album = try await database.createAlbum(.init(title: "Needs Cover"))
+        #expect(try await database.libraryHealthIssues().map(\.kind) == [.missingArtwork])
+        _ = try await database.addAlbumArtwork(albumID: album.id, localPath: "/art/cover.jpg", role: .front)
+        #expect(try await database.libraryHealthIssues().isEmpty)
     }
 
     @Test("Albums can be soft-deleted, restored, and exported")
