@@ -7,6 +7,7 @@ import MusicPersistence
 @MainActor
 public final class LibraryStore: ObservableObject {
     @Published public private(set) var albums: [Album] = []
+    @Published public private(set) var deletedAlbums: [Album] = []
     @Published public private(set) var locations: [PhysicalLocation] = []
     @Published public private(set) var boxSets: [BoxSet] = []
     @Published public private(set) var storageRoots: [StorageRoot] = []
@@ -69,6 +70,7 @@ public final class LibraryStore: ObservableObject {
     public func reload(searchTerm: String? = nil) async throws {
         guard let database else { return }
         async let loadedAlbums = database.albums(matching: searchTerm)
+        async let loadedDeletedAlbums = database.deletedAlbums()
         async let loadedLocations = database.locations()
         async let loadedBoxSets = database.boxSets()
         async let loadedStorageRoots = database.storageRoots()
@@ -76,6 +78,7 @@ public final class LibraryStore: ObservableObject {
         async let loadedHealth = database.libraryHealthIssues()
         async let loadedPlaylists = database.playlists()
         albums = try await loadedAlbums
+        deletedAlbums = try await loadedDeletedAlbums
         locations = try await loadedLocations
         boxSets = try await loadedBoxSets
         storageRoots = try await loadedStorageRoots
@@ -147,6 +150,7 @@ public final class LibraryStore: ObservableObject {
     public func deleteTrack(_ trackID: TrackID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.deleteTrack(trackID); try await reload() }
     public func addAlbumAlias(albumID: AlbumID, name: String, kind: AlbumAliasKind, locale: String?) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; _ = try await database.addAlbumAlias(albumID: albumID, name: name, kind: kind, locale: locale); try await reload() }
     public func deleteAlbumAlias(_ aliasID: UUID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.deleteAlbumAlias(aliasID); try await reload() }
+    public func restoreAlbum(_ id: AlbumID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.restoreAlbum(id); try await reload() }
     public func addAlbumContributor(albumID: AlbumID, name: String, role: ContributorRole, creditedName: String?) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; let contributor = try await database.createContributor(.init(name: name)); try await database.addAlbumContributor(contributor.id, to: albumID, role: role, creditedName: creditedName); try await reload() }
     public func addTrackContributor(trackID: TrackID, name: String, role: ContributorRole, creditedName: String?) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; let contributor = try await database.createContributor(.init(name: name)); try await database.addTrackContributor(contributor.id, to: trackID, role: role, creditedName: creditedName); try await reload() }
     public func updateContributor(_ contributorID: ContributorID, draft: NewContributor) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; _ = try await database.updateContributor(contributorID, with: draft); try await reload() }

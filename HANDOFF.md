@@ -220,6 +220,8 @@ This database is user data. Do not remove it during development. If a destructiv
 
 The last verified baseline contains 47 tests in 5 suites, run with a rebuilt `swift test` followed by `swift test --skip-build` on 23 July 2026. Run `swift test`; do not rely on this handoff alone.
 
+Albums now expose **Move to Recently Deleted** in the Albums list context menu. Settings displays a **Recently Deleted** section and its Restore action. This uses the existing soft-delete records, preserves album relationships, and never deletes or changes source media files.
+
 `MusicDomainTests/AlbumTests.swift` verifies:
 
 - Album title validation.

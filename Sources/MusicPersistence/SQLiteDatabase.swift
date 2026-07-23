@@ -357,6 +357,13 @@ public actor MusicDatabase {
     public func restoreAlbum(_ id: AlbumID) throws {
         try transaction { let statement = try Self.prepare("UPDATE album SET deleted_at = NULL, updated_at = ? WHERE id = ? AND deleted_at IS NOT NULL;", on: connection); defer { sqlite3_finalize(statement) }; try Self.bind(Self.milliseconds(Date()), at: 1, to: statement); try Self.bind(id.description, at: 2, to: statement); try Self.stepDone(statement, connection: connection); guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Deleted album") }; try incrementRevision() }
     }
+    public func deletedAlbums() throws -> [Album] {
+        let statement = try Self.prepare(Self.albumSelect + " WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC;", on: connection)
+        defer { sqlite3_finalize(statement) }
+        var values: [Album] = []
+        while sqlite3_step(statement) == SQLITE_ROW { values.append(try Self.album(from: statement)) }
+        return values
+    }
     public func catalogueExportJSON() throws -> String {
         let albums = try self.albums()
         let digitalAlbumIDs = try albumIDsWithDigitalAssets()

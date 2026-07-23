@@ -48,6 +48,7 @@ Completed and verified:
 - Manual lookup reliability complete: identical title/artist requests reuse a session-only in-memory MusicBrainz response cache, while temporary HTTP 429/5xx and URL-loading failures use up to two bounded retries. No retry is scheduled unless the user already initiated the lookup.
 - Extended MusicBrainz field review complete: country/region and catalogue number are independently selectable, persisted in schema 9, and transferred into the resulting album only through the existing explicit proposal approval and creation workflow.
 - Broad catalogue search complete: album search now matches title, edition, catalogue number, barcode, aliases, track titles, album/track contributors, box-set titles, direct physical locations, and inherited box locations.
+- Recently Deleted UI complete: Albums can be moved to Recently Deleted from their context menu, and Settings lists deleted albums with a restore action. Recovery preserves the existing catalogue relationships and leaves media files untouched.
 
 Not yet implemented:
 

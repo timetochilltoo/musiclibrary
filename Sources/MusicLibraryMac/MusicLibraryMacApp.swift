@@ -112,7 +112,7 @@ private struct LibraryShellView: View {
         switch section {
         case .albums:
             List(library.albums, selection: $selectedAlbumID) { album in
-                AlbumRow(album: album).tag(album.id)
+                AlbumRow(album: album).tag(album.id).contextMenu { Button("Move to Recently Deleted", role: .destructive) { Task { do { try await library.softDeleteAlbum(album.id); if selectedAlbumID == album.id { selectedAlbumID = nil } } catch { library.presentError(error) } } } }
             }
             .searchable(text: $searchText, prompt: "Albums, editions, or catalogue numbers")
             .onChange(of: searchText) { _, value in Task { await library.search(value) } }
@@ -304,6 +304,17 @@ private struct StorageRootList: View {
                                 do { try await library.deleteStorageRoot(root.id) }
                                 catch { library.presentError(error) }
                             }
+                        }
+                    }
+                }
+            }
+            if !library.deletedAlbums.isEmpty {
+                Section("Recently Deleted") {
+                    ForEach(library.deletedAlbums) { album in
+                        HStack {
+                            VStack(alignment: .leading) { Text(album.displayTitle); Text("Restore returns this album and its existing catalogue relationships.").font(.caption).foregroundStyle(.secondary) }
+                            Spacer()
+                            Button("Restore") { Task { do { try await library.restoreAlbum(album.id) } catch { library.presentError(error) } } }
                         }
                     }
                 }
