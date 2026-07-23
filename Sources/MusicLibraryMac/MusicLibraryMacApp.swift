@@ -144,6 +144,7 @@ private struct LibraryShellView: View {
                     Button("Move Empty Box Set to Recently Deleted", role: .destructive) { Task { do { try await library.softDeleteEmptyBoxSet(box.id); if selectedBoxSetID == box.id { selectedBoxSetID = nil } } catch { library.presentError(error) } } }
                 }
             }
+            .overlay { if library.isReady && library.boxSets.isEmpty { ContentUnavailableView("No box sets", systemImage: "shippingbox", description: Text("Create a box set to group its member albums at one location.")) } }
         case .importInbox:
             List(library.importBatches, selection: $selectedImportBatchID) { batch in
                 VStack(alignment: .leading) {
@@ -171,11 +172,6 @@ private struct LibraryShellView: View {
                     }
             }
             .overlay { if library.isReady && library.playlists.isEmpty { ContentUnavailableView("No playlists", systemImage: "music.note.list", description: Text("Create a playlist, then add tracks from an album.")) } }
-            .overlay {
-                if library.isReady && library.boxSets.isEmpty {
-                    ContentUnavailableView("No box sets", systemImage: "shippingbox", description: Text("Create a box set to group its member albums at one location."))
-                }
-            }
         case .settings:
             StorageRootList(library: library) { albumID in
                 selectedAlbumID = albumID
