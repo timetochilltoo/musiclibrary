@@ -222,6 +222,8 @@ The last verified baseline contains 47 tests in 5 suites, run with a rebuilt `sw
 
 Albums now expose **Move to Recently Deleted** in the Albums list context menu. Settings displays a **Recently Deleted** section and its Restore action. This uses the existing soft-delete records, preserves album relationships, and never deletes or changes source media files.
 
+Settings also provides **Export Catalogue JSON…**, which uses the system Save dialog and writes only a portable catalogue JSON file to the user-selected destination. It never copies audio or changes catalogue data.
+
 `MusicDomainTests/AlbumTests.swift` verifies:
 
 - Album title validation.

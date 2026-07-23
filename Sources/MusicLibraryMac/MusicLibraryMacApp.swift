@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 import MusicApplication
@@ -267,6 +268,10 @@ private struct StorageRootList: View {
                 }.disabled(library.snapshotDestinationPath == nil)
                 Button("Restore Master Backup…", role: .destructive) { showsMasterRestorePicker = true }
             }
+            Section("Export") {
+                Text("Export a portable JSON view of the current catalogue. Source media files are never copied.").font(.caption).foregroundStyle(.secondary)
+                Button("Export Catalogue JSON…", systemImage: "square.and.arrow.up") { exportCatalogue() }
+            }
             Section("Music Folders") {
                 Button("Recheck Library Health", systemImage: "arrow.clockwise") {
                     Task {
@@ -406,6 +411,14 @@ private struct StorageRootList: View {
     private func label(for status: StorageRootStatus) -> String { switch status { case .available: "Available"; case .offline: "Offline"; case .permissionRequired: "Permission required" } }
     private func symbol(for status: StorageRootStatus) -> String { switch status { case .available: "checkmark.circle.fill"; case .offline: "wifi.slash"; case .permissionRequired: "lock.circle" } }
     private func color(for status: StorageRootStatus) -> Color { switch status { case .available: .green; case .offline: .orange; case .permissionRequired: .red } }
+    private func exportCatalogue() {
+        let panel = NSSavePanel()
+        panel.title = "Export Catalogue JSON"
+        panel.nameFieldStringValue = "MusicLibraryCatalogue.json"
+        panel.allowedContentTypes = [.json]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        Task { do { try await library.exportCatalogue(to: url) } catch { library.presentError(error) } }
+    }
 }
 
 private struct StorageRootRenameEditor: View {

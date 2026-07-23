@@ -49,6 +49,7 @@ Completed and verified:
 - Extended MusicBrainz field review complete: country/region and catalogue number are independently selectable, persisted in schema 9, and transferred into the resulting album only through the existing explicit proposal approval and creation workflow.
 - Broad catalogue search complete: album search now matches title, edition, catalogue number, barcode, aliases, track titles, album/track contributors, box-set titles, direct physical locations, and inherited box locations.
 - Recently Deleted UI complete: Albums can be moved to Recently Deleted from their context menu, and Settings lists deleted albums with a restore action. Recovery preserves the existing catalogue relationships and leaves media files untouched.
+- JSON export UI complete: Settings opens a standard macOS Save dialog to export the current catalogue's portable JSON representation. Export does not copy audio or alter catalogue data.
 
 Not yet implemented:
 
