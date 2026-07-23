@@ -75,6 +75,7 @@ These decisions are requirements unless the user explicitly changes them:
 20. Snapshot publication supports manual publication and automatic publication after a debounced successful change and on orderly Mac app quit.
 21. Catalogue metadata is editable on the Mac even when embedded rip tags are wrong. Corrected album titles, track titles, and contributor names are stored in the catalogue first; the original audio files are never rewritten in the initial release.
 22. File tag write-back is a later opt-in feature. It must show a per-file/per-field preview and offer a recoverable backup before modifying any source file.
+23. Read-only companion clients may store device-local favourites, recent plays, play counts, and resume positions. These preferences are explicitly local to that device, never alter the published catalogue, and do not sync to the Mac or other clients in version 1. Shared playlists remain Mac-catalogue data and therefore read-only on companion clients.
 
 ## 2. Terminology
 
@@ -716,7 +717,6 @@ For each slice:
 These require user choice or a technical spike; the coding model should not silently decide them:
 
 - The exact format matrix for the later opt-in tag write-back feature (the catalogue-only initial release does not need one).
-- Whether client-local favourites/play history are permitted, since those cannot modify the Mac catalogue under the current rule.
 - Whether an album may intentionally have an unknown physical location.
 - Rating scale and whether ratings are album-only or also track-level.
 
