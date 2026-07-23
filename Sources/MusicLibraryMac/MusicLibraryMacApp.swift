@@ -94,7 +94,7 @@ private struct LibraryShellView: View {
         .sheet(item: $albumToEdit) { album in EditAlbumEditor(library: library, album: album) }
         .sheet(item: $playlistToRename) { playlist in PlaylistRenameEditor(library: library, playlist: playlist) }
         .fileImporter(isPresented: $showsStorageRootPicker, allowedContentTypes: [.folder]) { result in
-            if case let .success(url) = result { Task { try? await library.addStorageRoot(url: url) } }
+            if case let .success(url) = result { Task { do { try await library.addStorageRoot(url: url) } catch { library.presentError(error) } } }
         }
         .alert("Music Library", isPresented: Binding(
             get: { library.errorMessage != nil },
