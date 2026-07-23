@@ -200,6 +200,7 @@ public struct PadAlbumDetailView: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 HStack {
                                     Text("\(track.number). \(track.title)")
+                                    if let rating = track.rating { Text("\(rating)★").font(.caption).foregroundStyle(.secondary) }
                                     Spacer()
                                     Button(playbackLabel(for: track)) {
                                         playOrPause(track)
