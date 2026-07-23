@@ -11,6 +11,7 @@ public struct PadLibraryView: View {
     @State private var mappings: [SMBRootMapping] = []
     @State private var sourceDirectory: URL?
     @State private var favouriteAlbumIDs: Set<String> = []
+    @State private var recentlyPlayedAlbumIDs: [String] = []
     @State private var showsFavouritesOnly = false
     @State private var isSelectingSnapshotSource = false
     @State private var isSelectingSMBRoot = false
@@ -48,15 +49,18 @@ public struct PadLibraryView: View {
                 Section("Albums") {
                     if let catalogue {
                         Text("Revision \(catalogue.catalogueRevision) · \(catalogue.albums.count) albums").font(.caption).foregroundStyle(.secondary)
+                        if !recentlyPlayedAlbums.isEmpty {
+                            Text("Recently played").font(.caption).foregroundStyle(.secondary)
+                            ForEach(recentlyPlayedAlbums) { album in
+                                albumLink(album)
+                            }
+                            Divider()
+                        }
                         if filteredAlbums.isEmpty {
                             Text("No albums match your search.").foregroundStyle(.secondary)
                         }
                         ForEach(filteredAlbums) { album in
-                            NavigationLink {
-                                PadAlbumDetailView(album: album, mappings: mappings, playback: playback, isFavourite: favouriteAlbumIDs.contains(album.id), onSetFavourite: { setFavourite($0, for: album.id) })
-                            } label: {
-                                PadAlbumRow(album: album, isFavourite: favouriteAlbumIDs.contains(album.id))
-                            }
+                            albumLink(album)
                         }
                     } else {
                         Text("Refresh a verified snapshot to browse albums.").foregroundStyle(.secondary)
@@ -101,6 +105,8 @@ public struct PadLibraryView: View {
         sourceDirectory = try? sourceStore.selectedDirectory()
         do { favouriteAlbumIDs = try preferenceStore.favouriteAlbumIDs() }
         catch { message = "Could not load device-local favourites: \(error.localizedDescription)" }
+        do { recentlyPlayedAlbumIDs = try preferenceStore.recentlyPlayedAlbumIDs() }
+        catch { message = "Could not load device-local play history: \(error.localizedDescription)" }
         do {
             catalogue = try client.localCatalogue()
             snapshotStatus = catalogue == nil ? "No verified snapshot loaded" : "Verified local snapshot available"
@@ -161,6 +167,27 @@ public struct PadLibraryView: View {
         return catalogue.albums.filter { $0.matches(searchText) && (!showsFavouritesOnly || favouriteAlbumIDs.contains($0.id)) }
     }
 
+    private var recentlyPlayedAlbums: [ReadOnlyAlbum] {
+        guard let catalogue else { return [] }
+        let albumsByID = Dictionary(uniqueKeysWithValues: catalogue.albums.map { ($0.id, $0) })
+        return recentlyPlayedAlbumIDs.compactMap { albumsByID[$0] }.filter { !showsFavouritesOnly || favouriteAlbumIDs.contains($0.id) }
+    }
+
+    @ViewBuilder private func albumLink(_ album: ReadOnlyAlbum) -> some View {
+        NavigationLink {
+            PadAlbumDetailView(
+                album: album,
+                mappings: mappings,
+                playback: playback,
+                isFavourite: favouriteAlbumIDs.contains(album.id),
+                onSetFavourite: { setFavourite($0, for: album.id) },
+                onPlayed: { recordPlayed(albumID: album.id) }
+            )
+        } label: {
+            PadAlbumRow(album: album, isFavourite: favouriteAlbumIDs.contains(album.id))
+        }
+    }
+
     private func setFavourite(_ isFavourite: Bool, for albumID: String) {
         do {
             try preferenceStore.setFavourite(isFavourite, albumID: albumID)
@@ -168,6 +195,16 @@ public struct PadLibraryView: View {
             else { favouriteAlbumIDs.remove(albumID) }
         } catch {
             message = "Could not save device-local favourite: \(error.localizedDescription)"
+        }
+    }
+
+    private func recordPlayed(albumID: String) {
+        do {
+            try preferenceStore.recordPlayed(albumID: albumID)
+            recentlyPlayedAlbumIDs.removeAll { $0 == albumID }
+            recentlyPlayedAlbumIDs.insert(albumID, at: 0)
+        } catch {
+            message = "Could not save device-local play history: \(error.localizedDescription)"
         }
     }
 }
@@ -202,13 +239,15 @@ public struct PadAlbumDetailView: View {
     @ObservedObject public var playback: CompanionPlaybackController
     public let isFavourite: Bool
     public let onSetFavourite: (Bool) -> Void
+    public let onPlayed: () -> Void
 
-    public init(album: ReadOnlyAlbum, mappings: [SMBRootMapping] = [], playback: CompanionPlaybackController, isFavourite: Bool = false, onSetFavourite: @escaping (Bool) -> Void = { _ in }) {
+    public init(album: ReadOnlyAlbum, mappings: [SMBRootMapping] = [], playback: CompanionPlaybackController, isFavourite: Bool = false, onSetFavourite: @escaping (Bool) -> Void = { _ in }, onPlayed: @escaping () -> Void = {}) {
         self.album = album
         self.mappings = mappings
         self.playback = playback
         self.isFavourite = isFavourite
         self.onSetFavourite = onSetFavourite
+        self.onPlayed = onPlayed
     }
 
     public var body: some View {
@@ -271,6 +310,9 @@ public struct PadAlbumDetailView: View {
 
     private func playOrPause(_ track: ReadOnlyTrack) {
         if playback.currentTrackID == track.id { playback.togglePause() }
-        else { playback.play(track, mappings: mappings) }
+        else {
+            playback.play(track, mappings: mappings)
+            onPlayed()
+        }
     }
 }
