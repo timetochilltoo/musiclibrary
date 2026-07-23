@@ -290,7 +290,7 @@ Schema version 2 adds `physical_location_unknown`. Schema version 3 adds `storag
 
 ### Album detail and editing
 
-Album edits and box membership workflows are available. Album detail supports manual content entry, alias removal, track removal, track-level credit creation, and front-artwork selection. Track editing exists at the persistence/use-case layer but does not yet have a dedicated macOS editor. Disc reordering/deletion and removal/editing of contributor credits remain future work; do not claim general content-management completeness beyond the interactions above.
+Album edits and box membership workflows are available. Album detail supports manual content entry, alias removal, track removal, track-level credit creation, and front-artwork selection. Its Edit Track sheet corrects title, display position, duration, work, movement number/name, and instrumental state; it is explicitly catalogue-only and never rewrites audio tags. Disc reordering/deletion and removal/editing of contributor credits remain future work; do not claim general content-management completeness beyond the interactions above.
 
 ### Digital media
 
@@ -351,7 +351,7 @@ Automatic publication is already observable and bounded; do not regress it while
 
 ### Next safe slice
 
-Add additional reviewable fields only when both the import proposal and final album-creation mapping support them—especially country and catalogue number. Keep every lookup manual and every field acceptance explicit. Do not begin artwork migration or snapshot-to-master reconstruction without a new reviewed design.
+Complete one small remaining catalogue-management slice next: preferably contributor-credit editing/removal, or safe disc reordering/deletion. Preserve stable identities and ordering, make each action explicit and transactional, and keep all corrections catalogue-only. Do not begin artwork migration or snapshot-to-master reconstruction without a new reviewed design.
 
 ## 12. Planned implementation order after the next slice
 

@@ -52,12 +52,13 @@ Completed and verified:
 - JSON export UI complete: Settings opens a standard macOS Save dialog to export the current catalogue's portable JSON representation. Export does not copy audio or alter catalogue data.
 - CSV export complete: Settings can export album-level catalogue data as quoted CSV for spreadsheet use, including edition, release, country, catalogue, and availability fields.
 - Album rating/favourite UI complete: add/edit forms expose the agreed shared 1–5 rating and favourite marker, and album detail displays the saved values.
+- Detailed track-editor UI complete: the Mac editor corrects a track's title, display position, duration, work, movement number/name, and instrumental flag. These are catalogue-only corrections and never modify source audio tags.
 
 Not yet implemented:
 
-- General deletion/recovery, disc reordering/deletion, contributor-credit maintenance, full track-editor UI, tag write-back, lyrics, and AI.
+- General deletion/recovery, disc reordering/deletion, contributor-credit maintenance, tag write-back, lyrics, and AI.
 
-The next coding slice should extend metadata lookup safely: add cached, persisted external-result proposals and a selective accept workflow that shows a field-by-field diff before a Mac-only catalogue edit. Do not auto-search, auto-apply a result, or write source tags. A Mac recheck refreshes the derived availability of reachable root-relative files without changing paths or catalogue revision. A reviewed individual relink can be explicitly applied as a catalogue-only path update; it must never move or rename media. Playlists support create, ordered membership, rename, soft delete, item removal, reordering, and playback. Do not allow companion clients to alter the catalogue.
+The next coding slice should complete a small remaining catalogue-management action, such as editing/removing contributor credits or safely deleting/reordering discs. Preserve identity and ordering invariants, require explicit user action, and never write source tags. A Mac recheck refreshes the derived availability of reachable root-relative files without changing paths or catalogue revision. A reviewed individual relink can be explicitly applied as a catalogue-only path update; it must never move or rename media. Playlists support create, ordered membership, rename, soft delete, item removal, reordering, and playback. Do not allow companion clients to alter the catalogue.
 
 ## 1. Fixed decisions
 

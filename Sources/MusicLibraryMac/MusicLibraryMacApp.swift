@@ -918,6 +918,12 @@ private struct EditTrackEditor: View {
     let track: Track
     let onSaved: () async -> Void
     @State private var title: String
+    @State private var displayPosition: String
+    @State private var durationSeconds: String
+    @State private var workName: String
+    @State private var movementNumber: String
+    @State private var movementName: String
+    @State private var instrumental: Bool
     @State private var errorMessage: String?
 
     init(library: LibraryStore, track: Track, onSaved: @escaping () async -> Void) {
@@ -925,11 +931,21 @@ private struct EditTrackEditor: View {
         self.track = track
         self.onSaved = onSaved
         _title = State(initialValue: track.title)
+        _displayPosition = State(initialValue: track.displayPosition ?? "")
+        _durationSeconds = State(initialValue: track.durationMilliseconds.map { String($0 / 1_000) } ?? "")
+        _workName = State(initialValue: track.workName ?? "")
+        _movementNumber = State(initialValue: track.movementNumber.map(String.init) ?? "")
+        _movementName = State(initialValue: track.movementName ?? "")
+        _instrumental = State(initialValue: track.isInstrumental ?? false)
     }
 
     var body: some View {
-        Form { TextField("Track title", text: $title) }
-            .padding().frame(width: 360)
+        Form {
+            Section("Track") { TextField("Track title", text: $title); TextField("Display position (optional)", text: $displayPosition); TextField("Duration in seconds (optional)", text: $durationSeconds) }
+            Section("Classical / detailed metadata") { TextField("Work name (optional)", text: $workName); TextField("Movement number (optional)", text: $movementNumber); TextField("Movement name (optional)", text: $movementName); Toggle("Instrumental", isOn: $instrumental) }
+            Text("These are catalogue corrections only; source audio tags are not changed.").font(.caption).foregroundStyle(.secondary)
+        }
+            .padding().frame(width: 440)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) { Button("Save") { save() }.disabled(title.nilIfBlank == nil) }
@@ -940,7 +956,7 @@ private struct EditTrackEditor: View {
     private func save() {
         Task {
             do {
-                try await library.updateTrack(track.id, draft: .init(title: title, displayPosition: track.displayPosition, durationMilliseconds: track.durationMilliseconds, workName: track.workName, movementNumber: track.movementNumber, movementName: track.movementName, isInstrumental: track.isInstrumental))
+                try await library.updateTrack(track.id, draft: .init(title: title, displayPosition: displayPosition.nilIfBlank, durationMilliseconds: Int(durationSeconds).map { $0 * 1_000 }, workName: workName.nilIfBlank, movementNumber: Int(movementNumber), movementName: movementName.nilIfBlank, isInstrumental: instrumental))
                 await onSaved()
                 dismiss()
             } catch { errorMessage = error.localizedDescription }
