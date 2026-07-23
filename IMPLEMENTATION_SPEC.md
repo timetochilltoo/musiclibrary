@@ -16,7 +16,7 @@ Completed and verified:
 
 - Swift package structure with macOS SwiftUI executable and separate Domain, Persistence, Application, and UI modules.
 - Domain identifiers, album/edition model, physical locations, box sets, contributor roles, and derived digital-availability logic.
-- SQLite schema migrations 1 through 8, foreign keys, catalogue revision tracking, and core repositories.
+- SQLite schema migrations 1 through 9, foreign keys, catalogue revision tracking, and core repositories.
 - Persistent Mac catalogue stored in the user's Application Support directory.
 - Catalogue UI: browse/search albums; add albums; create/rename locations; create box sets; show basic album details.
 - Atomic album creation inside a box set, including inherited physical-location behaviour.
@@ -46,6 +46,7 @@ Completed and verified:
 - Manual external metadata lookup foundation complete: an Import Inbox proposal can explicitly open a MusicBrainz text-only search. The user must press Search before any request is sent; the provider has an identifying User-Agent and a one-request-per-second gate. Results are ephemeral previews with no accept/apply action, no catalogue writes, and no audio upload.
 - Reviewable external metadata selection complete: a MusicBrainz result can be saved against an import proposal, then title, artist, and disc-count differences can be accepted independently. Applying selections updates only the pending import proposal with provenance; later catalogue creation remains separately approved.
 - Manual lookup reliability complete: identical title/artist requests reuse a session-only in-memory MusicBrainz response cache, while temporary HTTP 429/5xx and URL-loading failures use up to two bounded retries. No retry is scheduled unless the user already initiated the lookup.
+- Extended MusicBrainz field review complete: country/region and catalogue number are independently selectable, persisted in schema 9, and transferred into the resulting album only through the existing explicit proposal approval and creation workflow.
 
 Not yet implemented:
 

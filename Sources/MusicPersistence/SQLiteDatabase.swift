@@ -201,11 +201,11 @@ public actor MusicDatabase {
     }
 
     public func importReleaseProposals(batchID: ImportBatchID) throws -> [ImportReleaseProposal] {
-        let statement = try Self.prepare("SELECT id, title, artist, disc_count, track_count, confidence, provenance, status, created_album_id FROM import_release_proposal WHERE batch_id = ? ORDER BY title COLLATE NOCASE;", on: connection)
+        let statement = try Self.prepare("SELECT id, title, artist, disc_count, track_count, confidence, provenance, status, created_album_id, country_code, catalogue_number FROM import_release_proposal WHERE batch_id = ? ORDER BY title COLLATE NOCASE;", on: connection)
         defer { sqlite3_finalize(statement) }; try Self.bind(batchID.description, at: 1, to: statement); var values: [ImportReleaseProposal] = []
         while sqlite3_step(statement) == SQLITE_ROW {
             guard let rawID = Self.text(at: 0, from: statement), let id = UUID(uuidString: rawID), let rawStatus = Self.text(at: 7, from: statement), let status = ImportProposalStatus(rawValue: rawStatus) else { throw DatabaseError.invalidIdentifier("import_release_proposal") }
-            values.append(.init(id: id, batchID: batchID, title: Self.text(at: 1, from: statement) ?? "", artist: Self.text(at: 2, from: statement), discCount: Int(Self.int(at: 3, from: statement) ?? 1), trackCount: Int(Self.int(at: 4, from: statement) ?? 0), confidence: sqlite3_column_double(statement, 5), provenance: Self.text(at: 6, from: statement) ?? "", status: status, createdAlbumID: Self.text(at: 8, from: statement).flatMap(UUID.init(uuidString:)).map(AlbumID.init(rawValue:))))
+            values.append(.init(id: id, batchID: batchID, title: Self.text(at: 1, from: statement) ?? "", artist: Self.text(at: 2, from: statement), discCount: Int(Self.int(at: 3, from: statement) ?? 1), trackCount: Int(Self.int(at: 4, from: statement) ?? 0), confidence: sqlite3_column_double(statement, 5), provenance: Self.text(at: 6, from: statement) ?? "", status: status, createdAlbumID: Self.text(at: 8, from: statement).flatMap(UUID.init(uuidString:)).map(AlbumID.init(rawValue:)), countryCode: Self.text(at: 9, from: statement), catalogueNumber: Self.text(at: 10, from: statement)))
         }
         return values
     }
@@ -237,48 +237,50 @@ public actor MusicDatabase {
         }
     }
 
-    public func saveExternalMetadataSelection(importProposalID: UUID, provider: String, externalID: String, title: String, artist: String?, discCount: Int) throws {
+    public func saveExternalMetadataSelection(importProposalID: UUID, provider: String, externalID: String, title: String, artist: String?, discCount: Int, countryCode: String? = nil, catalogueNumber: String? = nil) throws {
         let now = Self.milliseconds(Date())
         try transaction {
             guard try Self.exists("SELECT 1 FROM import_release_proposal WHERE id = ?;", value: importProposalID.uuidString.lowercased(), on: connection) else { throw DatabaseError.notFound("Import release proposal") }
-            let statement = try Self.prepare("INSERT INTO external_metadata_selection (id, import_proposal_id, provider, external_id, title, artist, disc_count, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(import_proposal_id) DO UPDATE SET provider = excluded.provider, external_id = excluded.external_id, title = excluded.title, artist = excluded.artist, disc_count = excluded.disc_count, updated_at = excluded.updated_at;", on: connection)
+            let statement = try Self.prepare("INSERT INTO external_metadata_selection (id, import_proposal_id, provider, external_id, title, artist, disc_count, country_code, catalogue_number, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(import_proposal_id) DO UPDATE SET provider = excluded.provider, external_id = excluded.external_id, title = excluded.title, artist = excluded.artist, disc_count = excluded.disc_count, country_code = excluded.country_code, catalogue_number = excluded.catalogue_number, updated_at = excluded.updated_at;", on: connection)
             defer { sqlite3_finalize(statement) }
-            try Self.bind(UUID().uuidString.lowercased(), at: 1, to: statement); try Self.bind(importProposalID.uuidString.lowercased(), at: 2, to: statement); try Self.bind(provider, at: 3, to: statement); try Self.bind(externalID, at: 4, to: statement); try Self.bind(title, at: 5, to: statement); try Self.bind(artist, at: 6, to: statement); try Self.bind(Int64(max(1, discCount)), at: 7, to: statement); try Self.bind(now, at: 8, to: statement); try Self.bind(now, at: 9, to: statement); try Self.stepDone(statement, connection: connection)
+            try Self.bind(UUID().uuidString.lowercased(), at: 1, to: statement); try Self.bind(importProposalID.uuidString.lowercased(), at: 2, to: statement); try Self.bind(provider, at: 3, to: statement); try Self.bind(externalID, at: 4, to: statement); try Self.bind(title, at: 5, to: statement); try Self.bind(artist, at: 6, to: statement); try Self.bind(Int64(max(1, discCount)), at: 7, to: statement); try Self.bind(countryCode, at: 8, to: statement); try Self.bind(catalogueNumber, at: 9, to: statement); try Self.bind(now, at: 10, to: statement); try Self.bind(now, at: 11, to: statement); try Self.stepDone(statement, connection: connection)
         }
     }
 
     public func externalMetadataSelection(importProposalID: UUID) throws -> ExternalMetadataSelection? {
-        let statement = try Self.prepare("SELECT id, provider, external_id, title, artist, disc_count FROM external_metadata_selection WHERE import_proposal_id = ?;", on: connection)
+        let statement = try Self.prepare("SELECT id, provider, external_id, title, artist, disc_count, country_code, catalogue_number FROM external_metadata_selection WHERE import_proposal_id = ?;", on: connection)
         defer { sqlite3_finalize(statement) }; try Self.bind(importProposalID.uuidString.lowercased(), at: 1, to: statement)
         guard sqlite3_step(statement) == SQLITE_ROW, let rawID = Self.text(at: 0, from: statement), let id = UUID(uuidString: rawID) else { return nil }
-        return .init(id: id, importProposalID: importProposalID, provider: Self.text(at: 1, from: statement) ?? "", externalID: Self.text(at: 2, from: statement) ?? "", title: Self.text(at: 3, from: statement) ?? "", artist: Self.text(at: 4, from: statement), discCount: Int(Self.int(at: 5, from: statement) ?? 1))
+        return .init(id: id, importProposalID: importProposalID, provider: Self.text(at: 1, from: statement) ?? "", externalID: Self.text(at: 2, from: statement) ?? "", title: Self.text(at: 3, from: statement) ?? "", artist: Self.text(at: 4, from: statement), discCount: Int(Self.int(at: 5, from: statement) ?? 1), countryCode: Self.text(at: 6, from: statement), catalogueNumber: Self.text(at: 7, from: statement))
     }
 
     public func applyExternalMetadataSelection(_ selection: ExternalMetadataSelection, fields: ExternalMetadataFieldSelection) throws {
         try transaction {
-            let existing = try Self.prepare("SELECT title, artist, disc_count FROM import_release_proposal WHERE id = ?;", on: connection)
+            let existing = try Self.prepare("SELECT title, artist, disc_count, country_code, catalogue_number FROM import_release_proposal WHERE id = ?;", on: connection)
             defer { sqlite3_finalize(existing) }; try Self.bind(selection.importProposalID.uuidString.lowercased(), at: 1, to: existing)
             guard sqlite3_step(existing) == SQLITE_ROW else { throw DatabaseError.notFound("Import release proposal") }
             let title = fields.title ? selection.title : (Self.text(at: 0, from: existing) ?? "")
             let artist = fields.artist ? selection.artist : Self.text(at: 1, from: existing)
             let discs = fields.discCount ? selection.discCount : Int(Self.int(at: 2, from: existing) ?? 1)
-            let update = try Self.prepare("UPDATE import_release_proposal SET title = ?, artist = ?, disc_count = ?, provenance = provenance || ', ' || ?, updated_at = ? WHERE id = ?;", on: connection)
-            defer { sqlite3_finalize(update) }; try Self.bind(title, at: 1, to: update); try Self.bind(artist, at: 2, to: update); try Self.bind(Int64(discs), at: 3, to: update); try Self.bind(selection.provider, at: 4, to: update); try Self.bind(Self.milliseconds(Date()), at: 5, to: update); try Self.bind(selection.importProposalID.uuidString.lowercased(), at: 6, to: update); try Self.stepDone(update, connection: connection)
+            let country = fields.countryCode ? selection.countryCode : Self.text(at: 3, from: existing)
+            let catalogue = fields.catalogueNumber ? selection.catalogueNumber : Self.text(at: 4, from: existing)
+            let update = try Self.prepare("UPDATE import_release_proposal SET title = ?, artist = ?, disc_count = ?, country_code = ?, catalogue_number = ?, provenance = provenance || ', ' || ?, updated_at = ? WHERE id = ?;", on: connection)
+            defer { sqlite3_finalize(update) }; try Self.bind(title, at: 1, to: update); try Self.bind(artist, at: 2, to: update); try Self.bind(Int64(discs), at: 3, to: update); try Self.bind(country, at: 4, to: update); try Self.bind(catalogue, at: 5, to: update); try Self.bind(selection.provider, at: 6, to: update); try Self.bind(Self.milliseconds(Date()), at: 7, to: update); try Self.bind(selection.importProposalID.uuidString.lowercased(), at: 8, to: update); try Self.stepDone(update, connection: connection)
         }
     }
 
     public func confirmImportReleaseProposal(_ proposalID: UUID) throws -> AlbumID {
         var result: AlbumID?
         try transaction {
-            let proposal = try Self.prepare("SELECT proposal.batch_id, proposal.title, proposal.disc_count, proposal.status, proposal.created_album_id, batch.storage_root_id FROM import_release_proposal proposal JOIN import_batch batch ON batch.id = proposal.batch_id WHERE proposal.id = ?;", on: connection)
+            let proposal = try Self.prepare("SELECT proposal.batch_id, proposal.title, proposal.disc_count, proposal.status, proposal.created_album_id, batch.storage_root_id, proposal.country_code, proposal.catalogue_number FROM import_release_proposal proposal JOIN import_batch batch ON batch.id = proposal.batch_id WHERE proposal.id = ?;", on: connection)
             defer { sqlite3_finalize(proposal) }; try Self.bind(proposalID.uuidString.lowercased(), at: 1, to: proposal)
             guard sqlite3_step(proposal) == SQLITE_ROW, let rawBatch = Self.text(at: 0, from: proposal), let batchUUID = UUID(uuidString: rawBatch), let title = Self.text(at: 1, from: proposal), let rawStatus = Self.text(at: 3, from: proposal) else { throw DatabaseError.notFound("Import release proposal") }
             if let rawAlbum = Self.text(at: 4, from: proposal), let albumUUID = UUID(uuidString: rawAlbum) { result = .init(rawValue: albumUUID); return }
             guard rawStatus == ImportProposalStatus.approved.rawValue else { throw DatabaseError.invalidOperation("Approve the proposal before creating catalogue records.") }
             guard let rawRoot = Self.text(at: 5, from: proposal), let rootUUID = UUID(uuidString: rawRoot) else { throw DatabaseError.notFound("Storage root") }
             let batchID = ImportBatchID(rawValue: batchUUID); let rootID = StorageRootID(rawValue: rootUUID); let albumID = AlbumID(); let now = Self.milliseconds(Date())
-            let album = try Self.prepare("INSERT INTO album (id, title, disc_count, has_cd, created_at, updated_at) VALUES (?, ?, ?, 0, ?, ?);", on: connection)
-            defer { sqlite3_finalize(album) }; try Self.bind(albumID.description, at: 1, to: album); try Self.bind(title, at: 2, to: album); try Self.bind(Self.int(at: 2, from: proposal) ?? 1, at: 3, to: album); try Self.bind(now, at: 4, to: album); try Self.bind(now, at: 5, to: album); try Self.stepDone(album, connection: connection)
+            let album = try Self.prepare("INSERT INTO album (id, title, country_code, catalogue_number, disc_count, has_cd, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?);", on: connection)
+            defer { sqlite3_finalize(album) }; try Self.bind(albumID.description, at: 1, to: album); try Self.bind(title, at: 2, to: album); try Self.bind(Self.text(at: 6, from: proposal), at: 3, to: album); try Self.bind(Self.text(at: 7, from: proposal), at: 4, to: album); try Self.bind(Self.int(at: 2, from: proposal) ?? 1, at: 5, to: album); try Self.bind(now, at: 6, to: album); try Self.bind(now, at: 7, to: album); try Self.stepDone(album, connection: connection)
             let candidates = try Self.prepare("SELECT id, proposed_payload, metadata_payload FROM import_candidate WHERE batch_id = ? AND proposal_id = ? ORDER BY rowid;", on: connection)
             defer { sqlite3_finalize(candidates) }; try Self.bind(batchID.description, at: 1, to: candidates); try Self.bind(proposalID.uuidString.lowercased(), at: 2, to: candidates)
             var discs: [Int: DiscID] = [:]

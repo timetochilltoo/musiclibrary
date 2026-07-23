@@ -676,6 +676,8 @@ private struct ExternalMetadataComparisonView: View {
     @State private var useTitle = true
     @State private var useArtist = true
     @State private var useDiscCount = true
+    @State private var useCountryCode = true
+    @State private var useCatalogueNumber = true
     @State private var errorMessage: String?
 
     var body: some View {
@@ -684,6 +686,8 @@ private struct ExternalMetadataComparisonView: View {
                 comparison("Album title", current: proposal?.title, proposed: selection.title, enabled: $useTitle)
                 comparison("Artist", current: proposal?.artist, proposed: selection.artist, enabled: $useArtist)
                 comparison("Disc count", current: proposal.map { String($0.discCount) }, proposed: String(selection.discCount), enabled: $useDiscCount)
+                comparison("Country/region", current: proposal?.countryCode, proposed: selection.countryCode, enabled: $useCountryCode)
+                comparison("Catalogue number", current: proposal?.catalogueNumber, proposed: selection.catalogueNumber, enabled: $useCatalogueNumber)
                 Text("Only checked fields update this import proposal. This does not yet create or edit a catalogue album, and never changes audio tags.").font(.caption).foregroundStyle(.secondary)
             }
         }
@@ -694,7 +698,7 @@ private struct ExternalMetadataComparisonView: View {
     private func comparison(_ name: String, current: String?, proposed: String?, enabled: Binding<Bool>) -> some View {
         Toggle(isOn: enabled) { VStack(alignment: .leading) { Text(name); Text("Current: \(current ?? "—") → MusicBrainz: \(proposed ?? "—")").font(.caption).foregroundStyle(.secondary) } }
     }
-    private func apply() { Task { do { try await library.applyExternalMetadataSelection(selection, fields: .init(title: useTitle, artist: useArtist, discCount: useDiscCount)); await onApplied(); dismiss() } catch { errorMessage = error.localizedDescription } } }
+    private func apply() { Task { do { try await library.applyExternalMetadataSelection(selection, fields: .init(title: useTitle, artist: useArtist, discCount: useDiscCount, countryCode: useCountryCode, catalogueNumber: useCatalogueNumber)); await onApplied(); dismiss() } catch { errorMessage = error.localizedDescription } } }
 }
 
 private struct AlbumDetail: View {

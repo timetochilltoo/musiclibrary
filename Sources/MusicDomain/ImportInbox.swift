@@ -82,9 +82,11 @@ public struct ImportReleaseProposal: Identifiable, Equatable, Sendable {
     public let provenance: String
     public let status: ImportProposalStatus
     public let createdAlbumID: AlbumID?
+    public let countryCode: String?
+    public let catalogueNumber: String?
 
-    public init(id: UUID, batchID: ImportBatchID, title: String, artist: String?, discCount: Int, trackCount: Int, confidence: Double, provenance: String, status: ImportProposalStatus, createdAlbumID: AlbumID? = nil) {
-        self.id = id; self.batchID = batchID; self.title = title; self.artist = artist; self.discCount = discCount; self.trackCount = trackCount; self.confidence = confidence; self.provenance = provenance; self.status = status; self.createdAlbumID = createdAlbumID
+    public init(id: UUID, batchID: ImportBatchID, title: String, artist: String?, discCount: Int, trackCount: Int, confidence: Double, provenance: String, status: ImportProposalStatus, createdAlbumID: AlbumID? = nil, countryCode: String? = nil, catalogueNumber: String? = nil) {
+        self.id = id; self.batchID = batchID; self.title = title; self.artist = artist; self.discCount = discCount; self.trackCount = trackCount; self.confidence = confidence; self.provenance = provenance; self.status = status; self.createdAlbumID = createdAlbumID; self.countryCode = countryCode; self.catalogueNumber = catalogueNumber
     }
 }
 
@@ -95,13 +97,13 @@ public struct ExternalMetadataSelection: Identifiable, Equatable, Sendable {
     public let externalID: String
     public let title: String
     public let artist: String?
-    public let discCount: Int
-    public init(id: UUID, importProposalID: UUID, provider: String, externalID: String, title: String, artist: String?, discCount: Int) { self.id = id; self.importProposalID = importProposalID; self.provider = provider; self.externalID = externalID; self.title = title; self.artist = artist; self.discCount = discCount }
+    public let discCount: Int; public let countryCode: String?; public let catalogueNumber: String?
+    public init(id: UUID, importProposalID: UUID, provider: String, externalID: String, title: String, artist: String?, discCount: Int, countryCode: String? = nil, catalogueNumber: String? = nil) { self.id = id; self.importProposalID = importProposalID; self.provider = provider; self.externalID = externalID; self.title = title; self.artist = artist; self.discCount = discCount; self.countryCode = countryCode; self.catalogueNumber = catalogueNumber }
 }
 
 public struct ExternalMetadataFieldSelection: Equatable, Sendable {
-    public var title: Bool; public var artist: Bool; public var discCount: Bool
-    public init(title: Bool, artist: Bool, discCount: Bool) { self.title = title; self.artist = artist; self.discCount = discCount }
+    public var title: Bool; public var artist: Bool; public var discCount: Bool; public var countryCode: Bool; public var catalogueNumber: Bool
+    public init(title: Bool, artist: Bool, discCount: Bool, countryCode: Bool = false, catalogueNumber: Bool = false) { self.title = title; self.artist = artist; self.discCount = discCount; self.countryCode = countryCode; self.catalogueNumber = catalogueNumber }
 }
 
 public enum LibraryHealthKind: String, Codable, CaseIterable, Sendable { case missing, offline, partial, duplicate }
