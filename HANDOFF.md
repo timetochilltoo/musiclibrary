@@ -174,7 +174,7 @@ Implemented and tested:
 - Distinguish standalone unknown physical location from boxed placement with `physical_location_unknown`.
 - Catalogue-content persistence: ordered discs/tracks, aliases, contributors, album- and track-level contributor roles, and album artwork records with source provenance.
 - Album detail displays and adds discs, tracks, aliases, album contributor credits, and track contributor credits.
-- Tracks can be edited in persistence and safely removed from the UI; remaining tracks are renumbered transactionally. Aliases can be removed from the UI.
+- Tracks can be edited in persistence and safely removed from the UI; remaining tracks are renumbered transactionally. Album Detail exposes track-title editing, displays its contributor credits, and lets the user correct a contributor's shared display/sort name. Album title and edition corrections use the existing album editor. These are catalogue-only corrections; they never write source audio tags. Aliases can be removed from the UI.
 - New user-selected artwork is copied into `Application Support/MusicLibrary/Artwork` before its managed path and source label are recorded. Selecting another front image switches the selected state transactionally; the source image is never modified. Legacy path-only artwork records remain to be migrated.
 - Storage roots persist a display name, last-known path, security-scoped bookmark data, volume identifier, availability state, and bookmark-refresh flag. Root access is checked without scanning files.
 - The Settings UI lets the user choose a local/NAS folder, rename it, recheck access, or remove it when it has no digital assets. It labels roots as Available, Offline, or Permission required.
@@ -218,7 +218,7 @@ This database is user data. Do not remove it during development. If a destructiv
 
 ## 8. Current tests and verification baseline
 
-The last verified baseline contains 42 tests in 4 suites, run with a rebuilt `swift test` followed by `swift test --skip-build` on 23 July 2026. Run `swift test`; do not rely on this handoff alone.
+The last verified baseline contains 43 tests in 4 suites, run with a rebuilt `swift test` followed by `swift test --skip-build` on 23 July 2026. Run `swift test`; do not rely on this handoff alone.
 
 `MusicDomainTests/AlbumTests.swift` verifies:
 
@@ -339,7 +339,7 @@ Automatic publication is already observable and bounded; do not regress it while
 
 ### Next safe slice
 
-Implement Mac catalogue-only metadata correction UI: edit album title/edition and selected track titles/contributor display names without changing source audio files. Maintain existing write semantics and add focused persistence/UI tests. Do not begin tag write-back, artwork migration, or snapshot-to-master reconstruction without a new reviewed design.
+Add one explicit, preview-only external metadata lookup adapter. It must remain manually initiated, never upload audio by default, display proposed changes before acceptance, and keep all source tag write-back out of scope. Do not begin artwork migration or snapshot-to-master reconstruction without a new reviewed design.
 
 ## 12. Planned implementation order after the next slice
 

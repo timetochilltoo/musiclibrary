@@ -594,6 +594,7 @@ private struct AlbumDetail: View {
     @State private var placement: AlbumBoxPlacement?
     @State private var discs: [Disc] = []
     @State private var tracksByDisc: [DiscID: [Track]] = [:]
+    @State private var trackCredits: [TrackID: [ContributorCredit]] = [:]
     @State private var credits: [ContributorCredit] = []
     @State private var aliases: [AlbumAlias] = []
     @State private var artwork: [Artwork] = []
@@ -602,6 +603,8 @@ private struct AlbumDetail: View {
     @State private var showsAddAlias = false
     @State private var showsAddContributor = false
     @State private var trackForContributor: Track?
+    @State private var trackToEdit: Track?
+    @State private var contributorToEdit: Contributor?
     @State private var showsArtworkPicker = false
 
     var body: some View {
@@ -629,15 +632,22 @@ private struct AlbumDetail: View {
                     ForEach(discs) { disc in
                         Text(disc.title ?? "Disc \(disc.number)").font(.headline)
                         ForEach(tracksByDisc[disc.id] ?? []) { track in
-                            HStack {
-                                Text("\(track.number). \(track.title)")
-                                Spacer()
-                                Button("Play", systemImage: "play.fill") { play(track) }.labelStyle(.iconOnly)
-                                Menu("Add to Playlist") { ForEach(library.playlists) { playlist in Button(playlist.name) { Task { try? await library.addTrack(track.id, toPlaylist: playlist.id) } } } }.labelStyle(.iconOnly)
-                                Button("Credit", systemImage: "person.badge.plus") { trackForContributor = track }
-                                    .labelStyle(.iconOnly)
-                                Button("Remove", systemImage: "trash", role: .destructive) { Task { try? await library.deleteTrack(track.id); await loadContent() } }
-                                    .labelStyle(.iconOnly)
+                            VStack(alignment: .leading, spacing: 3) {
+                                HStack {
+                                    Text("\(track.number). \(track.title)")
+                                    Spacer()
+                                    Button("Edit", systemImage: "pencil") { trackToEdit = track }.labelStyle(.iconOnly)
+                                    Button("Play", systemImage: "play.fill") { play(track) }.labelStyle(.iconOnly)
+                                    Menu("Add to Playlist") { ForEach(library.playlists) { playlist in Button(playlist.name) { Task { try? await library.addTrack(track.id, toPlaylist: playlist.id) } } } }.labelStyle(.iconOnly)
+                                    Button("Credit", systemImage: "person.badge.plus") { trackForContributor = track }
+                                        .labelStyle(.iconOnly)
+                                    Button("Remove", systemImage: "trash", role: .destructive) { Task { try? await library.deleteTrack(track.id); await loadContent() } }
+                                        .labelStyle(.iconOnly)
+                                }
+                                if let credits = trackCredits[track.id], !credits.isEmpty {
+                                    Text(credits.map { ($0.creditedName ?? $0.contributor.name) + " — " + $0.role.rawValue }.joined(separator: " · "))
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
                             }
                         }
                         Button("Add Track", systemImage: "plus") { discForTrack = disc }
@@ -647,7 +657,13 @@ private struct AlbumDetail: View {
                 Section("Tracks") { Button("Add Disc", systemImage: "plus") { showsAddDisc = true } }
             }
             Section("Contributors") {
-                ForEach(credits) { Text("\($0.contributor.name) — \($0.role.rawValue)") }
+                ForEach(credits) { credit in
+                    HStack {
+                        Text("\(credit.creditedName ?? credit.contributor.name) — \(credit.role.rawValue)")
+                        Spacer()
+                        Button("Edit name", systemImage: "pencil") { contributorToEdit = credit.contributor }.labelStyle(.iconOnly)
+                    }
+                }
                 Button("Add Contributor", systemImage: "plus") { showsAddContributor = true }
             }
             Section("Aliases") {
@@ -674,6 +690,8 @@ private struct AlbumDetail: View {
         .sheet(isPresented: $showsAddAlias) { AddAliasEditor(library: library, albumID: album.id, onAdded: { await loadContent() }) }
         .sheet(isPresented: $showsAddContributor) { AddContributorEditor(library: library, albumID: album.id, onAdded: { await loadContent() }) }
         .sheet(item: $trackForContributor) { track in AddTrackContributorEditor(library: library, track: track, onAdded: { await loadContent() }) }
+        .sheet(item: $trackToEdit) { track in EditTrackEditor(library: library, track: track, onSaved: { await loadContent() }) }
+        .sheet(item: $contributorToEdit) { contributor in EditContributorEditor(library: library, contributor: contributor, onSaved: { await loadContent() }) }
         .fileImporter(isPresented: $showsArtworkPicker, allowedContentTypes: [.image]) { result in
             if case let .success(url) = result {
                 Task {
@@ -695,8 +713,14 @@ private struct AlbumDetail: View {
         guard let loadedDiscs = try? await library.discs(albumID: album.id) else { return }
         discs = loadedDiscs
         var mapped: [DiscID: [Track]] = [:]
-        for disc in loadedDiscs { mapped[disc.id] = (try? await library.tracks(discID: disc.id)) ?? [] }
+        var loadedTrackCredits: [TrackID: [ContributorCredit]] = [:]
+        for disc in loadedDiscs {
+            let tracks = (try? await library.tracks(discID: disc.id)) ?? []
+            mapped[disc.id] = tracks
+            for track in tracks { loadedTrackCredits[track.id] = (try? await library.trackContributors(trackID: track.id)) ?? [] }
+        }
         tracksByDisc = mapped
+        trackCredits = loadedTrackCredits
         credits = (try? await library.albumContributors(albumID: album.id)) ?? []
         aliases = (try? await library.albumAliases(albumID: album.id)) ?? []
         artwork = (try? await library.albumArtwork(albumID: album.id)) ?? []
@@ -737,6 +761,42 @@ private struct AddTrackEditor: View {
     private func add() { Task { try? await library.addTrack(discID: disc.id, draft: .init(title: title)); await onAdded(); dismiss() } }
 }
 
+private struct EditTrackEditor: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var library: LibraryStore
+    let track: Track
+    let onSaved: () async -> Void
+    @State private var title: String
+    @State private var errorMessage: String?
+
+    init(library: LibraryStore, track: Track, onSaved: @escaping () async -> Void) {
+        self.library = library
+        self.track = track
+        self.onSaved = onSaved
+        _title = State(initialValue: track.title)
+    }
+
+    var body: some View {
+        Form { TextField("Track title", text: $title) }
+            .padding().frame(width: 360)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) { Button("Save") { save() }.disabled(title.nilIfBlank == nil) }
+            }
+            .alert("Unable to update track", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) { Button("OK", role: .cancel) {} } message: { Text(errorMessage ?? "") }
+    }
+
+    private func save() {
+        Task {
+            do {
+                try await library.updateTrack(track.id, draft: .init(title: title, displayPosition: track.displayPosition, durationMilliseconds: track.durationMilliseconds, workName: track.workName, movementNumber: track.movementNumber, movementName: track.movementName, isInstrumental: track.isInstrumental))
+                await onSaved()
+                dismiss()
+            } catch { errorMessage = error.localizedDescription }
+        }
+    }
+}
+
 private struct AddAliasEditor: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var library: LibraryStore
@@ -767,6 +827,49 @@ private struct AddContributorEditor: View {
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button("Add") { add() }.disabled(name.nilIfBlank == nil) } }
     }
     private func add() { Task { try? await library.addAlbumContributor(albumID: albumID, name: name, role: role, creditedName: creditedName.nilIfBlank); await onAdded(); dismiss() } }
+}
+
+private struct EditContributorEditor: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var library: LibraryStore
+    let contributor: Contributor
+    let onSaved: () async -> Void
+    @State private var name: String
+    @State private var sortName: String
+    @State private var errorMessage: String?
+
+    init(library: LibraryStore, contributor: Contributor, onSaved: @escaping () async -> Void) {
+        self.library = library
+        self.contributor = contributor
+        self.onSaved = onSaved
+        _name = State(initialValue: contributor.name)
+        _sortName = State(initialValue: contributor.sortName ?? "")
+    }
+
+    var body: some View {
+        Form {
+            TextField("Contributor name", text: $name)
+            TextField("Sort name (optional)", text: $sortName)
+            Text("This corrects the catalogue name anywhere this contributor is credited. It does not change audio-file tags.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .padding().frame(width: 420)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+            ToolbarItem(placement: .confirmationAction) { Button("Save") { save() }.disabled(name.nilIfBlank == nil) }
+        }
+        .alert("Unable to update contributor", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) { Button("OK", role: .cancel) {} } message: { Text(errorMessage ?? "") }
+    }
+
+    private func save() {
+        Task {
+            do {
+                try await library.updateContributor(contributor.id, draft: .init(name: name, sortName: sortName.nilIfBlank))
+                await onSaved()
+                dismiss()
+            } catch { errorMessage = error.localizedDescription }
+        }
+    }
 }
 
 private struct AddTrackContributorEditor: View {

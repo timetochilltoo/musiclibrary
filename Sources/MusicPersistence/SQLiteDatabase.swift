@@ -912,6 +912,22 @@ public actor MusicDatabase {
         return .init(id: id, name: valid.name, sortName: valid.sortName)
     }
 
+    public func updateContributor(_ contributorID: ContributorID, with draft: NewContributor) throws -> Contributor {
+        let valid = try draft.validated()
+        try transaction {
+            let statement = try Self.prepare("UPDATE contributor SET name = ?, sort_name = ?, updated_at = ? WHERE id = ?;", on: connection)
+            defer { sqlite3_finalize(statement) }
+            try Self.bind(valid.name, at: 1, to: statement)
+            try Self.bind(valid.sortName, at: 2, to: statement)
+            try Self.bind(Self.milliseconds(Date()), at: 3, to: statement)
+            try Self.bind(contributorID.description, at: 4, to: statement)
+            try Self.stepDone(statement, connection: connection)
+            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Contributor") }
+            try incrementRevision()
+        }
+        return .init(id: contributorID, name: valid.name, sortName: valid.sortName)
+    }
+
     public func addAlbumContributor(_ contributorID: ContributorID, to albumID: AlbumID, role: ContributorRole, creditedName: String? = nil) throws {
         try transaction {
             guard try Self.exists("SELECT 1 FROM album WHERE id = ? AND deleted_at IS NULL;", value: albumID.description, on: connection) else { throw DatabaseError.notFound("Album") }

@@ -91,6 +91,26 @@ struct MusicDatabaseTests {
         #expect(try await database.currentRevision() == 2)
     }
 
+    @Test("Track and contributor corrections preserve identity and update catalogue data only")
+    func trackAndContributorEditing() async throws {
+        let database = try MusicDatabase(url: temporaryDatabaseURL())
+        try await database.migrate()
+        let album = try await database.createAlbum(.init(title: "Original album"))
+        let disc = try await database.createDisc(albumID: album.id)
+        let track = try await database.createTrack(discID: disc.id, draft: .init(title: "日本語の曲名"))
+        let contributor = try await database.createContributor(.init(name: "日本語の歌手"))
+        try await database.addTrackContributor(contributor.id, to: track.id, role: .performer)
+
+        let correctedTrack = try await database.updateTrack(track.id, with: .init(title: "Corrected title"))
+        let correctedContributor = try await database.updateContributor(contributor.id, with: .init(name: "Corrected artist", sortName: "Artist, Corrected"))
+
+        #expect(correctedTrack.id == track.id)
+        #expect(try await database.tracks(discID: disc.id).first?.title == "Corrected title")
+        #expect(correctedContributor.id == contributor.id)
+        #expect(try await database.trackContributors(trackID: track.id).first?.contributor.name == "Corrected artist")
+        #expect(try await database.currentRevision() == 7)
+    }
+
     @Test("Moving, reordering, and removing box members preserves placement rules")
     func boxMembershipManagement() async throws {
         let database = try MusicDatabase(url: temporaryDatabaseURL())
