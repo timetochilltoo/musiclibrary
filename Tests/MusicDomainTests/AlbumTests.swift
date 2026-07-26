@@ -56,6 +56,7 @@ struct PlaybackQueueTests {
         #expect(queue.next() == first)
         queue.repeatMode = .one
         #expect(queue.next() == first)
+        #expect(queue.skipForward() == second)
         let restored = try JSONDecoder().decode(PlaybackQueue.self, from: JSONEncoder().encode(queue))
         #expect(restored == queue)
     }

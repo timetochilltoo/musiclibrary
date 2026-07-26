@@ -59,7 +59,7 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
         clearNowPlayingInfo()
     }
     public func next() {
-        guard queue.next() != nil, let index = queue.currentIndex else { stop(); return }
+        guard queue.skipForward() != nil, let index = queue.currentIndex else { stop(); return }
         persist()
         loadOrReport(index: index)
     }
@@ -198,7 +198,16 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
         preloadGeneration += 1
         preparedNext = nil
     }
-    nonisolated public func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) { guard flag else { return }; Task { @MainActor [weak self] in self?.next() } }
+    nonisolated public func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        guard flag else { return }
+        Task { @MainActor [weak self] in self?.advanceAfterTrackFinished() }
+    }
+
+    private func advanceAfterTrackFinished() {
+        guard queue.next() != nil, let index = queue.currentIndex else { stop(); return }
+        persist()
+        loadOrReport(index: index)
+    }
 
     private static func formatDescription(for url: URL, format: AVAudioFormat) -> String {
         let container = url.pathExtension.isEmpty ? "Audio" : url.pathExtension.uppercased()
