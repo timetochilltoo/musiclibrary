@@ -358,8 +358,7 @@ struct MusicDatabaseTests {
         let secondAlbumID = try await database.confirmImportReleaseProposal(proposal.id)
         #expect(firstAlbumID == secondAlbumID)
         #expect(try await database.albums().map(\.id) == [firstAlbumID])
-        #expect(try await database.libraryHealthIssues().map(\.kind).contains(.offline))
-        #expect(try await database.libraryHealthIssues().map(\.kind).contains(.missingArtwork))
+        #expect(try await database.libraryHealthIssues().map(\.kind) == [.offline, .missingArtwork])
     }
 
     @Test("Applying a relink proposal changes only the stored catalogue path")

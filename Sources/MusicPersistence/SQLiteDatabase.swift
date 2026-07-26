@@ -359,7 +359,12 @@ public actor MusicDatabase {
             guard let rawID = Self.text(at: 0, from: artworkStatement), let id = UUID(uuidString: rawID) else { throw DatabaseError.invalidIdentifier("Library health artwork album") }
             issues.append(.init(kind: .missingArtwork, albumID: .init(rawValue: id), albumTitle: Self.text(at: 1, from: artworkStatement) ?? "", detail: "No front artwork is selected. Open this album to choose artwork."))
         }
-        return issues.sorted { $0.albumTitle.localizedCaseInsensitiveCompare($1.albumTitle) == .orderedAscending }
+        return issues.sorted {
+            let titleOrder = $0.albumTitle.localizedCaseInsensitiveCompare($1.albumTitle)
+            if titleOrder != .orderedSame { return titleOrder == .orderedAscending }
+            if $0.kind.repairPriority != $1.kind.repairPriority { return $0.kind.repairPriority < $1.kind.repairPriority }
+            return $0.albumID.description < $1.albumID.description
+        }
     }
 
     public func playbackAsset(trackID: TrackID) throws -> PlaybackAssetReference? {

@@ -106,7 +106,19 @@ public struct ExternalMetadataFieldSelection: Equatable, Sendable {
     public init(title: Bool, artist: Bool, discCount: Bool, countryCode: Bool = false, catalogueNumber: Bool = false) { self.title = title; self.artist = artist; self.discCount = discCount; self.countryCode = countryCode; self.catalogueNumber = catalogueNumber }
 }
 
-public enum LibraryHealthKind: String, Codable, CaseIterable, Sendable { case missing, offline, partial, duplicate, missingArtwork }
+public enum LibraryHealthKind: String, Codable, CaseIterable, Sendable {
+    case missing, offline, partial, duplicate, missingArtwork
+
+    public var repairPriority: Int {
+        switch self {
+        case .missing: 0
+        case .offline: 1
+        case .partial: 2
+        case .duplicate: 3
+        case .missingArtwork: 4
+        }
+    }
+}
 
 public struct LibraryHealthIssue: Identifiable, Equatable, Sendable {
     public let id: String
