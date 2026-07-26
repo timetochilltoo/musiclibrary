@@ -4,6 +4,7 @@ import MusicReadOnlyClient
 public struct PadLibraryView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var snapshotStatus = "No verified snapshot loaded"
+    @State private var localSnapshotUpdatedAt: Date?
     @State private var updateAvailable = false
     @State private var catalogue: ReadOnlyCatalogue?
     @StateObject private var playback = CompanionPlaybackController()
@@ -41,6 +42,11 @@ public struct PadLibraryView: View {
                 Section("Catalogue") {
                     Text(snapshotStatus)
                     Text("Read-only companion").foregroundStyle(.secondary)
+                    if let localSnapshotUpdatedAt {
+                        Text("Last verified refresh \(localSnapshotUpdatedAt.formatted(date: .abbreviated, time: .shortened))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                     if let sourceDirectory {
                         Text(sourceDirectory.path).font(.caption).foregroundStyle(.secondary)
                     } else {
@@ -154,6 +160,7 @@ public struct PadLibraryView: View {
         do {
             catalogue = try client.localCatalogue()
             snapshotStatus = catalogue == nil ? "No verified snapshot loaded" : "Verified local snapshot available"
+            localSnapshotUpdatedAt = try client.localManifestModificationDate()
             if let catalogue {
                 resumePositionsByTrackID = Dictionary(uniqueKeysWithValues: catalogue.albums.flatMap(\.discs).flatMap(\.tracks).compactMap { track in
                     (try? preferenceStore.resumePosition(for: track.id)).map { (track.id, $0) }
@@ -162,6 +169,7 @@ public struct PadLibraryView: View {
             checkForNewerSource()
         } catch {
             catalogue = nil
+            localSnapshotUpdatedAt = nil
             snapshotStatus = "Verified cache could not be opened"
             message = "The local snapshot is not usable: \(error.localizedDescription)"
         }
