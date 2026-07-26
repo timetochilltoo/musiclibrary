@@ -33,6 +33,8 @@ func companionFavourites() throws {
     #expect(try store.playCountsByAlbumID().isEmpty)
     #expect(try store.resumePosition(for: "track-2") == nil)
     #expect(try store.favouriteAlbumIDs() == ["album-2"])
+    try store.clearFavourites()
+    #expect(try store.favouriteAlbumIDs().isEmpty)
 }
 
 @Test("Snapshot client keeps last valid cache when checksum fails")

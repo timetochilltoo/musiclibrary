@@ -44,6 +44,12 @@ public final class CompanionPreferenceStore {
         try save(updated)
     }
 
+    public func clearFavourites() throws {
+        var updated = try preferences()
+        updated.favouriteAlbumIDs = []
+        try save(updated)
+    }
+
     public func recentlyPlayedAlbumIDs() throws -> [String] {
         try preferences().recentlyPlayedAlbumIDs
     }

@@ -16,6 +16,7 @@ public struct PadLibraryView: View {
     @State private var resumePositionsByTrackID: [String: TimeInterval] = [:]
     @State private var showsFavouritesOnly = false
     @State private var showsClearPlaybackActivityConfirmation = false
+    @State private var showsClearFavouritesConfirmation = false
     @State private var isSelectingSnapshotSource = false
     @State private var isSelectingSMBRoot = false
     @State private var rootID = ""
@@ -95,6 +96,9 @@ public struct PadLibraryView: View {
             .toolbar {
                 Toggle("Favourites only", isOn: $showsFavouritesOnly)
                 Menu("Local data") {
+                    Button("Clear Local Favourites…", role: .destructive) {
+                        showsClearFavouritesConfirmation = true
+                    }
                     Button("Clear Local Playback Activity…", role: .destructive) {
                         showsClearPlaybackActivityConfirmation = true
                     }
@@ -121,6 +125,11 @@ public struct PadLibraryView: View {
                 Button("Clear Recently Played, Counts, and Resume", role: .destructive) { clearPlaybackActivity() }
             } message: {
                 Text("This affects only this iPad. Favourites, snapshots, SMB mappings, and the Mac catalogue will remain unchanged.")
+            }
+            .confirmationDialog("Clear local favourites?", isPresented: $showsClearFavouritesConfirmation, titleVisibility: .visible) {
+                Button("Clear Favourites", role: .destructive) { clearFavourites() }
+            } message: {
+                Text("This affects only this iPad. Playback activity, snapshots, SMB mappings, and the Mac catalogue will remain unchanged.")
             }
         }
     }
@@ -265,6 +274,16 @@ public struct PadLibraryView: View {
             resumePositionsByTrackID = [:]
         } catch {
             message = "Could not clear device-local playback activity: \(error.localizedDescription)"
+        }
+    }
+
+    private func clearFavourites() {
+        do {
+            try preferenceStore.clearFavourites()
+            favouriteAlbumIDs = []
+            showsFavouritesOnly = false
+        } catch {
+            message = "Could not clear device-local favourites: \(error.localizedDescription)"
         }
     }
 
