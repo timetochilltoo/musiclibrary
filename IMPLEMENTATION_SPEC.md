@@ -16,13 +16,13 @@ Completed and verified:
 
 - Swift package structure with macOS SwiftUI executable and separate Domain, Persistence, Application, and UI modules.
 - Domain identifiers, album/edition model, physical locations, box sets, contributor roles, and derived digital-availability logic.
-- SQLite schema migrations 1 through 9, foreign keys, catalogue revision tracking, and core repositories.
+- SQLite schema migrations 1 through 10, foreign keys, catalogue revision tracking, and core repositories.
 - Persistent Mac catalogue stored in the user's Application Support directory.
 - Catalogue UI: browse/search albums; browse contributors; add albums; create/rename locations; create box sets; show basic album details.
 - Atomic album creation inside a box set, including inherited physical-location behaviour.
 - Album editing plus box-member browse, confirmed move, removal with a standalone placement, and reorder workflows.
 - Schema migration 2 adds `physical_location_unknown`, removing ambiguity between a boxed album and a standalone CD whose location is unknown.
-- Fifty automated tests across five test suites, last verified with a rebuilt `swift test` on 23 July 2026.
+- Fifty-three automated tests across five test suites, last verified with a rebuilt `swift test` on 26 July 2026.
 - Catalogue-content foundation complete: ordered discs/tracks, aliases, contributor roles at album and track level, selected album artwork with local-path provenance, and safe track/alias removal. Album detail supports manual creation of each of these relationships and user-selected front artwork without modifying source files.
 - Storage-root foundation complete: migration 3, persisted root records, security-scoped bookmark creation/resolution, availability checks, and Settings management. Offline and authorization-required roots are retained rather than removed.
 - Import Inbox foundation complete: migration 4, cancellable system-content-type scanning of available authorized roots, persistent batches/candidates/errors, recovery of interrupted scans, and Inbox cancellation/retry UI. Scans never create albums, tracks, or digital assets.
@@ -60,6 +60,8 @@ Completed and verified:
 - Detailed track-editor UI complete: the Mac editor corrects a track's title, display position, duration, work, movement number/name, and instrumental flag. These are catalogue-only corrections and never modify source audio tags.
 - Contributor-credit maintenance complete: album and track credits have explicit destructive controls plus a catalogue-only credited-name/role editor. Removing a credit preserves the shared contributor record and other credits; editing the displayed name or role does not alter the shared person or source audio files. A role change appends the credit to the selected role's ordered list.
 - Disc management complete: album detail supports moving a disc earlier/later and an explicit confirmation before removing a disc and its catalogue tracks. Reordering is SQLite-unique-safe; deleting a disc cannot bypass protected digital assets and never changes source files.
+- Mac playback integration complete: standard macOS media keys/Now Playing controls are registered for play, pause, previous, and next; the playback bar displays the source container plus decoded runtime sample rate and channel count. Original bit depth and actual DAC output format remain real-hardware verification items rather than values the app guesses.
+- Read-only snapshot compatibility gate complete: the client rejects a verified-but-newer unsupported catalogue schema and keeps its prior verified cache. The maximum currently supported published schema is 10.
 
 Not yet implemented:
 

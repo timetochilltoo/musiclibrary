@@ -84,6 +84,24 @@ func localCatalogueBrowsing() throws {
     #expect(catalogue.albums.filter { $0.matches("宇多田") }.map(\.id) == ["one"])
 }
 
+@Test("A client refuses a snapshot from a newer unsupported schema")
+func unsupportedSnapshotSchema() throws {
+    let source = FileManager.default.temporaryDirectory.appending(path: "unsupported-schema-source-\(UUID().uuidString)")
+    let cache = FileManager.default.temporaryDirectory.appending(path: "unsupported-schema-cache-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: source); try? FileManager.default.removeItem(at: cache) }
+    try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+    let payload = ReadOnlyCatalogue(format: "music-library-json", schemaVersion: ReadOnlyCatalogue.maximumSupportedSchemaVersion + 1, catalogueRevision: 1, albums: [])
+    let data = try JSONEncoder().encode(payload)
+    let fileName = "catalogue-1.json"
+    try data.write(to: source.appending(path: fileName))
+    let checksum = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    let manifest = ReadOnlySnapshotManifest(format: "music-library-snapshot-json-v1", revision: 1, fileName: fileName, sha256: checksum)
+    try JSONEncoder().encode(manifest).write(to: source.appending(path: "manifest.json"))
+    let client = SnapshotClient(cacheDirectory: cache)
+    #expect(try client.update(from: source))
+    #expect(throws: SnapshotClientError.incompatibleCatalogue) { try client.localCatalogue() }
+}
+
 @Test("Read-only assets resolve only through matching safe device-local roots")
 func rootRelativeAssetResolution() {
     let asset = ReadOnlyDigitalAsset(storageRootID: "root-a", relativePath: "Artist/Album/01.flac", availability: "available")
