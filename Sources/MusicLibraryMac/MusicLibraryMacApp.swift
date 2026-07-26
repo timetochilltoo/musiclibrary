@@ -317,6 +317,7 @@ private struct StorageRootList: View {
     @State private var rootToRename: StorageRoot?
     @State private var relinkProposalToApply: AssetRelinkProposal?
     @State private var restoreManifestURL: URL?
+    @State private var albumToPurge: Album?
     @State private var showsSnapshotDestinationPicker = false
     @State private var showsMasterRestorePicker = false
 
@@ -401,6 +402,7 @@ private struct StorageRootList: View {
                             VStack(alignment: .leading) { Text(album.displayTitle); Text("Restore returns this album and its existing catalogue relationships.").font(.caption).foregroundStyle(.secondary) }
                             Spacer()
                             Button("Restore") { Task { do { try await library.restoreAlbum(album.id) } catch { library.presentError(error) } } }
+                            Button("Permanently Remove…", role: .destructive) { albumToPurge = album }
                         }
                     }
                 }
@@ -504,6 +506,18 @@ private struct StorageRootList: View {
         }
         .fileImporter(isPresented: $showsMasterRestorePicker, allowedContentTypes: [.json]) { result in
             if case let .success(url) = result { restoreManifestURL = url }
+        }
+        .confirmationDialog("Permanently remove catalogue record?", isPresented: Binding(get: { albumToPurge != nil }, set: { if !$0 { albumToPurge = nil } }), titleVisibility: .visible) {
+            if let album = albumToPurge {
+                Button("Remove Album, Tracks, and Asset References", role: .destructive) {
+                    Task {
+                        do { try await library.permanentlyDeleteAlbum(album.id); albumToPurge = nil }
+                        catch { library.presentError(error) }
+                    }
+                }
+            }
+        } message: {
+            Text("This permanently removes the deleted catalogue album, its tracks, and its stored NAS file references. It never deletes or changes the source audio files.")
         }
         .confirmationDialog("Restore master database?", isPresented: Binding(get: { restoreManifestURL != nil }, set: { if !$0 { restoreManifestURL = nil } }), titleVisibility: .visible) {
             if let manifestURL = restoreManifestURL {

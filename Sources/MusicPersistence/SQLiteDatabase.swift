@@ -381,6 +381,31 @@ public actor MusicDatabase {
     public func restoreAlbum(_ id: AlbumID) throws {
         try transaction { let statement = try Self.prepare("UPDATE album SET deleted_at = NULL, updated_at = ? WHERE id = ? AND deleted_at IS NOT NULL;", on: connection); defer { sqlite3_finalize(statement) }; try Self.bind(Self.milliseconds(Date()), at: 1, to: statement); try Self.bind(id.description, at: 2, to: statement); try Self.stepDone(statement, connection: connection); guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Deleted album") }; try incrementRevision() }
     }
+    public func permanentlyDeleteAlbum(_ id: AlbumID) throws {
+        try transaction {
+            guard try Self.exists("SELECT 1 FROM album WHERE id = ? AND deleted_at IS NOT NULL;", value: id.description, on: connection) else { throw DatabaseError.notFound("Deleted album") }
+            guard !(try Self.exists("SELECT 1 FROM box_set_album WHERE album_id = ?;", value: id.description, on: connection)) else { throw DatabaseError.invalidOperation("Remove this album from its box set before permanently deleting it.") }
+            guard !(try Self.exists("SELECT 1 FROM playlist_item JOIN track ON track.id = playlist_item.track_id JOIN disc ON disc.id = track.disc_id WHERE disc.album_id = ?;", value: id.description, on: connection)) else { throw DatabaseError.invalidOperation("Remove this album's tracks from playlists before permanently deleting it.") }
+            let deleteArtwork = try Self.prepare("DELETE FROM artwork WHERE owner_type = 'album' AND owner_id = ?;", on: connection)
+            defer { sqlite3_finalize(deleteArtwork) }
+            try Self.bind(id.description, at: 1, to: deleteArtwork)
+            try Self.stepDone(deleteArtwork, connection: connection)
+            let deleteIdentifiers = try Self.prepare("DELETE FROM external_identifier WHERE owner_type = 'album' AND owner_id = ?;", on: connection)
+            defer { sqlite3_finalize(deleteIdentifiers) }
+            try Self.bind(id.description, at: 1, to: deleteIdentifiers)
+            try Self.stepDone(deleteIdentifiers, connection: connection)
+            let deleteAssets = try Self.prepare("DELETE FROM digital_asset WHERE track_id IN (SELECT track.id FROM track JOIN disc ON disc.id = track.disc_id WHERE disc.album_id = ?);", on: connection)
+            defer { sqlite3_finalize(deleteAssets) }
+            try Self.bind(id.description, at: 1, to: deleteAssets)
+            try Self.stepDone(deleteAssets, connection: connection)
+            let deleteAlbum = try Self.prepare("DELETE FROM album WHERE id = ? AND deleted_at IS NOT NULL;", on: connection)
+            defer { sqlite3_finalize(deleteAlbum) }
+            try Self.bind(id.description, at: 1, to: deleteAlbum)
+            try Self.stepDone(deleteAlbum, connection: connection)
+            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Deleted album") }
+            try incrementRevision()
+        }
+    }
     public func deletedAlbums() throws -> [Album] {
         let statement = try Self.prepare(Self.albumSelect + " WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC;", on: connection)
         defer { sqlite3_finalize(statement) }

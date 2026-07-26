@@ -12,6 +12,7 @@ Test source: `/Volumes/PSNasP1/Music/testing` (77 audio files, zero scan errors)
 4. The volume control works.
 5. Shuffle had no visible state and did not reorder the actual playback items. Fixed in the queue/controller: it now reorders the real queue while keeping the current track, has an explicit **Shuffle On** state, and can be turned off.
 6. Repeat-one worked during the session, but after a relaunch the queue was not rehydrated into playable URLs, so its state was effectively invisible/unusable. Fixed by rehydrating reachable saved queue tracks after the catalogue opens; playback remains paused after relaunch and resumes only when the user presses Play.
+7. Soft-deleting the first test albums retained their unique registered root-relative asset paths, correctly enabling restore but blocking creation from a corrected re-import. Fixed with a deliberately separate **Permanently Remove…** action in Settings → Recently Deleted. It is confirmation-gated, works only for already deleted albums, removes catalogue tracks/assets/references, and never touches NAS files.
 
 ### Follow-up test after the next package
 

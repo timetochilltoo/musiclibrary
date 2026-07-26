@@ -218,7 +218,7 @@ This database is user data. Do not remove it during development. If a destructiv
 
 ## 8. Current tests and verification baseline
 
-The last verified baseline contains 55 tests in 5 suites, run with a rebuilt `swift test` on 26 July 2026. Run `swift test`; do not rely on this handoff alone.
+The last verified baseline contains 56 tests in 5 suites, run with a rebuilt `swift test` on 26 July 2026. Run `swift test`; do not rely on this handoff alone.
 
 Albums now expose **Move to Recently Deleted** in the Albums list context menu. Settings displays a **Recently Deleted** section and its Restore action. This uses the existing soft-delete records, preserves album relationships, and never deletes or changes source media files.
 
@@ -312,6 +312,8 @@ Storage-root authorization, Import Inbox scanning, embedded common-tag proposal 
 `Scripts/package-mac-app.sh` produces a locally ad-hoc-signed release app at `build/Music Library.app`; its committed bundle metadata is in `Packaging/MusicLibraryMac-Info.plist`. This is suitable for local launch on this Mac, not public distribution or notarization. `MAC_AND_NAS_TESTING.md` is the step-by-step Phase 3/5 real-world acceptance guide. It isolates destructive/corrupt-snapshot checks to a disposable copy and states the expected safe outcomes.
 
 `USER_TEST_FEEDBACK.md` records the 26 July first Mac/NAS smoke-test findings and follow-up checks. The import fallback now safely interprets conventional `Artist/Album [Disc 1]/01 Track.flac` paths when tags are missing; it takes effect only when metadata is read for a future import proposal and never rewrites existing catalogue records or source files. The Mac player now reorders the actual playback items when shuffle is enabled, visibly labels that state, and rehydrates reachable saved queue tracks after relaunch without autoplaying. The MusicBrainz lookup sheet has a known clipped-layout defect, deliberately recorded for later UI repair.
+
+Settings → Recently Deleted now also exposes **Permanently Remove…** for a soft-deleted album. It requires a confirmation, removes its catalogue tracks and registered asset paths so a corrected re-import can use those paths, and does not delete or alter any source media file. It refuses records still owned by a box set or referenced from a playlist.
 
 The iPad library view has a **This iPad** section with counts for favourites, recently played albums, albums with local play counts, and saved track positions. Its explanatory text makes the ownership boundary visible: these preference and activity values remain only on that iPad and are never sent to the Mac catalogue.
 
