@@ -63,6 +63,14 @@ public final class CompanionPreferenceStore {
         try save(updated)
     }
 
+    public func clearPlaybackActivity() throws {
+        var updated = try preferences()
+        updated.recentlyPlayedAlbumIDs = []
+        updated.playCountsByAlbumID = [:]
+        updated.resumePositionsByTrackID = [:]
+        try save(updated)
+    }
+
     public func playCountsByAlbumID() throws -> [String: Int] {
         try preferences().playCountsByAlbumID
     }

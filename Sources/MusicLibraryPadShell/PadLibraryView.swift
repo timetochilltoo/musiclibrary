@@ -15,6 +15,7 @@ public struct PadLibraryView: View {
     @State private var playCountsByAlbumID: [String: Int] = [:]
     @State private var resumePositionsByTrackID: [String: TimeInterval] = [:]
     @State private var showsFavouritesOnly = false
+    @State private var showsClearPlaybackActivityConfirmation = false
     @State private var isSelectingSnapshotSource = false
     @State private var isSelectingSMBRoot = false
     @State private var rootID = ""
@@ -86,7 +87,14 @@ public struct PadLibraryView: View {
             }
             .navigationTitle("Music Library")
             .searchable(text: $searchText, prompt: "Search title, edition, catalogue number")
-            .toolbar { Toggle("Favourites only", isOn: $showsFavouritesOnly) }
+            .toolbar {
+                Toggle("Favourites only", isOn: $showsFavouritesOnly)
+                Menu("Local data") {
+                    Button("Clear Local Playback Activity…", role: .destructive) {
+                        showsClearPlaybackActivityConfirmation = true
+                    }
+                }
+            }
             .task { loadState() }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { checkForNewerSource() }
@@ -104,6 +112,11 @@ public struct PadLibraryView: View {
             .alert("Playback", isPresented: Binding(get: { playback.errorMessage != nil }, set: { if !$0 { playback.dismissError() } })) {
                 Button("OK", role: .cancel) { playback.dismissError() }
             } message: { Text(playback.errorMessage ?? "") }
+            .confirmationDialog("Clear local playback activity?", isPresented: $showsClearPlaybackActivityConfirmation, titleVisibility: .visible) {
+                Button("Clear Recently Played, Counts, and Resume", role: .destructive) { clearPlaybackActivity() }
+            } message: {
+                Text("This affects only this iPad. Favourites, snapshots, SMB mappings, and the Mac catalogue will remain unchanged.")
+            }
         }
     }
 
@@ -231,6 +244,17 @@ public struct PadLibraryView: View {
             recentlyPlayedAlbumIDs = []
         } catch {
             message = "Could not clear device-local play history: \(error.localizedDescription)"
+        }
+    }
+
+    private func clearPlaybackActivity() {
+        do {
+            try preferenceStore.clearPlaybackActivity()
+            recentlyPlayedAlbumIDs = []
+            playCountsByAlbumID = [:]
+            resumePositionsByTrackID = [:]
+        } catch {
+            message = "Could not clear device-local playback activity: \(error.localizedDescription)"
         }
     }
 
