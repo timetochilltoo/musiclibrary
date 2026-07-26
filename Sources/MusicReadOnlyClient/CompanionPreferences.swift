@@ -6,20 +6,23 @@ public final class CompanionPreferenceStore {
     private struct Preferences: Codable {
         var favouriteAlbumIDs: [String]
         var recentlyPlayedAlbumIDs: [String]
+        var playCountsByAlbumID: [String: Int]
         var resumePositionsByTrackID: [String: Double]
 
-        init(favouriteAlbumIDs: [String] = [], recentlyPlayedAlbumIDs: [String] = [], resumePositionsByTrackID: [String: Double] = [:]) {
+        init(favouriteAlbumIDs: [String] = [], recentlyPlayedAlbumIDs: [String] = [], playCountsByAlbumID: [String: Int] = [:], resumePositionsByTrackID: [String: Double] = [:]) {
             self.favouriteAlbumIDs = favouriteAlbumIDs
             self.recentlyPlayedAlbumIDs = recentlyPlayedAlbumIDs
+            self.playCountsByAlbumID = playCountsByAlbumID
             self.resumePositionsByTrackID = resumePositionsByTrackID
         }
 
-        private enum CodingKeys: String, CodingKey { case favouriteAlbumIDs, recentlyPlayedAlbumIDs, resumePositionsByTrackID }
+        private enum CodingKeys: String, CodingKey { case favouriteAlbumIDs, recentlyPlayedAlbumIDs, playCountsByAlbumID, resumePositionsByTrackID }
 
         init(from decoder: Decoder) throws {
             let values = try decoder.container(keyedBy: CodingKeys.self)
             favouriteAlbumIDs = try values.decodeIfPresent([String].self, forKey: .favouriteAlbumIDs) ?? []
             recentlyPlayedAlbumIDs = try values.decodeIfPresent([String].self, forKey: .recentlyPlayedAlbumIDs) ?? []
+            playCountsByAlbumID = try values.decodeIfPresent([String: Int].self, forKey: .playCountsByAlbumID) ?? [:]
             resumePositionsByTrackID = try values.decodeIfPresent([String: Double].self, forKey: .resumePositionsByTrackID) ?? [:]
         }
     }
@@ -50,6 +53,7 @@ public final class CompanionPreferenceStore {
         updated.recentlyPlayedAlbumIDs.removeAll { $0 == albumID }
         updated.recentlyPlayedAlbumIDs.insert(albumID, at: 0)
         updated.recentlyPlayedAlbumIDs = Array(updated.recentlyPlayedAlbumIDs.prefix(20))
+        updated.playCountsByAlbumID[albumID, default: 0] += 1
         try save(updated)
     }
 
@@ -57,6 +61,10 @@ public final class CompanionPreferenceStore {
         var updated = try preferences()
         updated.recentlyPlayedAlbumIDs = []
         try save(updated)
+    }
+
+    public func playCountsByAlbumID() throws -> [String: Int] {
+        try preferences().playCountsByAlbumID
     }
 
     public func resumePosition(for trackID: String) throws -> TimeInterval? {

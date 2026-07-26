@@ -12,6 +12,7 @@ public struct PadLibraryView: View {
     @State private var sourceDirectory: URL?
     @State private var favouriteAlbumIDs: Set<String> = []
     @State private var recentlyPlayedAlbumIDs: [String] = []
+    @State private var playCountsByAlbumID: [String: Int] = [:]
     @State private var resumePositionsByTrackID: [String: TimeInterval] = [:]
     @State private var showsFavouritesOnly = false
     @State private var isSelectingSnapshotSource = false
@@ -113,6 +114,8 @@ public struct PadLibraryView: View {
         catch { message = "Could not load device-local favourites: \(error.localizedDescription)" }
         do { recentlyPlayedAlbumIDs = try preferenceStore.recentlyPlayedAlbumIDs() }
         catch { message = "Could not load device-local play history: \(error.localizedDescription)" }
+        do { playCountsByAlbumID = try preferenceStore.playCountsByAlbumID() }
+        catch { message = "Could not load device-local play counts: \(error.localizedDescription)" }
         do {
             catalogue = try client.localCatalogue()
             snapshotStatus = catalogue == nil ? "No verified snapshot loaded" : "Verified local snapshot available"
@@ -197,7 +200,7 @@ public struct PadLibraryView: View {
                 onSetResumePosition: { setResumePosition($1, for: $0) }
             )
         } label: {
-            PadAlbumRow(album: album, isFavourite: favouriteAlbumIDs.contains(album.id))
+            PadAlbumRow(album: album, isFavourite: favouriteAlbumIDs.contains(album.id), playCount: playCountsByAlbumID[album.id] ?? 0)
         }
     }
 
@@ -216,6 +219,7 @@ public struct PadLibraryView: View {
             try preferenceStore.recordPlayed(albumID: albumID)
             recentlyPlayedAlbumIDs.removeAll { $0 == albumID }
             recentlyPlayedAlbumIDs.insert(albumID, at: 0)
+            playCountsByAlbumID[albumID] = (playCountsByAlbumID[albumID] ?? 0) + 1
         } catch {
             message = "Could not save device-local play history: \(error.localizedDescription)"
         }
@@ -249,8 +253,9 @@ public struct PadLibraryView: View {
 public struct PadAlbumRow: View {
     public let album: ReadOnlyAlbum
     public let isFavourite: Bool
+    public let playCount: Int
 
-    public init(album: ReadOnlyAlbum, isFavourite: Bool = false) { self.album = album; self.isFavourite = isFavourite }
+    public init(album: ReadOnlyAlbum, isFavourite: Bool = false, playCount: Int = 0) { self.album = album; self.isFavourite = isFavourite; self.playCount = playCount }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -263,6 +268,7 @@ public struct PadAlbumRow: View {
                 if let rating = album.rating { Text("\(rating)★") }
                 if album.hasCD { Text("CD") }
                 if album.hasDigital { Text("Digital") }
+                if playCount > 0 { Text("\(playCount) play\(playCount == 1 ? "" : "s")") }
             }
             .font(.caption)
             .foregroundStyle(.secondary)
