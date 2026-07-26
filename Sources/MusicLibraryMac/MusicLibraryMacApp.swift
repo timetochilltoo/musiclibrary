@@ -423,8 +423,11 @@ private struct StorageRootList: View {
                     }
                 }
             }
-            if !library.libraryHealthIssues.isEmpty {
-                Section("Library Health") {
+            Section("Library Health") {
+                if library.libraryHealthIssues.isEmpty {
+                    Label("No catalogue repair items are currently detected.", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                } else {
                     ForEach(library.libraryHealthIssues) { issue in
                         VStack(alignment: .leading) {
                             Label(issue.albumTitle, systemImage: healthSymbol(for: issue.kind))
