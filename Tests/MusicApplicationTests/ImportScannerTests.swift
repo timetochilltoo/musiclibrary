@@ -46,6 +46,24 @@ struct ImportScannerTests {
         #expect(proposals.first?.candidateIDs.count == 2)
     }
 
+    @Test("Path fallback joins disc folders and derives ordered track titles")
+    func pathFallbackMetadata() {
+        let first = EmbeddedMetadataExtractor.pathFallback(relativePath: "Andrew Lloyd Webber/The Phantom Of The Opera [Disc 1]/01 Prologue - The Stage Of Paris.flac")
+        let second = EmbeddedMetadataExtractor.pathFallback(relativePath: "Andrew Lloyd Webber/The Phantom Of The Opera [Disc 2]/02 Overture.flac")
+        #expect(first.title == "Prologue - The Stage Of Paris")
+        #expect(first.trackNumber == 1)
+        #expect(first.albumTitle == "The Phantom Of The Opera")
+        #expect(first.artist == "Andrew Lloyd Webber")
+        #expect(first.discNumber == 1)
+        let batchID = ImportBatchID()
+        let candidates = [first, second].enumerated().map { index, metadata in
+            ImportCandidate(id: ImportCandidateID(), batchID: batchID, status: .proposed, payload: .init(relativePath: "artist/album/\(index).flac", fileName: "\(index).flac", contentTypeIdentifier: "public.audio", fileSize: 1, modifiedAt: nil), errorMessage: nil, metadata: metadata)
+        }
+        let proposals = MetadataProposalGrouper().group(candidates: candidates)
+        #expect(proposals.count == 1)
+        #expect(proposals.first?.discCount == 2)
+    }
+
     @Test("Snapshot publisher writes a checksummed manifest after the revision file")
     func publishesSnapshot() throws {
         let directory = temporaryDirectory()

@@ -14,7 +14,6 @@ struct MusicLibraryMacApp: App {
         WindowGroup("Music Library") {
             LibraryShellView(library: library)
                 .frame(minWidth: 980, minHeight: 640)
-                .task { await library.start() }
                 .onChange(of: scenePhase) { _, phase in
                     if phase == .background { Task { await library.flushPendingSnapshotPublication() } }
                 }
@@ -87,6 +86,11 @@ private struct LibraryShellView: View {
                 ProgressView("Opening catalogue…")
             }
         }
+        .task {
+            await library.start()
+            let restoredItems = await library.playbackURLs(trackIDs: playback.queue.trackIDs)
+            playback.restore(items: restoredItems)
+        }
         .sheet(isPresented: $showsAlbumEditor) { AlbumEditor(library: library) }
         .sheet(isPresented: $showsLocationEditor) { LocationEditor(library: library) }
         .sheet(isPresented: $showsBoxSetEditor) { BoxSetEditor(library: library) }
@@ -115,7 +119,7 @@ private struct LibraryShellView: View {
         }
         .safeAreaInset(edge: .bottom) {
             if playback.isPlaying || playback.currentTitle != "Nothing playing" {
-                HStack { Image(systemName: playback.isPlaying ? "speaker.wave.2.fill" : "pause.circle"); VStack(alignment: .leading) { Text(playback.currentTitle).lineLimit(1); if let audioFormatDescription = playback.audioFormatDescription { Text(audioFormatDescription).font(.caption).foregroundStyle(.secondary).lineLimit(1) } }; Spacer(); Button("Previous", systemImage: "backward.fill") { playback.previous() }.labelStyle(.iconOnly); Button(playback.isPlaying ? "Pause" : "Play") { playback.toggle() }; Button("Next", systemImage: "forward.fill") { playback.next() }.labelStyle(.iconOnly); Menu("Queue") { Button("Shuffle") { playback.shuffle() }; Picker("Repeat", selection: Binding(get: { playback.queue.repeatMode }, set: { playback.setRepeatMode($0) })) { ForEach(RepeatMode.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) } } }; Slider(value: Binding(get: { playback.volume }, set: { playback.setVolume(Float($0)) }), in: 0...1).frame(width: 90); Button("Stop") { playback.stop() } }
+                HStack { Image(systemName: playback.isPlaying ? "speaker.wave.2.fill" : "pause.circle"); VStack(alignment: .leading) { Text(playback.currentTitle).lineLimit(1); if let audioFormatDescription = playback.audioFormatDescription { Text(audioFormatDescription).font(.caption).foregroundStyle(.secondary).lineLimit(1) } }; Spacer(); Button("Previous", systemImage: "backward.fill") { playback.previous() }.labelStyle(.iconOnly); Button(playback.isPlaying ? "Pause" : "Play") { playback.toggle() }; Button("Next", systemImage: "forward.fill") { playback.next() }.labelStyle(.iconOnly); Menu { Button(playback.queue.isShuffled ? "Turn Shuffle Off" : "Shuffle Queue") { playback.toggleShuffle() }; Picker("Repeat", selection: Binding(get: { playback.queue.repeatMode }, set: { playback.setRepeatMode($0) })) { ForEach(RepeatMode.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) } } } label: { Label(playback.queue.isShuffled ? "Shuffle On" : "Queue", systemImage: playback.queue.isShuffled ? "shuffle" : "list.number") }; Slider(value: Binding(get: { playback.volume }, set: { playback.setVolume(Float($0)) }), in: 0...1).frame(width: 90); Button("Stop") { playback.stop() } }
                     .padding(10).background(.bar)
             }
         }

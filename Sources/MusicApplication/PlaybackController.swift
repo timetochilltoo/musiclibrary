@@ -15,6 +15,7 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
     @Published public private(set) var volume: Double = 1
     private var player: AVAudioPlayer?
     private var items: [(url: URL, trackID: TrackID, title: String)] = []
+    private var originalItems: [(url: URL, trackID: TrackID, title: String)] = []
     private let defaultsKey = "MusicLibrary.playbackQueue"
 
     public override init() {
@@ -24,10 +25,18 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
     }
     public func play(items: [(url: URL, trackID: TrackID, title: String)], startingAt index: Int) throws {
         guard items.indices.contains(index) else { throw NSError(domain: "MusicLibrary", code: 1, userInfo: [NSLocalizedDescriptionKey: "No playable queue item was selected."]) }
-        self.items = items; queue.replace(with: items.map(\.trackID), startingAt: index); persist(); try loadCurrentAndPlay()
+        self.items = items
+        originalItems = items
+        queue.replace(with: items.map(\.trackID), startingAt: index)
+        persist()
+        try loadCurrentAndPlay()
     }
     public func toggle() {
-        guard let player else { return }
+        guard let player else {
+            guard let index = queue.currentIndex else { return }
+            loadOrReport(index: index)
+            return
+        }
         if player.isPlaying {
             player.pause()
             isPlaying = false
@@ -62,7 +71,40 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
     }
     public func setVolume(_ value: Float) { volume = Double(min(max(0, value), 1)); player?.volume = Float(volume) }
     public func setRepeatMode(_ mode: RepeatMode) { queue.repeatMode = mode; persist() }
-    public func shuffle() { var generator = SystemRandomNumberGenerator(); queue.shuffle(using: &generator); persist() }
+    public func toggleShuffle() {
+        guard !items.isEmpty else { return }
+        let currentID = queue.currentTrackID
+        if queue.isShuffled {
+            items = originalItems
+            queue.trackIDs = items.map(\.trackID)
+            queue.currentIndex = currentID.flatMap { id in items.firstIndex(where: { $0.trackID == id }) } ?? 0
+            queue.isShuffled = false
+        } else {
+            let current = currentID.flatMap { id in items.first(where: { $0.trackID == id }) } ?? items[0]
+            var remaining = items.filter { $0.trackID != current.trackID }
+            remaining.shuffle()
+            items = [current] + remaining
+            queue.trackIDs = items.map(\.trackID)
+            queue.currentIndex = 0
+            queue.isShuffled = true
+        }
+        persist()
+    }
+
+    public func restore(items restoredItems: [(url: URL, trackID: TrackID, title: String)]) {
+        guard !queue.trackIDs.isEmpty else { return }
+        let itemsByID = Dictionary(uniqueKeysWithValues: restoredItems.map { ($0.trackID, $0) })
+        items = queue.trackIDs.compactMap { itemsByID[$0] }
+        guard !items.isEmpty else {
+            queue.currentIndex = nil
+            persist()
+            return
+        }
+        originalItems = items
+        queue.trackIDs = items.map(\.trackID)
+        queue.currentIndex = min(max(0, queue.currentIndex ?? 0), items.count - 1)
+        currentTitle = items[queue.currentIndex ?? 0].title
+    }
     public func dismissError() { errorMessage = nil }
     private func persist() { if let data = try? JSONEncoder().encode(queue) { UserDefaults.standard.set(data, forKey: defaultsKey) } }
     private func loadCurrentAndPlay() throws { guard let index = queue.currentIndex else { return }; try load(index: index) }

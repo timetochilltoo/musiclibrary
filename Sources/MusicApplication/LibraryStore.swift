@@ -258,7 +258,7 @@ public final class LibraryStore: ObservableObject {
         let extractor = EmbeddedMetadataExtractor()
         for candidate in candidates where candidate.status != .failed {
             guard let payload = candidate.payload else { continue }
-            let metadata = await extractor.extract(url: rootURL.appending(path: payload.relativePath))
+            let metadata = await extractor.extract(url: rootURL.appending(path: payload.relativePath), relativePath: payload.relativePath)
             try await database.saveEmbeddedMetadata(metadata, for: candidate.id)
         }
         let extracted = try await database.importCandidates(batchID: batchID)
@@ -323,6 +323,15 @@ public final class LibraryStore: ObservableObject {
             }
         }
         guard !results.isEmpty else { throw DatabaseError.invalidOperation("This playlist has no currently playable tracks.") }
+        return results
+    }
+    public func playbackURLs(trackIDs: [TrackID]) async -> [(url: URL, trackID: TrackID, title: String)] {
+        var results: [(url: URL, trackID: TrackID, title: String)] = []
+        for trackID in trackIDs {
+            if let asset = try? await playbackURL(for: trackID) {
+                results.append((asset.url, trackID, asset.title))
+            }
+        }
         return results
     }
     public func playlistItems(_ id: PlaylistID) async throws -> [PlaylistItem] { guard let database else { throw DatabaseError.notFound("Catalogue database") }; return try await database.playlistItems(playlistID: id) }

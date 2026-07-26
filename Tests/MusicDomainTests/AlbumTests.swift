@@ -59,4 +59,12 @@ struct PlaybackQueueTests {
         let restored = try JSONDecoder().decode(PlaybackQueue.self, from: JSONEncoder().encode(queue))
         #expect(restored == queue)
     }
+
+    @Test("Starting a new queue clears an earlier shuffle state")
+    func replacingQueueClearsShuffle() {
+        var queue = PlaybackQueue(trackIDs: [TrackID()], currentIndex: 0, isShuffled: true)
+        queue.replace(with: [TrackID(), TrackID()], startingAt: 1)
+        #expect(!queue.isShuffled)
+        #expect(queue.currentIndex == 1)
+    }
 }
