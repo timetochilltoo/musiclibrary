@@ -315,6 +315,8 @@ Storage-root authorization, Import Inbox scanning, embedded common-tag proposal 
 
 Settings → Recently Deleted now also exposes **Permanently Remove…** for a soft-deleted album. It requires a confirmation, removes its catalogue tracks and registered asset paths so a corrected re-import can use those paths, and does not delete or alter any source media file. It refuses records still owned by a box set or referenced from a playlist.
 
+`PlaybackController` now best-effort preloads one next queued file on a dedicated background queue while the current track plays. It never reads or caches a whole music folder; it reuses a prepared `AVAudioPlayer` only when the queue has not changed, otherwise it discards it and safely falls back to opening the selected file. This is intended to reduce SMB next-track startup delay and needs real NAS measurement.
+
 The iPad library view has a **This iPad** section with counts for favourites, recently played albums, albums with local play counts, and saved track positions. Its explanatory text makes the ownership boundary visible: these preference and activity values remain only on that iPad and are never sent to the Mac catalogue.
 
 The iPad toolbar also provides **Local data → Clear Local Playback Activity…** with a destructive confirmation. It clears Recently Played, local playback-start counts, and saved resume positions on that iPad only. It deliberately retains favourites, the verified snapshot cache, source choice, and SMB mappings.
