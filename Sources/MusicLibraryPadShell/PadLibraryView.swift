@@ -89,6 +89,7 @@ public struct PadLibraryView: View {
             .task { loadState() }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { checkForNewerSource() }
+                else { persistCurrentResumePosition() }
             }
             .fileImporter(isPresented: $isSelectingSnapshotSource, allowedContentTypes: [.folder]) { result in
                 selectSnapshotSource(result)
@@ -237,6 +238,11 @@ public struct PadLibraryView: View {
         } catch {
             message = "Could not save device-local resume position: \(error.localizedDescription)"
         }
+    }
+
+    private func persistCurrentResumePosition() {
+        guard let trackID = playback.currentTrackID else { return }
+        setResumePosition(playback.currentPosition, for: trackID)
     }
 }
 

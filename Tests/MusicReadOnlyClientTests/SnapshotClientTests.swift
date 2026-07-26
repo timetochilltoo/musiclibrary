@@ -22,6 +22,7 @@ func companionFavourites() throws {
     #expect(try store.favouriteAlbumIDs() == ["album-2"])
     try store.setResumePosition(42.5, for: "track-1")
     #expect(try store.resumePosition(for: "track-1") == 42.5)
+    #expect(try CompanionPreferenceStore(url: url).resumePosition(for: "track-1") == 42.5)
     try store.setResumePosition(nil, for: "track-1")
     #expect(try store.resumePosition(for: "track-1") == nil)
 }
