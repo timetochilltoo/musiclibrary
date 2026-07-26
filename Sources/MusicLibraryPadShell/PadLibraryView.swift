@@ -63,11 +63,16 @@ public struct PadLibraryView: View {
                             }
                             Divider()
                         }
-                        if filteredAlbums.isEmpty {
+                        if recentlyPlayedAlbums.isEmpty && listedAlbums.isEmpty {
                             Text("No albums match your search.").foregroundStyle(.secondary)
                         }
-                        ForEach(filteredAlbums) { album in
-                            albumLink(album)
+                        if !listedAlbums.isEmpty {
+                            if !recentlyPlayedAlbums.isEmpty {
+                                Text("All albums").font(.caption).foregroundStyle(.secondary)
+                            }
+                            ForEach(listedAlbums) { album in
+                                albumLink(album)
+                            }
                         }
                     } else {
                         Text("Refresh a verified snapshot to browse albums.").foregroundStyle(.secondary)
@@ -198,6 +203,11 @@ public struct PadLibraryView: View {
         guard let catalogue else { return [] }
         let albumsByID = Dictionary(uniqueKeysWithValues: catalogue.albums.map { ($0.id, $0) })
         return recentlyPlayedAlbumIDs.compactMap { albumsByID[$0] }.filter { $0.matches(searchText) && (!showsFavouritesOnly || favouriteAlbumIDs.contains($0.id)) }
+    }
+
+    private var listedAlbums: [ReadOnlyAlbum] {
+        let recentIDs = Set(recentlyPlayedAlbums.map(\.id))
+        return filteredAlbums.filter { !recentIDs.contains($0.id) }
     }
 
     @ViewBuilder private func albumLink(_ album: ReadOnlyAlbum) -> some View {

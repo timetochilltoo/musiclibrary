@@ -311,6 +311,8 @@ Storage-root authorization, Import Inbox scanning, embedded common-tag proposal 
 
 The iPad toolbar also provides **Local data → Clear Local Playback Activity…** with a destructive confirmation. It clears Recently Played, local playback-start counts, and saved resume positions on that iPad only. It deliberately retains favourites, the verified snapshot cache, source choice, and SMB mappings.
 
+When local Recently Played albums are visible in the iPad catalogue, they appear first under **Recently played**. The remaining matching records appear under **All albums**, so the same album is not immediately duplicated; both slices obey the active search and Favourites-only filter.
+
 ## 10. Non-negotiable invariants to preserve
 
 Enforce these with transactions, validation, constraints, and tests where possible:
