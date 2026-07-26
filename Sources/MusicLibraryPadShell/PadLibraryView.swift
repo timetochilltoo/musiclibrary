@@ -50,6 +50,14 @@ public struct PadLibraryView: View {
                     Button("Refresh snapshot") { refreshSnapshot() }.disabled(sourceDirectory == nil)
                     if updateAvailable { Text("A newer published snapshot is available.").font(.caption).foregroundStyle(.orange) }
                 }
+                Section("This iPad") {
+                    LabeledContent("Favourites", value: String(favouriteAlbumIDs.count))
+                    LabeledContent("Recently played", value: String(recentlyPlayedAlbumIDs.count))
+                    LabeledContent("Albums with local play counts", value: String(playCountsByAlbumID.count))
+                    LabeledContent("Saved track positions", value: String(resumePositionsByTrackID.count))
+                    Text("These preferences remain on this iPad and are never sent to the Mac catalogue.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 Section("Albums") {
                     if let catalogue {
                         Text("Revision \(catalogue.catalogueRevision) · \(catalogue.albums.count) albums").font(.caption).foregroundStyle(.secondary)
