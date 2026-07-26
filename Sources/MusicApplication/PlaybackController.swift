@@ -135,18 +135,36 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
         guard items.indices.contains(index) else { return }
         let item = items[index]
         let openedPlayer: AVAudioPlayer
+        let usedPreparedPlayer: Bool
         if let preparedNext, preparedNext.trackID == item.trackID {
             openedPlayer = preparedNext.player
             self.preparedNext = nil
+            usedPreparedPlayer = true
         } else {
             openedPlayer = try AVAudioPlayer(contentsOf: item.url)
+            usedPreparedPlayer = false
         }
-        openedPlayer.delegate = self
-        openedPlayer.volume = Float(volume)
-        openedPlayer.prepareToPlay()
-        guard openedPlayer.play() else {
+        if start(openedPlayer) {
+            adopt(openedPlayer, item: item)
+        } else if usedPreparedPlayer {
+            let fallback = try AVAudioPlayer(contentsOf: item.url)
+            guard start(fallback) else {
+                throw NSError(domain: "MusicLibrary", code: 2, userInfo: [NSLocalizedDescriptionKey: "The audio file could not start playing."])
+            }
+            adopt(fallback, item: item)
+        } else {
             throw NSError(domain: "MusicLibrary", code: 2, userInfo: [NSLocalizedDescriptionKey: "The audio file could not start playing."])
         }
+    }
+
+    private func start(_ player: AVAudioPlayer) -> Bool {
+        player.delegate = self
+        player.volume = Float(volume)
+        player.prepareToPlay()
+        return player.play()
+    }
+
+    private func adopt(_ openedPlayer: AVAudioPlayer, item: (url: URL, trackID: TrackID, title: String)) {
         player = openedPlayer
         currentTitle = item.title
         audioFormatDescription = Self.formatDescription(for: item.url, format: openedPlayer.format)
