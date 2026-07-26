@@ -12,6 +12,7 @@ public struct PadLibraryView: View {
     @State private var sourceDirectory: URL?
     @State private var favouriteAlbumIDs: Set<String> = []
     @State private var recentlyPlayedAlbumIDs: [String] = []
+    @State private var resumePositionsByTrackID: [String: TimeInterval] = [:]
     @State private var showsFavouritesOnly = false
     @State private var isSelectingSnapshotSource = false
     @State private var isSelectingSMBRoot = false
@@ -114,6 +115,11 @@ public struct PadLibraryView: View {
         do {
             catalogue = try client.localCatalogue()
             snapshotStatus = catalogue == nil ? "No verified snapshot loaded" : "Verified local snapshot available"
+            if let catalogue {
+                resumePositionsByTrackID = Dictionary(uniqueKeysWithValues: catalogue.albums.flatMap(\.discs).flatMap(\.tracks).compactMap { track in
+                    (try? preferenceStore.resumePosition(for: track.id)).map { (track.id, $0) }
+                })
+            }
             checkForNewerSource()
         } catch {
             catalogue = nil
@@ -185,7 +191,9 @@ public struct PadLibraryView: View {
                 playback: playback,
                 isFavourite: favouriteAlbumIDs.contains(album.id),
                 onSetFavourite: { setFavourite($0, for: album.id) },
-                onPlayed: { recordPlayed(albumID: album.id) }
+                onPlayed: { recordPlayed(albumID: album.id) },
+                resumePosition: { resumePositionsByTrackID[$0] },
+                onSetResumePosition: { setResumePosition($1, for: $0) }
             )
         } label: {
             PadAlbumRow(album: album, isFavourite: favouriteAlbumIDs.contains(album.id))
@@ -218,6 +226,16 @@ public struct PadLibraryView: View {
             recentlyPlayedAlbumIDs = []
         } catch {
             message = "Could not clear device-local play history: \(error.localizedDescription)"
+        }
+    }
+
+    private func setResumePosition(_ position: TimeInterval?, for trackID: String) {
+        do {
+            try preferenceStore.setResumePosition(position, for: trackID)
+            if let position { resumePositionsByTrackID[trackID] = position }
+            else { resumePositionsByTrackID.removeValue(forKey: trackID) }
+        } catch {
+            message = "Could not save device-local resume position: \(error.localizedDescription)"
         }
     }
 }
@@ -253,14 +271,18 @@ public struct PadAlbumDetailView: View {
     public let isFavourite: Bool
     public let onSetFavourite: (Bool) -> Void
     public let onPlayed: () -> Void
+    public let resumePosition: (String) -> TimeInterval?
+    public let onSetResumePosition: (String, TimeInterval?) -> Void
 
-    public init(album: ReadOnlyAlbum, mappings: [SMBRootMapping] = [], playback: CompanionPlaybackController, isFavourite: Bool = false, onSetFavourite: @escaping (Bool) -> Void = { _ in }, onPlayed: @escaping () -> Void = {}) {
+    public init(album: ReadOnlyAlbum, mappings: [SMBRootMapping] = [], playback: CompanionPlaybackController, isFavourite: Bool = false, onSetFavourite: @escaping (Bool) -> Void = { _ in }, onPlayed: @escaping () -> Void = {}, resumePosition: @escaping (String) -> TimeInterval? = { _ in nil }, onSetResumePosition: @escaping (String, TimeInterval?) -> Void = { _, _ in }) {
         self.album = album
         self.mappings = mappings
         self.playback = playback
         self.isFavourite = isFavourite
         self.onSetFavourite = onSetFavourite
         self.onPlayed = onPlayed
+        self.resumePosition = resumePosition
+        self.onSetResumePosition = onSetResumePosition
     }
 
     public var body: some View {
@@ -322,10 +344,13 @@ public struct PadAlbumDetailView: View {
     }
 
     private func playOrPause(_ track: ReadOnlyTrack) {
-        if playback.currentTrackID == track.id { playback.togglePause() }
+        if playback.currentTrackID == track.id {
+            playback.togglePause()
+            if !playback.isPlaying { onSetResumePosition(track.id, playback.currentPosition) }
+        }
         else {
-            playback.play(track, mappings: mappings)
-            onPlayed()
+            if let currentTrackID = playback.currentTrackID { onSetResumePosition(currentTrackID, playback.currentPosition) }
+            if playback.play(track, mappings: mappings, resumingAt: resumePosition(track.id)) { onPlayed() }
         }
     }
 }

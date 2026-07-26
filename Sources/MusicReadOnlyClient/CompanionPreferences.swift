@@ -6,6 +6,22 @@ public final class CompanionPreferenceStore {
     private struct Preferences: Codable {
         var favouriteAlbumIDs: [String]
         var recentlyPlayedAlbumIDs: [String]
+        var resumePositionsByTrackID: [String: Double]
+
+        init(favouriteAlbumIDs: [String] = [], recentlyPlayedAlbumIDs: [String] = [], resumePositionsByTrackID: [String: Double] = [:]) {
+            self.favouriteAlbumIDs = favouriteAlbumIDs
+            self.recentlyPlayedAlbumIDs = recentlyPlayedAlbumIDs
+            self.resumePositionsByTrackID = resumePositionsByTrackID
+        }
+
+        private enum CodingKeys: String, CodingKey { case favouriteAlbumIDs, recentlyPlayedAlbumIDs, resumePositionsByTrackID }
+
+        init(from decoder: Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            favouriteAlbumIDs = try values.decodeIfPresent([String].self, forKey: .favouriteAlbumIDs) ?? []
+            recentlyPlayedAlbumIDs = try values.decodeIfPresent([String].self, forKey: .recentlyPlayedAlbumIDs) ?? []
+            resumePositionsByTrackID = try values.decodeIfPresent([String: Double].self, forKey: .resumePositionsByTrackID) ?? [:]
+        }
     }
 
     public init(url: URL) {
@@ -43,11 +59,26 @@ public final class CompanionPreferenceStore {
         try save(updated)
     }
 
+    public func resumePosition(for trackID: String) throws -> TimeInterval? {
+        try preferences().resumePositionsByTrackID[trackID]
+    }
+
+    public func setResumePosition(_ position: TimeInterval?, for trackID: String) throws {
+        var updated = try preferences()
+        guard let position, position > 0 else {
+            updated.resumePositionsByTrackID.removeValue(forKey: trackID)
+            try save(updated)
+            return
+        }
+        updated.resumePositionsByTrackID[trackID] = position
+        try save(updated)
+    }
+
     private func preferences() throws -> Preferences {
-        guard FileManager.default.fileExists(atPath: url.path) else { return .init(favouriteAlbumIDs: [], recentlyPlayedAlbumIDs: []) }
+        guard FileManager.default.fileExists(atPath: url.path) else { return .init() }
         let data = try Data(contentsOf: url)
         if let preferences = try? JSONDecoder().decode(Preferences.self, from: data) { return preferences }
-        return .init(favouriteAlbumIDs: try JSONDecoder().decode([String].self, from: data), recentlyPlayedAlbumIDs: [])
+        return .init(favouriteAlbumIDs: try JSONDecoder().decode([String].self, from: data))
     }
 
     private func save(_ preferences: Preferences) throws {
