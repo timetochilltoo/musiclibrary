@@ -119,10 +119,32 @@ private struct LibraryShellView: View {
         }
         .safeAreaInset(edge: .bottom) {
             if playback.isPlaying || playback.currentTitle != "Nothing playing" {
-                HStack { Image(systemName: playback.isPlaying ? "speaker.wave.2.fill" : "pause.circle"); VStack(alignment: .leading) { Text(playback.currentTitle).lineLimit(1); if let audioFormatDescription = playback.audioFormatDescription { Text(audioFormatDescription).font(.caption).foregroundStyle(.secondary).lineLimit(1) } }; Spacer(); Button("Previous", systemImage: "backward.fill") { playback.previous() }.labelStyle(.iconOnly); Button(playback.isPlaying ? "Pause" : "Play") { playback.toggle() }; Button("Next", systemImage: "forward.fill") { playback.next() }.labelStyle(.iconOnly); Menu { Button(playback.queue.isShuffled ? "Turn Shuffle Off" : "Shuffle Queue") { playback.toggleShuffle() }; Picker("Repeat", selection: Binding(get: { playback.queue.repeatMode }, set: { playback.setRepeatMode($0) })) { ForEach(RepeatMode.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) } } } label: { Label(playback.queue.isShuffled ? "Shuffle On" : "Queue", systemImage: playback.queue.isShuffled ? "shuffle" : "list.number") }; Slider(value: Binding(get: { playback.volume }, set: { playback.setVolume(Float($0)) }), in: 0...1).frame(width: 90); Button("Stop") { playback.stop() } }
+                HStack { Image(systemName: playback.isPlaying ? "speaker.wave.2.fill" : "pause.circle"); VStack(alignment: .leading) { Text(playback.currentTitle).lineLimit(1); if let audioFormatDescription = playback.audioFormatDescription { Text(audioFormatDescription).font(.caption).foregroundStyle(.secondary).lineLimit(1) } }; Spacer(); Button("Previous", systemImage: "backward.fill") { playback.previous() }.labelStyle(.iconOnly); Button(playback.isPlaying ? "Pause" : "Play", systemImage: playback.isPlaying ? "pause.fill" : "play.fill") { playback.toggle() }.labelStyle(.iconOnly); Button("Next", systemImage: "forward.fill") { playback.next() }.labelStyle(.iconOnly); Button(playback.queue.isShuffled ? "Turn Shuffle Off" : "Shuffle Queue", systemImage: "shuffle") { playback.toggleShuffle() }.labelStyle(.iconOnly).foregroundStyle(playback.queue.isShuffled ? .primary : .secondary); Button(repeatAccessibilityLabel, systemImage: repeatSystemImage) { cycleRepeatMode() }.labelStyle(.iconOnly).foregroundStyle(playback.queue.repeatMode == .off ? .secondary : .primary); Slider(value: Binding(get: { playback.volume }, set: { playback.setVolume(Float($0)) }), in: 0...1).frame(width: 90); Button("Stop") { playback.stop() } }
                     .padding(10).background(.bar)
             }
         }
+    }
+
+    private var repeatSystemImage: String {
+        playback.queue.repeatMode == .one ? "repeat.1" : "repeat"
+    }
+
+    private var repeatAccessibilityLabel: String {
+        switch playback.queue.repeatMode {
+        case .off: "Repeat Off"
+        case .all: "Repeat All"
+        case .one: "Repeat One"
+        }
+    }
+
+    private func cycleRepeatMode() {
+        let nextMode: RepeatMode
+        switch playback.queue.repeatMode {
+        case .off: nextMode = .all
+        case .all: nextMode = .one
+        case .one: nextMode = .off
+        }
+        playback.setRepeatMode(nextMode)
     }
 
     @ViewBuilder private var content: some View {
