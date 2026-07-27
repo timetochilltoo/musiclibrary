@@ -11,6 +11,7 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
     @Published public private(set) var isPlaying = false
     @Published public private(set) var errorMessage: String?
     @Published public private(set) var currentTitle = "Nothing playing"
+    @Published public private(set) var currentTrackID: TrackID?
     @Published public private(set) var audioFormatDescription: String?
     @Published public private(set) var volume: Double = 1
     private var player: AVAudioPlayer?
@@ -109,6 +110,7 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
         queue.trackIDs = items.map(\.trackID)
         queue.currentIndex = min(max(0, queue.currentIndex ?? 0), items.count - 1)
         currentTitle = items[queue.currentIndex ?? 0].title
+        currentTrackID = items[queue.currentIndex ?? 0].trackID
         schedulePreload()
     }
     public func dismissError() { errorMessage = nil }
@@ -127,6 +129,7 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
         player = nil
         isPlaying = false
         currentTitle = "Playback unavailable"
+        currentTrackID = nil
         audioFormatDescription = nil
         errorMessage = message
         clearNowPlayingInfo()
@@ -167,6 +170,7 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
     private func adopt(_ openedPlayer: AVAudioPlayer, item: (url: URL, trackID: TrackID, title: String)) {
         player = openedPlayer
         currentTitle = item.title
+        currentTrackID = item.trackID
         audioFormatDescription = Self.formatDescription(for: item.url, format: openedPlayer.format)
         isPlaying = true
         updateNowPlayingInfo()

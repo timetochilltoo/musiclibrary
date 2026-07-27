@@ -67,6 +67,7 @@ private struct LibraryShellView: View {
     @State private var showsPlaylistEditor = false
     @State private var albumToEdit: Album?
     @State private var playlistToRename: Playlist?
+    @State private var metadataSelection: MetadataInspectionSelection?
 
     var body: some View {
         NavigationSplitView {
@@ -98,6 +99,7 @@ private struct LibraryShellView: View {
         .sheet(isPresented: $showsPlaylistEditor) { PlaylistEditor(library: library) }
         .sheet(item: $albumToEdit) { album in EditAlbumEditor(library: library, album: album) }
         .sheet(item: $playlistToRename) { playlist in PlaylistRenameEditor(library: library, playlist: playlist) }
+        .sheet(item: $metadataSelection) { selection in TrackMetadataInspector(library: library, selection: selection) }
         .fileImporter(isPresented: $showsStorageRootPicker, allowedContentTypes: [.folder]) { result in
             if case let .success(url) = result { Task { do { try await library.addStorageRoot(url: url) } catch { library.presentError(error) } } }
         }
@@ -119,7 +121,7 @@ private struct LibraryShellView: View {
         }
         .safeAreaInset(edge: .bottom) {
             if playback.isPlaying || playback.currentTitle != "Nothing playing" {
-                HStack { Image(systemName: playback.isPlaying ? "speaker.wave.2.fill" : "pause.circle"); VStack(alignment: .leading) { Text(playback.currentTitle).lineLimit(1); if let audioFormatDescription = playback.audioFormatDescription { Text(audioFormatDescription).font(.caption).foregroundStyle(.secondary).lineLimit(1) } }; Spacer(); Button("Previous", systemImage: "backward.fill") { playback.previous() }.labelStyle(.iconOnly); Button(playback.isPlaying ? "Pause" : "Play", systemImage: playback.isPlaying ? "pause.fill" : "play.fill") { playback.toggle() }.labelStyle(.iconOnly); Button("Next", systemImage: "forward.fill") { playback.next() }.labelStyle(.iconOnly); Button(playback.queue.isShuffled ? "Turn Shuffle Off" : "Shuffle Queue", systemImage: "shuffle") { playback.toggleShuffle() }.labelStyle(.iconOnly).buttonStyle(.borderedProminent).tint(playback.queue.isShuffled ? .blue : .gray.opacity(0.2)); Button(repeatAccessibilityLabel, systemImage: repeatSystemImage) { cycleRepeatMode() }.labelStyle(.iconOnly).buttonStyle(.borderedProminent).tint(playback.queue.repeatMode == .off ? .gray.opacity(0.2) : .blue); Slider(value: Binding(get: { playback.volume }, set: { playback.setVolume(Float($0)) }), in: 0...1).frame(width: 90); Button("Stop") { playback.stop() } }
+                HStack { Image(systemName: playback.isPlaying ? "speaker.wave.2.fill" : "pause.circle"); VStack(alignment: .leading) { Text(playback.currentTitle).lineLimit(1); if let audioFormatDescription = playback.audioFormatDescription { Text(audioFormatDescription).font(.caption).foregroundStyle(.secondary).lineLimit(1) } }; Spacer(); if let trackID = playback.currentTrackID { Button("Show extracted metadata", systemImage: "info.circle") { metadataSelection = .init(trackID: trackID, title: playback.currentTitle) }.labelStyle(.iconOnly) }; Button("Previous", systemImage: "backward.fill") { playback.previous() }.labelStyle(.iconOnly); Button(playback.isPlaying ? "Pause" : "Play", systemImage: playback.isPlaying ? "pause.fill" : "play.fill") { playback.toggle() }.labelStyle(.iconOnly); Button("Next", systemImage: "forward.fill") { playback.next() }.labelStyle(.iconOnly); Button(playback.queue.isShuffled ? "Turn Shuffle Off" : "Shuffle Queue", systemImage: "shuffle") { playback.toggleShuffle() }.labelStyle(.iconOnly).buttonStyle(.borderedProminent).tint(playback.queue.isShuffled ? .blue : .gray.opacity(0.2)); Button(repeatAccessibilityLabel, systemImage: repeatSystemImage) { cycleRepeatMode() }.labelStyle(.iconOnly).buttonStyle(.borderedProminent).tint(playback.queue.repeatMode == .off ? .gray.opacity(0.2) : .blue); Slider(value: Binding(get: { playback.volume }, set: { playback.setVolume(Float($0)) }), in: 0...1).frame(width: 90); Button("Stop") { playback.stop() } }
                     .padding(10).background(.bar)
             }
         }
@@ -340,6 +342,7 @@ private struct StorageRootList: View {
     @State private var relinkProposalToApply: AssetRelinkProposal?
     @State private var restoreManifestURL: URL?
     @State private var albumToPurge: Album?
+    @State private var playlistToPurge: Playlist?
     @State private var showsSnapshotDestinationPicker = false
     @State private var showsMasterRestorePicker = false
 
@@ -436,6 +439,7 @@ private struct StorageRootList: View {
                             VStack(alignment: .leading) { Text(playlist.name); Text("Restore returns this playlist with its saved ordered items.").font(.caption).foregroundStyle(.secondary) }
                             Spacer()
                             Button("Restore") { Task { do { try await library.restorePlaylist(playlist.id) } catch { library.presentError(error) } } }
+                            Button("Permanently Remove…", role: .destructive) { playlistToPurge = playlist }
                         }
                     }
                 }
@@ -540,6 +544,18 @@ private struct StorageRootList: View {
             }
         } message: {
             Text("This permanently removes the deleted catalogue album, its tracks, and its stored NAS file references. It never deletes or changes the source audio files.")
+        }
+        .confirmationDialog("Permanently remove playlist?", isPresented: Binding(get: { playlistToPurge != nil }, set: { if !$0 { playlistToPurge = nil } }), titleVisibility: .visible) {
+            if let playlist = playlistToPurge {
+                Button("Remove Playlist and Its Items", role: .destructive) {
+                    Task {
+                        do { try await library.permanentlyDeletePlaylist(playlist.id); playlistToPurge = nil }
+                        catch { library.presentError(error) }
+                    }
+                }
+            }
+        } message: {
+            Text("This permanently removes the deleted playlist and its ordered entries. It never removes catalogue tracks or source audio files.")
         }
         .confirmationDialog("Restore master database?", isPresented: Binding(get: { restoreManifestURL != nil }, set: { if !$0 { restoreManifestURL = nil } }), titleVisibility: .visible) {
             if let manifestURL = restoreManifestURL {
@@ -986,6 +1002,69 @@ private struct ExternalMetadataComparisonView: View {
     private func apply() { Task { do { try await library.applyExternalMetadataSelection(selection, fields: .init(title: useTitle, artist: useArtist, discCount: useDiscCount, countryCode: useCountryCode, catalogueNumber: useCatalogueNumber)); await onApplied(); dismiss() } catch { errorMessage = error.localizedDescription } } }
 }
 
+private struct MetadataInspectionSelection: Identifiable {
+    let trackID: TrackID
+    let title: String
+    var id: UUID { trackID.rawValue }
+}
+
+private struct TrackMetadataInspector: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var library: LibraryStore
+    let selection: MetadataInspectionSelection
+    @State private var metadata: EmbeddedMetadataPayload?
+    @State private var errorMessage: String?
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("Catalogue track") {
+                    LabeledContent("Title", value: selection.title)
+                }
+                if let metadata {
+                    Section("Extracted fields") {
+                        metadataRow("Title", metadata.title)
+                        metadataRow("Album", metadata.albumTitle)
+                        metadataRow("Artist", metadata.artist)
+                        metadataRow("Album artist", metadata.albumArtist)
+                        metadataRow("Release year", metadata.releaseYear.map(String.init))
+                        metadataRow("Genre", metadata.genre)
+                        metadataRow("Disc number", metadata.discNumber.map(String.init))
+                        metadataRow("Track number", metadata.trackNumber.map(String.init))
+                        metadataRow("Duration", metadata.durationMilliseconds.map { "\($0) ms" })
+                        metadataRow("Provenance", metadata.provenance)
+                    }
+                    Section("Technical audio information") {
+                        metadataRow("Codec", metadata.codec)
+                        metadataRow("Sample rate", metadata.sampleRateHz.map { "\($0) Hz" })
+                        metadataRow("Bit depth", metadata.bitDepth.map { "\($0)-bit" })
+                        metadataRow("Channels", metadata.channelCount.map(String.init))
+                    }
+                    Section("All embedded tags") {
+                        ForEach(metadata.rawTags.keys.sorted(), id: \.self) { key in
+                            LabeledContent(key, value: metadata.rawTags[key] ?? "")
+                        }
+                    }
+                } else {
+                    ContentUnavailableView("Metadata not stored", systemImage: "tag.slash", description: Text("This album was imported before metadata preservation was enabled. Import a fresh test album to inspect its original embedded tags."))
+                }
+            }
+            .navigationTitle("Extracted Metadata")
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
+            .task(id: selection.trackID.rawValue) {
+                do { metadata = try await library.embeddedMetadata(trackID: selection.trackID) }
+                catch { errorMessage = error.localizedDescription }
+            }
+            .alert("Unable to read metadata", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) { Button("OK", role: .cancel) {} } message: { Text(errorMessage ?? "") }
+        }
+        .frame(width: 620, height: 650)
+    }
+
+    @ViewBuilder private func metadataRow(_ name: String, _ value: String?) -> some View {
+        if let value, !value.isEmpty { LabeledContent(name, value: value) }
+    }
+}
+
 private struct AlbumDetail: View {
     @ObservedObject var library: LibraryStore
     @ObservedObject var playback: PlaybackController
@@ -1005,6 +1084,7 @@ private struct AlbumDetail: View {
     @State private var showsAddContributor = false
     @State private var trackForContributor: Track?
     @State private var trackToEdit: Track?
+    @State private var metadataSelection: MetadataInspectionSelection?
     @State private var trackPendingDeletion: Track?
     @State private var contributorToEdit: Contributor?
     @State private var albumCreditToEdit: ContributorCredit?
@@ -1055,6 +1135,7 @@ private struct AlbumDetail: View {
                                     Spacer()
                                     Button("Edit", systemImage: "pencil") { trackToEdit = track }.labelStyle(.iconOnly)
                                     Button("Play", systemImage: "play.fill") { play(track) }.labelStyle(.iconOnly)
+                                    Button("Show embedded metadata", systemImage: "info.circle") { metadataSelection = .init(trackID: track.id, title: track.title) }.labelStyle(.iconOnly)
                                     Menu("Add to Playlist") {
                                         if library.playlists.isEmpty {
                                             Text("Create a playlist from the Playlists sidebar first.")
@@ -1129,6 +1210,7 @@ private struct AlbumDetail: View {
         .sheet(isPresented: $showsAddContributor) { AddContributorEditor(library: library, albumID: album.id, onAdded: { await loadContent() }) }
         .sheet(item: $trackForContributor) { track in AddTrackContributorEditor(library: library, track: track, onAdded: { await loadContent() }) }
         .sheet(item: $trackToEdit) { track in EditTrackEditor(library: library, track: track, onSaved: { await loadContent() }) }
+        .sheet(item: $metadataSelection) { selection in TrackMetadataInspector(library: library, selection: selection) }
         .sheet(item: $contributorToEdit) { contributor in EditContributorEditor(library: library, contributor: contributor, onSaved: { await loadContent() }) }
         .sheet(item: $albumCreditToEdit) { credit in EditAlbumCreditedNameEditor(library: library, albumID: album.id, credit: credit, onSaved: { await loadContent() }) }
         .sheet(item: $trackCreditToEdit) { selection in EditTrackCreditedNameEditor(library: library, track: selection.track, credit: selection.credit, onSaved: { await loadContent() }) }

@@ -9,7 +9,7 @@ struct MusicDatabaseTests {
     func migrationCreatesSchema() async throws {
         let database = try MusicDatabase(url: temporaryDatabaseURL())
         try await database.migrate()
-        #expect(try await database.schemaVersion() == 10)
+        #expect(try await database.schemaVersion() == 11)
         #expect(try await database.currentRevision() == 0)
     }
 
@@ -349,7 +349,7 @@ struct MusicDatabaseTests {
         let batch = try await database.createImportBatch(storageRootID: root.id, sourceDescription: "/Music")
         try await database.recordImportCandidate(batchID: batch.id, payload: .init(relativePath: "Album/song.mp3", fileName: "song.mp3", contentTypeIdentifier: "public.mp3", fileSize: 123, modifiedAt: nil))
         let candidate = try #require(await database.importCandidates(batchID: batch.id).first)
-        try await database.saveEmbeddedMetadata(.init(title: "Song", albumTitle: "Album", artist: "Artist", albumArtist: nil, discNumber: 1, trackNumber: 1, durationMilliseconds: 1000, rawTags: [:]), for: candidate.id)
+        try await database.saveEmbeddedMetadata(.init(title: "Song", albumTitle: "Album", artist: "Artist", albumArtist: nil, discNumber: 1, trackNumber: 1, durationMilliseconds: 1000, rawTags: ["TITLE": "Song"], provenance: "test", releaseYear: 2001, genre: "Classical", codec: "FLAC", sampleRateHz: 44_100, bitDepth: 16, channelCount: 2), for: candidate.id)
         try await database.rebuildImportReleaseProposals(batchID: batch.id, drafts: [.init(title: "Album", artist: "Artist", discCount: 1, confidence: 0.9, candidateIDs: [candidate.id])])
         let proposal = try #require(await database.importReleaseProposals(batchID: batch.id).first)
         try await database.updateImportReleaseProposal(proposal.id, status: .approved)
@@ -361,6 +361,9 @@ struct MusicDatabaseTests {
         #expect(try await database.libraryHealthIssues().map(\.kind) == [.offline, .missingArtwork])
         let disc = try #require(await database.discs(albumID: firstAlbumID).first)
         let track = try #require(await database.tracks(discID: disc.id).first)
+        let metadata = try #require(await database.embeddedMetadata(trackID: track.id))
+        #expect(metadata.rawTags["TITLE"] == "Song")
+        #expect(metadata.codec == "FLAC")
         let playlist = try await database.createPlaylist(name: "Temporary")
         try await database.addTrack(track.id, to: playlist.id)
         try await database.deleteTrack(track.id)
@@ -463,6 +466,9 @@ struct MusicDatabaseTests {
         #expect(try await database.deletedPlaylists().map(\.id) == [playlist.id])
         try await database.restorePlaylist(playlist.id)
         #expect(try await database.playlists().map(\.id) == [playlist.id])
+        try await database.deletePlaylist(playlist.id)
+        try await database.permanentlyDeletePlaylist(playlist.id)
+        #expect(try await database.deletedPlaylists().isEmpty)
     }
 
     @Test("Published catalogue contains ordered read-only disc and track rows")

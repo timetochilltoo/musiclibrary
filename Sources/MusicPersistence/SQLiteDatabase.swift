@@ -318,8 +318,8 @@ public actor MusicDatabase {
                 let rootStatus = try Self.prepare("SELECT status FROM storage_root WHERE id = ?;", on: connection)
                 defer { sqlite3_finalize(rootStatus) }; try Self.bind(rootID.description, at: 1, to: rootStatus); guard sqlite3_step(rootStatus) == SQLITE_ROW else { throw DatabaseError.notFound("Storage root") }
                 let availability = Self.text(at: 0, from: rootStatus) == StorageRootStatus.available.rawValue ? DigitalAssetAvailability.available.rawValue : DigitalAssetAvailability.rootOffline.rawValue
-                let asset = try Self.prepare("INSERT INTO digital_asset (id, track_id, storage_root_id, relative_path, file_size, modified_at, duration_ms, codec, container, sample_rate_hz, bit_depth, channel_count, origin, availability) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);", on: connection)
-                defer { sqlite3_finalize(asset) }; try Self.bind(DigitalAssetID().description, at: 1, to: asset); try Self.bind(trackID.description, at: 2, to: asset); try Self.bind(rootID.description, at: 3, to: asset); try Self.bind(payload.relativePath, at: 4, to: asset); try Self.bind(payload.fileSize, at: 5, to: asset); try Self.bind(payload.modifiedAt.map(Self.milliseconds), at: 6, to: asset); try Self.bind(metadata.durationMilliseconds.map(Int64.init), at: 7, to: asset); try Self.bind(metadata.codec, at: 8, to: asset); try Self.bind(metadata.codec, at: 9, to: asset); try Self.bind(metadata.sampleRateHz.map(Int64.init), at: 10, to: asset); try Self.bind(metadata.bitDepth.map(Int64.init), at: 11, to: asset); try Self.bind(metadata.channelCount.map(Int64.init), at: 12, to: asset); try Self.bind(metadata.provenance, at: 13, to: asset); try Self.bind(availability, at: 14, to: asset); try Self.stepDone(asset, connection: connection)
+                let asset = try Self.prepare("INSERT INTO digital_asset (id, track_id, storage_root_id, relative_path, file_size, modified_at, duration_ms, codec, container, sample_rate_hz, bit_depth, channel_count, origin, availability, embedded_metadata_payload) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);", on: connection)
+                defer { sqlite3_finalize(asset) }; try Self.bind(DigitalAssetID().description, at: 1, to: asset); try Self.bind(trackID.description, at: 2, to: asset); try Self.bind(rootID.description, at: 3, to: asset); try Self.bind(payload.relativePath, at: 4, to: asset); try Self.bind(payload.fileSize, at: 5, to: asset); try Self.bind(payload.modifiedAt.map(Self.milliseconds), at: 6, to: asset); try Self.bind(metadata.durationMilliseconds.map(Int64.init), at: 7, to: asset); try Self.bind(metadata.codec, at: 8, to: asset); try Self.bind(metadata.codec, at: 9, to: asset); try Self.bind(metadata.sampleRateHz.map(Int64.init), at: 10, to: asset); try Self.bind(metadata.bitDepth.map(Int64.init), at: 11, to: asset); try Self.bind(metadata.channelCount.map(Int64.init), at: 12, to: asset); try Self.bind(metadata.provenance, at: 13, to: asset); try Self.bind(availability, at: 14, to: asset); try Self.bind(try JSONEncoder().encode(metadata), at: 15, to: asset); try Self.stepDone(asset, connection: connection)
             }
             guard !discs.isEmpty else { throw DatabaseError.invalidOperation("The proposal has no readable metadata candidates.") }
             if let releaseYear {
@@ -380,6 +380,14 @@ public actor MusicDatabase {
         guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
         guard let rawRoot = Self.text(at: 1, from: statement), let rootUUID = UUID(uuidString: rawRoot), let rawAvailability = Self.text(at: 3, from: statement), let availability = DigitalAssetAvailability(rawValue: rawAvailability) else { throw DatabaseError.invalidIdentifier("Playback asset") }
         return .init(trackID: trackID, title: Self.text(at: 0, from: statement) ?? "", storageRootID: .init(rawValue: rootUUID), relativePath: Self.text(at: 2, from: statement) ?? "", availability: availability)
+    }
+
+    public func embeddedMetadata(trackID: TrackID) throws -> EmbeddedMetadataPayload? {
+        let statement = try Self.prepare("SELECT embedded_metadata_payload FROM digital_asset WHERE track_id = ? ORDER BY id LIMIT 1;", on: connection)
+        defer { sqlite3_finalize(statement) }
+        try Self.bind(trackID.description, at: 1, to: statement)
+        guard sqlite3_step(statement) == SQLITE_ROW, let data = Self.data(at: 0, from: statement) else { return nil }
+        return try? JSONDecoder().decode(EmbeddedMetadataPayload.self, from: data)
     }
 
     public func softDeleteAlbum(_ id: AlbumID) throws {
@@ -608,6 +616,16 @@ public actor MusicDatabase {
             defer { sqlite3_finalize(statement) }
             try Self.bind(Self.milliseconds(Date()), at: 1, to: statement); try Self.bind(id.description, at: 2, to: statement)
             try Self.stepDone(statement, connection: connection)
+            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Deleted playlist") }
+            try incrementRevision()
+        }
+    }
+
+    public func permanentlyDeletePlaylist(_ id: PlaylistID) throws {
+        try transaction {
+            let statement = try Self.prepare("DELETE FROM playlist WHERE id = ? AND deleted_at IS NOT NULL;", on: connection)
+            defer { sqlite3_finalize(statement) }
+            try Self.bind(id.description, at: 1, to: statement); try Self.stepDone(statement, connection: connection)
             guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Deleted playlist") }
             try incrementRevision()
         }
