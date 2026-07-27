@@ -6,6 +6,9 @@ public struct EmbeddedMetadataExtractor: Sendable {
     public init() {}
 
     public func extract(url: URL, relativePath: String) async -> EmbeddedMetadataPayload {
+        if let flac = try? FLACMetadataReader().read(url: url) {
+            return metadata(from: flac, relativePath: relativePath)
+        }
         let asset = AVURLAsset(url: url)
         let items = (try? await asset.load(.commonMetadata)) ?? []
         let embeddedTitle = value(for: .commonKeyTitle, in: items)
@@ -27,6 +30,41 @@ public struct EmbeddedMetadataExtractor: Sendable {
         if embeddedAlbum == nil { rawTags["albumSource"] = "path" }
         if embeddedArtist == nil, fallback.artist != nil { rawTags["artistSource"] = "path" }
         return .init(title: title, albumTitle: album, artist: artist, albumArtist: nil, discNumber: fallback.discNumber, trackNumber: fallback.trackNumber, durationMilliseconds: duration, rawTags: rawTags)
+    }
+
+    private func metadata(from flac: FLACMetadataReader.Result, relativePath: String) -> EmbeddedMetadataPayload {
+        let fallback = Self.pathFallback(relativePath: relativePath)
+        func tag(_ names: String...) -> String? {
+            names.lazy.compactMap { flac.tags[$0] }.first?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlank
+        }
+        let title = tag("TITLE") ?? fallback.title
+        let album = tag("ALBUM") ?? fallback.albumTitle
+        let artist = tag("ARTIST") ?? fallback.artist
+        let albumArtist = tag("ALBUMARTIST", "ALBUM ARTIST")
+        let discNumber = number(from: tag("DISCNUMBER", "DISC")) ?? fallback.discNumber
+        let trackNumber = number(from: tag("TRACKNUMBER", "TRACK")) ?? fallback.trackNumber
+        let releaseYear = year(from: tag("DATE", "YEAR", "ORIGINALDATE"))
+        let genre = tag("GENRE")
+        var rawTags = flac.tags
+        rawTags["codec"] = "FLAC"
+        if let sampleRate = flac.sampleRateHz { rawTags["sampleRateHz"] = String(sampleRate) }
+        if let bitDepth = flac.bitDepth { rawTags["bitDepth"] = String(bitDepth) }
+        if let channels = flac.channelCount { rawTags["channels"] = String(channels) }
+        if title == fallback.title, flac.tags["TITLE"] == nil { rawTags["titleSource"] = "path" }
+        if album == fallback.albumTitle, flac.tags["ALBUM"] == nil { rawTags["albumSource"] = "path" }
+        if artist == fallback.artist, flac.tags["ARTIST"] == nil { rawTags["artistSource"] = "path" }
+        return .init(title: title, albumTitle: album, artist: artist, albumArtist: albumArtist, discNumber: discNumber, trackNumber: trackNumber, durationMilliseconds: flac.durationMilliseconds, rawTags: rawTags, provenance: "flac-vorbis-comments", releaseYear: releaseYear, genre: genre, codec: "FLAC", sampleRateHz: flac.sampleRateHz, bitDepth: flac.bitDepth, channelCount: flac.channelCount)
+    }
+
+    private func number(from value: String?) -> Int? {
+        guard let value else { return nil }
+        let digits = value.prefix { $0.isNumber }
+        return Int(digits)
+    }
+
+    private func year(from value: String?) -> Int? {
+        guard let value, let range = value.range(of: #"\b[0-9]{4}\b"#, options: .regularExpression) else { return nil }
+        return Int(value[range])
     }
 
     public static func pathFallback(relativePath: String) -> EmbeddedMetadataPayload {

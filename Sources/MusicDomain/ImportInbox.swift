@@ -63,11 +63,17 @@ public struct EmbeddedMetadataPayload: Codable, Equatable, Sendable {
     public let discNumber: Int?
     public let trackNumber: Int?
     public let durationMilliseconds: Int?
+    public let releaseYear: Int?
+    public let genre: String?
+    public let codec: String?
+    public let sampleRateHz: Int?
+    public let bitDepth: Int?
+    public let channelCount: Int?
     public let rawTags: [String: String]
     public let provenance: String
 
-    public init(title: String?, albumTitle: String?, artist: String?, albumArtist: String?, discNumber: Int?, trackNumber: Int?, durationMilliseconds: Int?, rawTags: [String: String], provenance: String = "embedded-tags") {
-        self.title = title; self.albumTitle = albumTitle; self.artist = artist; self.albumArtist = albumArtist; self.discNumber = discNumber; self.trackNumber = trackNumber; self.durationMilliseconds = durationMilliseconds; self.rawTags = rawTags; self.provenance = provenance
+    public init(title: String?, albumTitle: String?, artist: String?, albumArtist: String?, discNumber: Int?, trackNumber: Int?, durationMilliseconds: Int?, rawTags: [String: String], provenance: String = "embedded-tags", releaseYear: Int? = nil, genre: String? = nil, codec: String? = nil, sampleRateHz: Int? = nil, bitDepth: Int? = nil, channelCount: Int? = nil) {
+        self.title = title; self.albumTitle = albumTitle; self.artist = artist; self.albumArtist = albumArtist; self.discNumber = discNumber; self.trackNumber = trackNumber; self.durationMilliseconds = durationMilliseconds; self.releaseYear = releaseYear; self.genre = genre; self.codec = codec; self.sampleRateHz = sampleRateHz; self.bitDepth = bitDepth; self.channelCount = channelCount; self.rawTags = rawTags; self.provenance = provenance
     }
 }
 

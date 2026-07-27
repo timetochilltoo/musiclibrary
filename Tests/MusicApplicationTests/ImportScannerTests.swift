@@ -64,6 +64,30 @@ struct ImportScannerTests {
         #expect(proposals.first?.discCount == 2)
     }
 
+    @Test("FLAC Vorbis comments provide catalogue metadata and technical details")
+    func readsFLACVorbisComments() async throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let file = directory.appending(path: "01 ignored.flac")
+        try makeTaggedFLAC().write(to: file)
+
+        let metadata = await EmbeddedMetadataExtractor().extract(url: file, relativePath: "容祖兒/Joey/01 ignored.flac")
+        #expect(metadata.title == "痛愛")
+        #expect(metadata.artist == "容祖兒")
+        #expect(metadata.albumTitle == "Joey")
+        #expect(metadata.albumArtist == "容祖兒")
+        #expect(metadata.trackNumber == 1)
+        #expect(metadata.discNumber == 1)
+        #expect(metadata.releaseYear == 2001)
+        #expect(metadata.genre == "Chinese Pop")
+        #expect(metadata.codec == "FLAC")
+        #expect(metadata.sampleRateHz == 44_100)
+        #expect(metadata.bitDepth == 16)
+        #expect(metadata.channelCount == 2)
+        #expect(metadata.durationMilliseconds == 3_000)
+    }
+
     @Test("Snapshot publisher writes a checksummed manifest after the revision file")
     func publishesSnapshot() throws {
         let directory = temporaryDirectory()
@@ -164,5 +188,22 @@ struct ImportScannerTests {
 
     private func temporaryDirectory() -> URL {
         FileManager.default.temporaryDirectory.appending(path: "ImportScannerTests-\(UUID().uuidString)", directoryHint: .isDirectory)
+    }
+
+    private func makeTaggedFLAC() -> Data {
+        func littleEndian(_ value: UInt32) -> [UInt8] { [UInt8(value & 0xff), UInt8((value >> 8) & 0xff), UInt8((value >> 16) & 0xff), UInt8((value >> 24) & 0xff)] }
+        func metadataBlock(type: UInt8, isLast: Bool, payload: [UInt8]) -> [UInt8] {
+            [isLast ? type | 0x80 : type, UInt8((payload.count >> 16) & 0xff), UInt8((payload.count >> 8) & 0xff), UInt8(payload.count & 0xff)] + payload
+        }
+        let packed = (UInt64(44_100) << 44) | (UInt64(1) << 41) | (UInt64(15) << 36) | UInt64(132_300)
+        var streamInfo = Array(repeating: UInt8(0), count: 34)
+        for offset in 0..<8 { streamInfo[10 + offset] = UInt8((packed >> UInt64((7 - offset) * 8)) & 0xff) }
+        let comments = ["TITLE=痛愛", "ARTIST=容祖兒", "ALBUM=Joey", "ALBUMARTIST=容祖兒", "DATE=2001", "TRACKNUMBER=1/10", "DISCNUMBER=1", "GENRE=Chinese Pop"]
+        var vorbis = littleEndian(0) + littleEndian(UInt32(comments.count))
+        for comment in comments {
+            let bytes = Array(comment.utf8)
+            vorbis += littleEndian(UInt32(bytes.count)) + bytes
+        }
+        return Data(Array("fLaC".utf8) + metadataBlock(type: 0, isLast: false, payload: streamInfo) + metadataBlock(type: 4, isLast: true, payload: vorbis))
     }
 }

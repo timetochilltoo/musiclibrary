@@ -285,18 +285,19 @@ public actor MusicDatabase {
     public func confirmImportReleaseProposal(_ proposalID: UUID) throws -> AlbumID {
         var result: AlbumID?
         try transaction {
-            let proposal = try Self.prepare("SELECT proposal.batch_id, proposal.title, proposal.disc_count, proposal.status, proposal.created_album_id, batch.storage_root_id, proposal.country_code, proposal.catalogue_number FROM import_release_proposal proposal JOIN import_batch batch ON batch.id = proposal.batch_id WHERE proposal.id = ?;", on: connection)
+            let proposal = try Self.prepare("SELECT proposal.batch_id, proposal.title, proposal.disc_count, proposal.status, proposal.created_album_id, batch.storage_root_id, proposal.country_code, proposal.catalogue_number, proposal.artist FROM import_release_proposal proposal JOIN import_batch batch ON batch.id = proposal.batch_id WHERE proposal.id = ?;", on: connection)
             defer { sqlite3_finalize(proposal) }; try Self.bind(proposalID.uuidString.lowercased(), at: 1, to: proposal)
             guard sqlite3_step(proposal) == SQLITE_ROW, let rawBatch = Self.text(at: 0, from: proposal), let batchUUID = UUID(uuidString: rawBatch), let title = Self.text(at: 1, from: proposal), let rawStatus = Self.text(at: 3, from: proposal) else { throw DatabaseError.notFound("Import release proposal") }
             if let rawAlbum = Self.text(at: 4, from: proposal), let albumUUID = UUID(uuidString: rawAlbum) { result = .init(rawValue: albumUUID); return }
             guard rawStatus == ImportProposalStatus.approved.rawValue else { throw DatabaseError.invalidOperation("Approve the proposal before creating catalogue records.") }
             guard let rawRoot = Self.text(at: 5, from: proposal), let rootUUID = UUID(uuidString: rawRoot) else { throw DatabaseError.notFound("Storage root") }
-            let batchID = ImportBatchID(rawValue: batchUUID); let rootID = StorageRootID(rawValue: rootUUID); let albumID = AlbumID(); let now = Self.milliseconds(Date())
+            let batchID = ImportBatchID(rawValue: batchUUID); let rootID = StorageRootID(rawValue: rootUUID); let albumID = AlbumID(); let now = Self.milliseconds(Date()); let proposalArtist = Self.text(at: 8, from: proposal)?.trimmingCharacters(in: .whitespacesAndNewlines)
             let album = try Self.prepare("INSERT INTO album (id, title, country_code, catalogue_number, disc_count, has_cd, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?);", on: connection)
             defer { sqlite3_finalize(album) }; try Self.bind(albumID.description, at: 1, to: album); try Self.bind(title, at: 2, to: album); try Self.bind(Self.text(at: 6, from: proposal), at: 3, to: album); try Self.bind(Self.text(at: 7, from: proposal), at: 4, to: album); try Self.bind(Self.int(at: 2, from: proposal) ?? 1, at: 5, to: album); try Self.bind(now, at: 6, to: album); try Self.bind(now, at: 7, to: album); try Self.stepDone(album, connection: connection)
             let candidates = try Self.prepare("SELECT id, proposed_payload, metadata_payload FROM import_candidate WHERE batch_id = ? AND proposal_id = ? ORDER BY rowid;", on: connection)
             defer { sqlite3_finalize(candidates) }; try Self.bind(batchID.description, at: 1, to: candidates); try Self.bind(proposalID.uuidString.lowercased(), at: 2, to: candidates)
             var discs: [Int: DiscID] = [:]
+            var releaseYear: Int?
             while sqlite3_step(candidates) == SQLITE_ROW {
                 guard let payloadData = Self.data(at: 1, from: candidates), let payload = try? JSONDecoder().decode(ImportCandidatePayload.self, from: payloadData), let metadataData = Self.data(at: 2, from: candidates), let metadata = try? JSONDecoder().decode(EmbeddedMetadataPayload.self, from: metadataData) else { continue }
                 let discNumber = max(1, metadata.discNumber ?? 1)
@@ -308,6 +309,7 @@ public actor MusicDatabase {
                     defer { sqlite3_finalize(insertDisc) }; try Self.bind(discID.description, at: 1, to: insertDisc); try Self.bind(albumID.description, at: 2, to: insertDisc); try Self.bind(Int64(discNumber), at: 3, to: insertDisc); try Self.stepDone(insertDisc, connection: connection)
                 }
                 let trackID = TrackID()
+                if releaseYear == nil { releaseYear = metadata.releaseYear }
                 let trackNumber: Int
                 if let explicitNumber = metadata.trackNumber { trackNumber = explicitNumber }
                 else { trackNumber = try Self.nextNumber("SELECT COALESCE(MAX(number), 0) + 1 FROM track WHERE disc_id = ?;", ownerID: discID.description, on: connection) }
@@ -316,10 +318,15 @@ public actor MusicDatabase {
                 let rootStatus = try Self.prepare("SELECT status FROM storage_root WHERE id = ?;", on: connection)
                 defer { sqlite3_finalize(rootStatus) }; try Self.bind(rootID.description, at: 1, to: rootStatus); guard sqlite3_step(rootStatus) == SQLITE_ROW else { throw DatabaseError.notFound("Storage root") }
                 let availability = Self.text(at: 0, from: rootStatus) == StorageRootStatus.available.rawValue ? DigitalAssetAvailability.available.rawValue : DigitalAssetAvailability.rootOffline.rawValue
-                let asset = try Self.prepare("INSERT INTO digital_asset (id, track_id, storage_root_id, relative_path, file_size, modified_at, duration_ms, origin, availability) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);", on: connection)
-                defer { sqlite3_finalize(asset) }; try Self.bind(DigitalAssetID().description, at: 1, to: asset); try Self.bind(trackID.description, at: 2, to: asset); try Self.bind(rootID.description, at: 3, to: asset); try Self.bind(payload.relativePath, at: 4, to: asset); try Self.bind(payload.fileSize, at: 5, to: asset); try Self.bind(payload.modifiedAt.map(Self.milliseconds), at: 6, to: asset); try Self.bind(metadata.durationMilliseconds.map(Int64.init), at: 7, to: asset); try Self.bind(metadata.provenance, at: 8, to: asset); try Self.bind(availability, at: 9, to: asset); try Self.stepDone(asset, connection: connection)
+                let asset = try Self.prepare("INSERT INTO digital_asset (id, track_id, storage_root_id, relative_path, file_size, modified_at, duration_ms, codec, container, sample_rate_hz, bit_depth, channel_count, origin, availability) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);", on: connection)
+                defer { sqlite3_finalize(asset) }; try Self.bind(DigitalAssetID().description, at: 1, to: asset); try Self.bind(trackID.description, at: 2, to: asset); try Self.bind(rootID.description, at: 3, to: asset); try Self.bind(payload.relativePath, at: 4, to: asset); try Self.bind(payload.fileSize, at: 5, to: asset); try Self.bind(payload.modifiedAt.map(Self.milliseconds), at: 6, to: asset); try Self.bind(metadata.durationMilliseconds.map(Int64.init), at: 7, to: asset); try Self.bind(metadata.codec, at: 8, to: asset); try Self.bind(metadata.codec, at: 9, to: asset); try Self.bind(metadata.sampleRateHz.map(Int64.init), at: 10, to: asset); try Self.bind(metadata.bitDepth.map(Int64.init), at: 11, to: asset); try Self.bind(metadata.channelCount.map(Int64.init), at: 12, to: asset); try Self.bind(metadata.provenance, at: 13, to: asset); try Self.bind(availability, at: 14, to: asset); try Self.stepDone(asset, connection: connection)
             }
             guard !discs.isEmpty else { throw DatabaseError.invalidOperation("The proposal has no readable metadata candidates.") }
+            if let releaseYear {
+                let updateYear = try Self.prepare("UPDATE album SET release_year = ? WHERE id = ?;", on: connection)
+                defer { sqlite3_finalize(updateYear) }; try Self.bind(Int64(releaseYear), at: 1, to: updateYear); try Self.bind(albumID.description, at: 2, to: updateYear); try Self.stepDone(updateYear, connection: connection)
+            }
+            if let proposalArtist, !proposalArtist.isEmpty { try Self.addImportedAlbumArtist(named: proposalArtist, to: albumID, on: connection) }
             let confirm = try Self.prepare("UPDATE import_release_proposal SET created_album_id = ?, confirmed_at = ?, updated_at = ? WHERE id = ?;", on: connection)
             defer { sqlite3_finalize(confirm) }; try Self.bind(albumID.description, at: 1, to: confirm); try Self.bind(now, at: 2, to: confirm); try Self.bind(now, at: 3, to: confirm); try Self.bind(proposalID.uuidString.lowercased(), at: 4, to: confirm); try Self.stepDone(confirm, connection: connection)
             try incrementRevision(); result = albumID
@@ -1582,6 +1589,25 @@ public actor MusicDatabase {
         let settle = try prepare("UPDATE disc SET number = number - 1000001 WHERE album_id = ? AND number > 1000000;", on: connection)
         defer { sqlite3_finalize(settle) }
         try bind(albumID, at: 1, to: settle); try stepDone(settle, connection: connection)
+    }
+
+    private static func addImportedAlbumArtist(named name: String, to albumID: AlbumID, on connection: OpaquePointer) throws {
+        let lookup = try prepare("SELECT id FROM contributor WHERE name = ? COLLATE NOCASE LIMIT 1;", on: connection)
+        defer { sqlite3_finalize(lookup) }
+        try bind(name, at: 1, to: lookup)
+        let contributorID: String
+        if sqlite3_step(lookup) == SQLITE_ROW, let existing = text(at: 0, from: lookup) {
+            contributorID = existing
+        } else {
+            contributorID = ContributorID().description
+            let now = milliseconds(Date())
+            let insert = try prepare("INSERT INTO contributor (id, name, created_at, updated_at) VALUES (?, ?, ?, ?);", on: connection)
+            defer { sqlite3_finalize(insert) }
+            try bind(contributorID, at: 1, to: insert); try bind(name, at: 2, to: insert); try bind(now, at: 3, to: insert); try bind(now, at: 4, to: insert); try stepDone(insert, connection: connection)
+        }
+        let credit = try prepare("INSERT INTO album_contributor (album_id, contributor_id, role, position) VALUES (?, ?, ?, 0);", on: connection)
+        defer { sqlite3_finalize(credit) }
+        try bind(albumID.description, at: 1, to: credit); try bind(contributorID, at: 2, to: credit); try bind(ContributorRole.albumArtist.rawValue, at: 3, to: credit); try stepDone(credit, connection: connection)
     }
 
     private static func nextBoxPosition(for boxSetID: BoxSetID, on connection: OpaquePointer) throws -> Int {
