@@ -703,6 +703,8 @@ private struct PlaylistDetail: View {
             HStack {
                 Text("\(item.position). \(item.title)")
                 Spacer()
+                Button("Play", systemImage: "play.fill") { play(item) }
+                    .labelStyle(.iconOnly)
                 Button("Move Earlier", systemImage: "arrow.up") { move(item, to: item.position - 1) }
                     .labelStyle(.iconOnly).disabled(item.position == 1)
                 Button("Move Later", systemImage: "arrow.down") { move(item, to: item.position + 1) }
@@ -739,6 +741,20 @@ private struct PlaylistDetail: View {
         Task {
             do {
                 try playback.play(items: try await library.playbackURLs(playlistID: playlist.id), startingAt: 0)
+            } catch {
+                library.presentError(error)
+            }
+        }
+    }
+
+    private func play(_ item: PlaylistItem) {
+        Task {
+            do {
+                let playableItems = try await library.playbackURLs(playlistID: playlist.id)
+                guard let index = playableItems.firstIndex(where: { $0.trackID == item.trackID }) else {
+                    throw NSError(domain: "MusicLibrary", code: 3, userInfo: [NSLocalizedDescriptionKey: "This playlist item has no currently playable audio file."])
+                }
+                try playback.play(items: playableItems, startingAt: index)
             } catch {
                 library.presentError(error)
             }
