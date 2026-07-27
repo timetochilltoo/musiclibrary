@@ -1049,10 +1049,7 @@ public actor MusicDatabase {
             defer { sqlite3_finalize(delete) }
             try Self.bind(discID.description, at: 1, to: delete)
             try Self.stepDone(delete, connection: connection)
-            let reorder = try Self.prepare("UPDATE disc SET number = number - 1 WHERE album_id = ? AND number > ?;", on: connection)
-            defer { sqlite3_finalize(reorder) }
-            try Self.bind(albumID, at: 1, to: reorder); try Self.bind(number, at: 2, to: reorder)
-            try Self.stepDone(reorder, connection: connection)
+            try Self.closeDiscNumberGap(albumID: albumID, after: number, on: connection)
             try incrementRevision()
         }
     }
@@ -1107,8 +1104,7 @@ public actor MusicDatabase {
             try Self.stepDone(deleteAssets, connection: connection)
             let delete = try Self.prepare("DELETE FROM track WHERE id = ?;", on: connection)
             defer { sqlite3_finalize(delete) }; try Self.bind(trackID.description, at: 1, to: delete); try Self.stepDone(delete, connection: connection)
-            let reorder = try Self.prepare("UPDATE track SET number = number - 1 WHERE disc_id = ? AND number > ?;", on: connection)
-            defer { sqlite3_finalize(reorder) }; try Self.bind(discID, at: 1, to: reorder); try Self.bind(number, at: 2, to: reorder); try Self.stepDone(reorder, connection: connection)
+            try Self.closeTrackNumberGap(discID: discID, after: number, on: connection)
             try incrementRevision()
         }
     }
@@ -1566,6 +1562,26 @@ public actor MusicDatabase {
         defer { sqlite3_finalize(statement) }
         try bind(value, at: 1, to: statement)
         return sqlite3_step(statement) == SQLITE_ROW
+    }
+
+    /// SQLite checks UNIQUE(disc_id, number) after each updated row. Move the affected
+    /// rows out of the normal range first, then bring them back one position earlier.
+    private static func closeTrackNumberGap(discID: String, after number: Int64, on connection: OpaquePointer) throws {
+        let lift = try prepare("UPDATE track SET number = number + 1000000 WHERE disc_id = ? AND number > ?;", on: connection)
+        defer { sqlite3_finalize(lift) }
+        try bind(discID, at: 1, to: lift); try bind(number, at: 2, to: lift); try stepDone(lift, connection: connection)
+        let settle = try prepare("UPDATE track SET number = number - 1000001 WHERE disc_id = ? AND number > 1000000;", on: connection)
+        defer { sqlite3_finalize(settle) }
+        try bind(discID, at: 1, to: settle); try stepDone(settle, connection: connection)
+    }
+
+    private static func closeDiscNumberGap(albumID: String, after number: Int64, on connection: OpaquePointer) throws {
+        let lift = try prepare("UPDATE disc SET number = number + 1000000 WHERE album_id = ? AND number > ?;", on: connection)
+        defer { sqlite3_finalize(lift) }
+        try bind(albumID, at: 1, to: lift); try bind(number, at: 2, to: lift); try stepDone(lift, connection: connection)
+        let settle = try prepare("UPDATE disc SET number = number - 1000001 WHERE album_id = ? AND number > 1000000;", on: connection)
+        defer { sqlite3_finalize(settle) }
+        try bind(albumID, at: 1, to: settle); try stepDone(settle, connection: connection)
     }
 
     private static func nextBoxPosition(for boxSetID: BoxSetID, on connection: OpaquePointer) throws -> Int {

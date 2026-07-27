@@ -119,7 +119,7 @@ private struct LibraryShellView: View {
         }
         .safeAreaInset(edge: .bottom) {
             if playback.isPlaying || playback.currentTitle != "Nothing playing" {
-                HStack { Image(systemName: playback.isPlaying ? "speaker.wave.2.fill" : "pause.circle"); VStack(alignment: .leading) { Text(playback.currentTitle).lineLimit(1); if let audioFormatDescription = playback.audioFormatDescription { Text(audioFormatDescription).font(.caption).foregroundStyle(.secondary).lineLimit(1) } }; Spacer(); Button("Previous", systemImage: "backward.fill") { playback.previous() }.labelStyle(.iconOnly); Button(playback.isPlaying ? "Pause" : "Play", systemImage: playback.isPlaying ? "pause.fill" : "play.fill") { playback.toggle() }.labelStyle(.iconOnly); Button("Next", systemImage: "forward.fill") { playback.next() }.labelStyle(.iconOnly); Button(playback.queue.isShuffled ? "Turn Shuffle Off" : "Shuffle Queue", systemImage: "shuffle") { playback.toggleShuffle() }.labelStyle(.iconOnly).foregroundStyle(playback.queue.isShuffled ? .primary : .secondary); Button(repeatAccessibilityLabel, systemImage: repeatSystemImage) { cycleRepeatMode() }.labelStyle(.iconOnly).foregroundStyle(playback.queue.repeatMode == .off ? .secondary : .primary); Slider(value: Binding(get: { playback.volume }, set: { playback.setVolume(Float($0)) }), in: 0...1).frame(width: 90); Button("Stop") { playback.stop() } }
+                HStack { Image(systemName: playback.isPlaying ? "speaker.wave.2.fill" : "pause.circle"); VStack(alignment: .leading) { Text(playback.currentTitle).lineLimit(1); if let audioFormatDescription = playback.audioFormatDescription { Text(audioFormatDescription).font(.caption).foregroundStyle(.secondary).lineLimit(1) } }; Spacer(); Button("Previous", systemImage: "backward.fill") { playback.previous() }.labelStyle(.iconOnly); Button(playback.isPlaying ? "Pause" : "Play", systemImage: playback.isPlaying ? "pause.fill" : "play.fill") { playback.toggle() }.labelStyle(.iconOnly); Button("Next", systemImage: "forward.fill") { playback.next() }.labelStyle(.iconOnly); Button(playback.queue.isShuffled ? "Turn Shuffle Off" : "Shuffle Queue", systemImage: "shuffle") { playback.toggleShuffle() }.labelStyle(.iconOnly).buttonStyle(.borderedProminent).tint(playback.queue.isShuffled ? .blue : .gray.opacity(0.2)); Button(repeatAccessibilityLabel, systemImage: repeatSystemImage) { cycleRepeatMode() }.labelStyle(.iconOnly).buttonStyle(.borderedProminent).tint(playback.queue.repeatMode == .off ? .gray.opacity(0.2) : .blue); Slider(value: Binding(get: { playback.volume }, set: { playback.setVolume(Float($0)) }), in: 0...1).frame(width: 90); Button("Stop") { playback.stop() } }
                     .padding(10).background(.bar)
             }
         }
@@ -1039,7 +1039,13 @@ private struct AlbumDetail: View {
                                     Spacer()
                                     Button("Edit", systemImage: "pencil") { trackToEdit = track }.labelStyle(.iconOnly)
                                     Button("Play", systemImage: "play.fill") { play(track) }.labelStyle(.iconOnly)
-                                    Menu("Add to Playlist") { ForEach(library.playlists) { playlist in Button(playlist.name) { Task { do { try await library.addTrack(track.id, toPlaylist: playlist.id) } catch { library.presentError(error) } } } } }.labelStyle(.iconOnly)
+                                    Menu("Add to Playlist") {
+                                        if library.playlists.isEmpty {
+                                            Text("Create a playlist from the Playlists sidebar first.")
+                                        } else {
+                                            ForEach(library.playlists) { playlist in Button(playlist.name) { Task { do { try await library.addTrack(track.id, toPlaylist: playlist.id) } catch { library.presentError(error) } } } }
+                                        }
+                                    }.labelStyle(.iconOnly)
                                     Button("Credit", systemImage: "person.badge.plus") { trackForContributor = track }
                                         .labelStyle(.iconOnly)
                                     Button("Remove", systemImage: "trash", role: .destructive) { trackPendingDeletion = track }
