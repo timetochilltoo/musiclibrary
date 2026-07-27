@@ -1113,12 +1113,12 @@ private struct AlbumDetail: View {
         .confirmationDialog("Remove this disc?", isPresented: Binding(get: { discPendingDeletion != nil }, set: { if !$0 { discPendingDeletion = nil } }), titleVisibility: .visible, presenting: discPendingDeletion) { disc in
             Button("Remove Disc and Its Tracks", role: .destructive) { Task { do { try await library.deleteDisc(disc.id); await loadContent(); discPendingDeletion = nil } catch { library.presentError(error) } } }
         } message: { disc in
-            Text("This removes Disc \(disc.number) and its catalogue tracks. Source audio files are not changed. A disc with protected digital assets cannot be removed.")
+            Text("This removes Disc \(disc.number), its catalogue tracks, and their catalogue-only asset references. Matching playlist entries are removed. Source audio files are not changed.")
         }
         .confirmationDialog("Remove this track?", isPresented: Binding(get: { trackPendingDeletion != nil }, set: { if !$0 { trackPendingDeletion = nil } }), titleVisibility: .visible, presenting: trackPendingDeletion) { track in
             Button("Remove Track", role: .destructive) { Task { do { try await library.deleteTrack(track.id); await loadContent(); trackPendingDeletion = nil } catch { library.presentError(error) } } }
         } message: { track in
-            Text("This removes \(track.title) from the catalogue. Source audio files are not changed. A track with protected digital assets cannot be removed.")
+            Text("This removes \(track.title) and its catalogue-only asset references. Matching playlist entries are removed. Source audio files are not changed.")
         }
         .fileImporter(isPresented: $showsArtworkPicker, allowedContentTypes: [.image]) { result in
             if case let .success(url) = result {

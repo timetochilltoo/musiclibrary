@@ -359,6 +359,14 @@ struct MusicDatabaseTests {
         #expect(firstAlbumID == secondAlbumID)
         #expect(try await database.albums().map(\.id) == [firstAlbumID])
         #expect(try await database.libraryHealthIssues().map(\.kind) == [.offline, .missingArtwork])
+        let disc = try #require(await database.discs(albumID: firstAlbumID).first)
+        let track = try #require(await database.tracks(discID: disc.id).first)
+        let playlist = try await database.createPlaylist(name: "Temporary")
+        try await database.addTrack(track.id, to: playlist.id)
+        try await database.deleteTrack(track.id)
+        #expect(try await database.tracks(discID: disc.id).isEmpty)
+        #expect(try await database.digitalAssetIDs(albumID: firstAlbumID).isEmpty)
+        #expect(try await database.playlistItems(playlistID: playlist.id).isEmpty)
     }
 
     @Test("Applying a relink proposal changes only the stored catalogue path")

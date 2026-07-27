@@ -1037,6 +1037,14 @@ public actor MusicDatabase {
             try Self.bind(discID.description, at: 1, to: existing)
             guard sqlite3_step(existing) == SQLITE_ROW, let albumID = Self.text(at: 0, from: existing) else { throw DatabaseError.notFound("Disc") }
             let number = Self.int(at: 1, from: existing) ?? 0
+            let deletePlaylistItems = try Self.prepare("DELETE FROM playlist_item WHERE track_id IN (SELECT id FROM track WHERE disc_id = ?);", on: connection)
+            defer { sqlite3_finalize(deletePlaylistItems) }
+            try Self.bind(discID.description, at: 1, to: deletePlaylistItems)
+            try Self.stepDone(deletePlaylistItems, connection: connection)
+            let deleteAssets = try Self.prepare("DELETE FROM digital_asset WHERE track_id IN (SELECT id FROM track WHERE disc_id = ?);", on: connection)
+            defer { sqlite3_finalize(deleteAssets) }
+            try Self.bind(discID.description, at: 1, to: deleteAssets)
+            try Self.stepDone(deleteAssets, connection: connection)
             let delete = try Self.prepare("DELETE FROM disc WHERE id = ?;", on: connection)
             defer { sqlite3_finalize(delete) }
             try Self.bind(discID.description, at: 1, to: delete)
@@ -1089,6 +1097,14 @@ public actor MusicDatabase {
             try Self.bind(trackID.description, at: 1, to: existing)
             guard sqlite3_step(existing) == SQLITE_ROW, let discID = Self.text(at: 0, from: existing) else { throw DatabaseError.notFound("Track") }
             let number = Self.int(at: 1, from: existing) ?? 0
+            let deletePlaylistItems = try Self.prepare("DELETE FROM playlist_item WHERE track_id = ?;", on: connection)
+            defer { sqlite3_finalize(deletePlaylistItems) }
+            try Self.bind(trackID.description, at: 1, to: deletePlaylistItems)
+            try Self.stepDone(deletePlaylistItems, connection: connection)
+            let deleteAssets = try Self.prepare("DELETE FROM digital_asset WHERE track_id = ?;", on: connection)
+            defer { sqlite3_finalize(deleteAssets) }
+            try Self.bind(trackID.description, at: 1, to: deleteAssets)
+            try Self.stepDone(deleteAssets, connection: connection)
             let delete = try Self.prepare("DELETE FROM track WHERE id = ?;", on: connection)
             defer { sqlite3_finalize(delete) }; try Self.bind(trackID.description, at: 1, to: delete); try Self.stepDone(delete, connection: connection)
             let reorder = try Self.prepare("UPDATE track SET number = number - 1 WHERE disc_id = ? AND number > ?;", on: connection)
