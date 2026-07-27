@@ -603,6 +603,12 @@ public final class LibraryStore: ObservableObject {
 
     private func resolveSecurityScopedBookmark(_ root: StorageRoot) -> (status: StorageRootStatus, url: URL?, refreshedBookmarkData: Data?, bookmarkNeedsRefresh: Bool) {
         guard let bookmarkData = root.bookmarkData else { return (.permissionRequired, nil, nil, false) }
+        // Resolving a bookmark for an unmounted SMB volume makes macOS show its own
+        // connection dialog. Check the volume mount point first so an offline NAS is
+        // simply reported as offline and never blocks the application at launch.
+        if isUnmountedVolumePath(root.lastKnownPath) {
+            return (.offline, nil, nil, false)
+        }
         var isStale = false
         do {
             let url = try URL(resolvingBookmarkData: bookmarkData, options: [.withSecurityScope], relativeTo: nil, bookmarkDataIsStale: &isStale)
@@ -615,5 +621,12 @@ public final class LibraryStore: ObservableObject {
         } catch {
             return (.permissionRequired, nil, nil, false)
         }
+    }
+
+    private func isUnmountedVolumePath(_ path: String) -> Bool {
+        let components = URL(fileURLWithPath: path).pathComponents
+        guard components.count >= 3, components[1] == "Volumes" else { return false }
+        let volumeURL = URL(fileURLWithPath: "/Volumes", isDirectory: true).appending(path: components[2], directoryHint: .isDirectory)
+        return !FileManager.default.fileExists(atPath: volumeURL.path)
     }
 }
