@@ -1002,6 +1002,25 @@ private struct ExternalMetadataComparisonView: View {
     private func apply() { Task { do { try await library.applyExternalMetadataSelection(selection, fields: .init(title: useTitle, artist: useArtist, discCount: useDiscCount, countryCode: useCountryCode, catalogueNumber: useCatalogueNumber)); await onApplied(); dismiss() } catch { errorMessage = error.localizedDescription } } }
 }
 
+private struct ArtworkPreview: View {
+    let artwork: Artwork
+
+    var body: some View {
+        Group {
+            if let path = artwork.localPath, let image = NSImage(contentsOfFile: path) {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: 260, maxHeight: 260)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .accessibilityLabel("Selected front artwork")
+            } else {
+                ContentUnavailableView("Artwork file unavailable", systemImage: "photo.badge.exclamationmark", description: Text("The selected catalogue artwork could not be read."))
+            }
+        }
+    }
+}
+
 private struct MetadataInspectionSelection: Identifiable {
     let trackID: TrackID
     let title: String
@@ -1188,8 +1207,15 @@ private struct AlbumDetail: View {
                 Button("Add Alias", systemImage: "plus") { showsAddAlias = true }
             }
             Section("Artwork") {
-                if artwork.isEmpty { Text("No artwork selected").foregroundStyle(.secondary) }
-                ForEach(artwork) { image in Text("\(image.isSelected ? "Selected " : "")\(image.role.rawValue): \(image.localPath.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "No local file")") }
+                if let selectedArtwork = artwork.first(where: { $0.role == .front && $0.isSelected }) {
+                    ArtworkPreview(artwork: selectedArtwork)
+                } else {
+                    Text("No front artwork selected").foregroundStyle(.secondary)
+                }
+                ForEach(artwork) { image in
+                    Text("\(image.isSelected ? "Selected " : "")\(image.role.rawValue): \(image.localPath.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "No local file")")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 Button("Choose Artwork…", systemImage: "photo.badge.plus") { showsArtworkPicker = true }
             }
         }
