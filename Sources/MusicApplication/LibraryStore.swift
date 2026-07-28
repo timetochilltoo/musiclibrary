@@ -3,6 +3,7 @@ import CryptoKit
 import Foundation
 import MusicDomain
 import MusicPersistence
+import UniformTypeIdentifiers
 
 @MainActor
 public final class LibraryStore: ObservableObject {
@@ -273,8 +274,58 @@ public final class LibraryStore: ObservableObject {
     public func confirmImportReleaseProposal(_ id: UUID) async throws -> AlbumID {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
         let albumID = try await database.confirmImportReleaseProposal(id)
+        if try await database.albumArtwork(albumID: albumID).isEmpty,
+           let artworkURL = try await importedFolderArtwork(for: id),
+           let managedArtworkStore {
+            // Artwork is copied into managed storage; the NAS source stays untouched.
+            if let managedURL = try? managedArtworkStore.importArtwork(from: artworkURL) {
+                _ = try? await database.addAlbumArtwork(albumID: albumID, localPath: managedURL.path, role: .front, source: "managed-imported-folder-artwork")
+            }
+        }
         try await reload()
         return albumID
+    }
+
+    private func importedFolderArtwork(for proposalID: UUID) async throws -> URL? {
+        guard let database else { return nil }
+        for batch in importBatches {
+            let proposals = try await database.importReleaseProposals(batchID: batch.id)
+            guard proposals.contains(where: { $0.id == proposalID }),
+                  let rootID = batch.storageRootID,
+                  let root = storageRoots.first(where: { $0.id == rootID })
+            else { continue }
+            let resolved = resolveSecurityScopedBookmark(root)
+            guard resolved.status == .available, let rootURL = resolved.url else { return nil }
+            let accessed = rootURL.startAccessingSecurityScopedResource()
+            defer { if accessed { rootURL.stopAccessingSecurityScopedResource() } }
+            guard accessed else { return nil }
+            let candidates = try await database.importCandidates(batchID: batch.id)
+            let folders = candidates
+                .filter { $0.proposalID == proposalID }
+                .compactMap { $0.payload?.relativePath }
+                .map { rootURL.appending(path: $0).deletingLastPathComponent() }
+            for folder in folders {
+                if let artwork = folderArtwork(in: folder) { return artwork }
+            }
+            return nil
+        }
+        return nil
+    }
+
+    private func folderArtwork(in folder: URL) -> URL? {
+        let keys: Set<URLResourceKey> = [.isDirectoryKey, .isHiddenKey, .contentTypeKey]
+        guard let files = try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: Array(keys), options: [.skipsHiddenFiles]) else { return nil }
+        let images = files.filter { url in
+            guard let values = try? url.resourceValues(forKeys: keys), values.isDirectory != true else { return false }
+            return values.contentType?.conforms(to: .image) == true
+                || ["jpg", "jpeg", "png", "heic", "webp"].contains(url.pathExtension.lowercased())
+        }
+        let preferredNames = ["cover", "folder", "front", "albumart", "album art"]
+        return images.sorted { lhs, rhs in
+            let left = preferredNames.firstIndex(of: lhs.deletingPathExtension().lastPathComponent.lowercased()) ?? preferredNames.count
+            let right = preferredNames.firstIndex(of: rhs.deletingPathExtension().lastPathComponent.lowercased()) ?? preferredNames.count
+            return left == right ? lhs.lastPathComponent.localizedStandardCompare(rhs.lastPathComponent) == .orderedAscending : left < right
+        }.first
     }
 
     public func searchMusicBrainz(title: String, artist: String?) async throws -> [ExternalReleasePreview] {
