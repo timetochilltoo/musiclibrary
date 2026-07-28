@@ -35,9 +35,27 @@ public struct ImportCandidatePayload: Codable, Equatable, Sendable {
     public let contentTypeIdentifier: String
     public let fileSize: Int64
     public let modifiedAt: Date?
+    public let cueStartMilliseconds: Int?
+    public let cueEndMilliseconds: Int?
+    public let cueTrackNumber: Int?
+    public let cueTitle: String?
+    public let cueArtist: String?
+    public let cueAlbumTitle: String?
+    public let cueAlbumArtist: String?
 
-    public init(relativePath: String, fileName: String, contentTypeIdentifier: String, fileSize: Int64, modifiedAt: Date?) {
-        self.relativePath = relativePath; self.fileName = fileName; self.contentTypeIdentifier = contentTypeIdentifier; self.fileSize = fileSize; self.modifiedAt = modifiedAt
+    public init(relativePath: String, fileName: String, contentTypeIdentifier: String, fileSize: Int64, modifiedAt: Date?, cueStartMilliseconds: Int? = nil, cueEndMilliseconds: Int? = nil, cueTrackNumber: Int? = nil, cueTitle: String? = nil, cueArtist: String? = nil, cueAlbumTitle: String? = nil, cueAlbumArtist: String? = nil) {
+        self.relativePath = relativePath; self.fileName = fileName; self.contentTypeIdentifier = contentTypeIdentifier; self.fileSize = fileSize; self.modifiedAt = modifiedAt; self.cueStartMilliseconds = cueStartMilliseconds; self.cueEndMilliseconds = cueEndMilliseconds; self.cueTrackNumber = cueTrackNumber; self.cueTitle = cueTitle; self.cueArtist = cueArtist; self.cueAlbumTitle = cueAlbumTitle; self.cueAlbumArtist = cueAlbumArtist
+    }
+
+    public func applyingCue(to metadata: EmbeddedMetadataPayload) -> EmbeddedMetadataPayload {
+        guard let cueStartMilliseconds else { return metadata }
+        var tags = metadata.rawTags
+        tags["cueSource"] = "sidecar-cue"
+        tags["cueStartMilliseconds"] = String(cueStartMilliseconds)
+        if let cueEndMilliseconds { tags["cueEndMilliseconds"] = String(cueEndMilliseconds) }
+        let duration = cueEndMilliseconds.map { max(0, $0 - cueStartMilliseconds) }
+            ?? metadata.durationMilliseconds.map { max(0, $0 - cueStartMilliseconds) }
+        return .init(title: cueTitle ?? metadata.title, albumTitle: cueAlbumTitle ?? metadata.albumTitle, artist: cueArtist ?? metadata.artist, albumArtist: cueAlbumArtist ?? metadata.albumArtist, discNumber: metadata.discNumber, trackNumber: cueTrackNumber ?? metadata.trackNumber, durationMilliseconds: duration, rawTags: tags, provenance: "cue-sheet + \(metadata.provenance)", releaseYear: metadata.releaseYear, genre: metadata.genre, codec: metadata.codec, sampleRateHz: metadata.sampleRateHz, bitDepth: metadata.bitDepth, channelCount: metadata.channelCount)
     }
 }
 
@@ -141,7 +159,9 @@ public struct PlaybackAssetReference: Equatable, Sendable {
     public let storageRootID: StorageRootID
     public let relativePath: String
     public let availability: DigitalAssetAvailability
-    public init(trackID: TrackID, title: String, storageRootID: StorageRootID, relativePath: String, availability: DigitalAssetAvailability) { self.trackID = trackID; self.title = title; self.storageRootID = storageRootID; self.relativePath = relativePath; self.availability = availability }
+    public let cueStartMilliseconds: Int?
+    public let cueEndMilliseconds: Int?
+    public init(trackID: TrackID, title: String, storageRootID: StorageRootID, relativePath: String, availability: DigitalAssetAvailability, cueStartMilliseconds: Int? = nil, cueEndMilliseconds: Int? = nil) { self.trackID = trackID; self.title = title; self.storageRootID = storageRootID; self.relativePath = relativePath; self.availability = availability; self.cueStartMilliseconds = cueStartMilliseconds; self.cueEndMilliseconds = cueEndMilliseconds }
 }
 
 public struct AssetDuplicate: Identifiable, Equatable, Sendable { public let id: String; public let contentHash: String; public let paths: [String]; public init(contentHash: String, paths: [String]) { self.id = contentHash; self.contentHash = contentHash; self.paths = paths } }

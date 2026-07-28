@@ -2,16 +2,16 @@ import Foundation
 import SQLite3
 
 enum SchemaMigrator {
-    static let currentVersion = 11
+    static let currentVersion = 12
 
     static func migrate(_ connection: OpaquePointer) throws {
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(connection, "PRAGMA user_version;", -1, &statement, nil) == SQLITE_OK, let statement else {
             throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(connection)))
         }
-        defer { sqlite3_finalize(statement) }
         guard sqlite3_step(statement) == SQLITE_ROW else { throw DatabaseError.sqlite(message: "Unable to read schema version.") }
         var version = Int(sqlite3_column_int64(statement, 0))
+        sqlite3_finalize(statement)
         guard version <= currentVersion else { throw DatabaseError.sqlite(message: "Database schema \(version) is newer than this app supports.") }
         if version == 0 {
             try migrateToVersion1(connection)
@@ -26,7 +26,8 @@ enum SchemaMigrator {
         if version == 7 { try migrateToVersion8(connection); version = 8 }
         if version == 8 { try migrateToVersion9(connection); version = 9 }
         if version == 9 { try migrateToVersion10(connection); version = 10 }
-        if version == 10 { try migrateToVersion11(connection) }
+        if version == 10 { try migrateToVersion11(connection); version = 11 }
+        if version == 11 { try migrateToVersion12(connection) }
     }
 
     private static func migrateToVersion1(_ connection: OpaquePointer) throws {
@@ -389,6 +390,10 @@ enum SchemaMigrator {
     }
     private static func migrateToVersion11(_ connection: OpaquePointer) throws {
         let sql = "BEGIN IMMEDIATE; ALTER TABLE digital_asset ADD COLUMN embedded_metadata_payload BLOB; PRAGMA user_version = 11; UPDATE catalogue_state SET schema_version = 11 WHERE singleton_id = 1; COMMIT;"
+        var error: UnsafeMutablePointer<CChar>?; guard sqlite3_exec(connection, sql, nil, nil, &error) == SQLITE_OK else { defer { sqlite3_free(error) }; throw DatabaseError.sqlite(message: error.map { String(cString: $0) } ?? String(cString: sqlite3_errmsg(connection))) }
+    }
+    private static func migrateToVersion12(_ connection: OpaquePointer) throws {
+        let sql = "BEGIN IMMEDIATE; ALTER TABLE digital_asset ADD COLUMN cue_start_ms INTEGER; ALTER TABLE digital_asset ADD COLUMN cue_end_ms INTEGER; DROP INDEX IF EXISTS digital_asset_path_index; CREATE UNIQUE INDEX digital_asset_path_index ON digital_asset(storage_root_id, relative_path, cue_start_ms); PRAGMA user_version = 12; UPDATE catalogue_state SET schema_version = 12 WHERE singleton_id = 1; COMMIT;"
         var error: UnsafeMutablePointer<CChar>?; guard sqlite3_exec(connection, sql, nil, nil, &error) == SQLITE_OK else { defer { sqlite3_free(error) }; throw DatabaseError.sqlite(message: error.map { String(cString: $0) } ?? String(cString: sqlite3_errmsg(connection))) }
     }
 }

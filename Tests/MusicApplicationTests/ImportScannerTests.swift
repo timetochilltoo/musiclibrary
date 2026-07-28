@@ -34,6 +34,34 @@ struct ImportScannerTests {
         #expect(result.candidates.isEmpty)
     }
 
+    @Test("Scanner expands a WAV plus CUE sheet into timed virtual tracks")
+    func expandsCueSheet() throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try Data([0]).write(to: root.appending(path: "album.wav"))
+        let cue = """
+        PERFORMER \"Example Artist\"
+        TITLE \"Example Album\"
+        FILE \"album.wav\" WAVE
+          TRACK 01 AUDIO
+            TITLE \"First\"
+            PERFORMER \"Singer One\"
+            INDEX 01 00:00:00
+          TRACK 02 AUDIO
+            TITLE \"Second\"
+            INDEX 01 03:15:00
+        """
+        try Data(cue.utf8).write(to: root.appending(path: "album.cue"))
+
+        let candidates = ImportScanner().scan(rootURL: root).candidates
+        #expect(candidates.count == 2)
+        #expect(candidates.map(\.cueTrackNumber) == [1, 2])
+        #expect(candidates.map(\.cueTitle) == ["First", "Second"])
+        #expect(candidates.first?.cueEndMilliseconds == 195_000)
+        #expect(candidates.allSatisfy { $0.relativePath == "album.wav" })
+    }
+
     @Test("Metadata grouping keeps Unicode multi-disc candidates in one proposal")
     func groupsMetadata() {
         let batchID = ImportBatchID()

@@ -15,11 +15,12 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
     @Published public private(set) var audioFormatDescription: String?
     @Published public private(set) var volume: Double = 1
     private var player: AVAudioPlayer?
-    private var items: [(url: URL, trackID: TrackID, title: String)] = []
-    private var originalItems: [(url: URL, trackID: TrackID, title: String)] = []
+    private var items: [(url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?)] = []
+    private var originalItems: [(url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?)] = []
     private let preloader = PlaybackPreloader()
     private var preparedNext: (trackID: TrackID, player: AVAudioPlayer)?
     private var preloadGeneration = 0
+    private var cueEndTimer: Timer?
     private let defaultsKey = "MusicLibrary.playbackQueue"
 
     public override init() {
@@ -27,7 +28,7 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
         super.init()
         configureRemoteCommands()
     }
-    public func play(items: [(url: URL, trackID: TrackID, title: String)], startingAt index: Int) throws {
+    public func play(items: [(url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?)], startingAt index: Int) throws {
         guard items.indices.contains(index) else { throw NSError(domain: "MusicLibrary", code: 1, userInfo: [NSLocalizedDescriptionKey: "No playable queue item was selected."]) }
         self.items = items
         originalItems = items
@@ -54,6 +55,7 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
     }
     public func stop() {
         invalidatePreparedNext()
+        cueEndTimer?.invalidate(); cueEndTimer = nil
         player?.stop()
         isPlaying = false
         audioFormatDescription = nil
@@ -97,7 +99,7 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
         schedulePreload()
     }
 
-    public func restore(items restoredItems: [(url: URL, trackID: TrackID, title: String)]) {
+    public func restore(items restoredItems: [(url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?)]) {
         guard !queue.trackIDs.isEmpty else { return }
         let itemsByID = Dictionary(uniqueKeysWithValues: restoredItems.map { ($0.trackID, $0) })
         items = queue.trackIDs.compactMap { itemsByID[$0] }
@@ -147,10 +149,16 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
             openedPlayer = try AVAudioPlayer(contentsOf: item.url)
             usedPreparedPlayer = false
         }
+        if let cueStartMilliseconds = item.cueStartMilliseconds {
+            openedPlayer.currentTime = Double(cueStartMilliseconds) / 1_000
+        }
         if start(openedPlayer) {
             adopt(openedPlayer, item: item)
         } else if usedPreparedPlayer {
             let fallback = try AVAudioPlayer(contentsOf: item.url)
+            if let cueStartMilliseconds = item.cueStartMilliseconds {
+                fallback.currentTime = Double(cueStartMilliseconds) / 1_000
+            }
             guard start(fallback) else {
                 throw NSError(domain: "MusicLibrary", code: 2, userInfo: [NSLocalizedDescriptionKey: "The audio file could not start playing."])
             }
@@ -167,14 +175,29 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
         return player.play()
     }
 
-    private func adopt(_ openedPlayer: AVAudioPlayer, item: (url: URL, trackID: TrackID, title: String)) {
+    private func adopt(_ openedPlayer: AVAudioPlayer, item: (url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?)) {
+        player?.stop()
+        cueEndTimer?.invalidate()
         player = openedPlayer
         currentTitle = item.title
         currentTrackID = item.trackID
         audioFormatDescription = Self.formatDescription(for: item.url, format: openedPlayer.format)
         isPlaying = true
         updateNowPlayingInfo()
+        scheduleCueEnd(for: openedPlayer, endMilliseconds: item.cueEndMilliseconds)
         schedulePreload()
+    }
+
+    private func scheduleCueEnd(for player: AVAudioPlayer, endMilliseconds: Int?) {
+        guard let endMilliseconds else { return }
+        let remaining = Double(endMilliseconds) / 1_000 - player.currentTime
+        guard remaining > 0 else { return }
+        cueEndTimer = Timer.scheduledTimer(withTimeInterval: remaining, repeats: false) { [weak self, weak player] _ in
+            guard let self, let player, self.player === player else { return }
+            player.stop()
+            self.isPlaying = false
+            self.next()
+        }
     }
 
     private func schedulePreload() {

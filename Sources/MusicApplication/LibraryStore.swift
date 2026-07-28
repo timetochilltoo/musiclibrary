@@ -259,7 +259,8 @@ public final class LibraryStore: ObservableObject {
         let extractor = EmbeddedMetadataExtractor()
         for candidate in candidates where candidate.status != .failed {
             guard let payload = candidate.payload else { continue }
-            let metadata = await extractor.extract(url: rootURL.appending(path: payload.relativePath), relativePath: payload.relativePath)
+            let extracted = await extractor.extract(url: rootURL.appending(path: payload.relativePath), relativePath: payload.relativePath)
+            let metadata = payload.applyingCue(to: extracted)
             try await database.saveEmbeddedMetadata(metadata, for: candidate.id)
         }
         let extracted = try await database.importCandidates(batchID: batchID)
@@ -347,7 +348,7 @@ public final class LibraryStore: ObservableObject {
         try await database.applyExternalMetadataSelection(selection, fields: fields)
     }
 
-    public func playbackURL(for trackID: TrackID) async throws -> (url: URL, title: String) {
+    public func playbackURL(for trackID: TrackID) async throws -> (url: URL, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?) {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
         try await refreshStorageRootAccess()
         guard let asset = try await database.playbackAsset(trackID: trackID) else { throw DatabaseError.notFound("Playable asset") }
@@ -357,30 +358,30 @@ public final class LibraryStore: ObservableObject {
         guard resolved.status == .available, let rootURL = resolved.url else { throw DatabaseError.invalidOperation("The asset's storage root is unavailable.") }
         let url = rootURL.appending(path: asset.relativePath)
         guard FileManager.default.fileExists(atPath: url.path) else { throw DatabaseError.invalidOperation("The audio file is missing. Its catalogue record was left unchanged.") }
-        return (url, asset.title)
+        return (url, asset.title, asset.cueStartMilliseconds, asset.cueEndMilliseconds)
     }
 
-    public func playbackURLs(discID: DiscID) async throws -> [(url: URL, trackID: TrackID, title: String)] {
+    public func playbackURLs(discID: DiscID) async throws -> [(url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?)] {
         let discTracks = try await tracks(discID: discID)
-        var results: [(url: URL, trackID: TrackID, title: String)] = []
-        for track in discTracks { let asset = try await playbackURL(for: track.id); results.append((asset.url, track.id, asset.title)) }
+        var results: [(url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?)] = []
+        for track in discTracks { let asset = try await playbackURL(for: track.id); results.append((asset.url, track.id, asset.title, asset.cueStartMilliseconds, asset.cueEndMilliseconds)) }
         return results
     }
-    public func playbackURLs(playlistID: PlaylistID) async throws -> [(url: URL, trackID: TrackID, title: String)] {
-        var results: [(url: URL, trackID: TrackID, title: String)] = []
+    public func playbackURLs(playlistID: PlaylistID) async throws -> [(url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?)] {
+        var results: [(url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?)] = []
         for item in try await playlistItems(playlistID) {
             if let asset = try? await playbackURL(for: item.trackID) {
-                results.append((asset.url, item.trackID, asset.title))
+                results.append((asset.url, item.trackID, asset.title, asset.cueStartMilliseconds, asset.cueEndMilliseconds))
             }
         }
         guard !results.isEmpty else { throw DatabaseError.invalidOperation("This playlist has no currently playable tracks.") }
         return results
     }
-    public func playbackURLs(trackIDs: [TrackID]) async -> [(url: URL, trackID: TrackID, title: String)] {
-        var results: [(url: URL, trackID: TrackID, title: String)] = []
+    public func playbackURLs(trackIDs: [TrackID]) async -> [(url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?)] {
+        var results: [(url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?)] = []
         for trackID in trackIDs {
             if let asset = try? await playbackURL(for: trackID) {
-                results.append((asset.url, trackID, asset.title))
+                results.append((asset.url, trackID, asset.title, asset.cueStartMilliseconds, asset.cueEndMilliseconds))
             }
         }
         return results
