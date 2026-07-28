@@ -184,19 +184,21 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
         audioFormatDescription = Self.formatDescription(for: item.url, format: openedPlayer.format)
         isPlaying = true
         updateNowPlayingInfo()
-        scheduleCueEnd(for: openedPlayer, endMilliseconds: item.cueEndMilliseconds)
+        scheduleCueEnd(trackID: item.trackID, endMilliseconds: item.cueEndMilliseconds)
         schedulePreload()
     }
 
-    private func scheduleCueEnd(for player: AVAudioPlayer, endMilliseconds: Int?) {
+    private func scheduleCueEnd(trackID: TrackID, endMilliseconds: Int?) {
         guard let endMilliseconds else { return }
-        let remaining = Double(endMilliseconds) / 1_000 - player.currentTime
+        let remaining = Double(endMilliseconds) / 1_000 - (player?.currentTime ?? 0)
         guard remaining > 0 else { return }
-        cueEndTimer = Timer.scheduledTimer(withTimeInterval: remaining, repeats: false) { [weak self, weak player] _ in
-            guard let self, let player, self.player === player else { return }
-            player.stop()
-            self.isPlaying = false
-            self.next()
+        cueEndTimer = Timer.scheduledTimer(withTimeInterval: remaining, repeats: false) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.queue.currentTrackID == trackID else { return }
+                self.player?.stop()
+                self.isPlaying = false
+                self.next()
+            }
         }
     }
 
