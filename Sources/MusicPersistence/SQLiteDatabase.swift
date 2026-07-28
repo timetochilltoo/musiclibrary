@@ -310,9 +310,11 @@ public actor MusicDatabase {
                 }
                 let trackID = TrackID()
                 if releaseYear == nil { releaseYear = metadata.releaseYear }
-                let trackNumber: Int
-                if let explicitNumber = metadata.trackNumber { trackNumber = explicitNumber }
-                else { trackNumber = try Self.nextNumber("SELECT COALESCE(MAX(number), 0) + 1 FROM track WHERE disc_id = ?;", ownerID: discID.description, on: connection) }
+                let trackNumber = try Self.importedTrackNumber(
+                    preferredNumber: metadata.trackNumber,
+                    discID: discID,
+                    on: connection,
+                )
                 let insertTrack = try Self.prepare("INSERT INTO track (id, disc_id, number, title, duration_ms) VALUES (?, ?, ?, ?, ?);", on: connection)
                 defer { sqlite3_finalize(insertTrack) }; try Self.bind(trackID.description, at: 1, to: insertTrack); try Self.bind(discID.description, at: 2, to: insertTrack); try Self.bind(Int64(trackNumber), at: 3, to: insertTrack); try Self.bind(metadata.title ?? payload.fileName, at: 4, to: insertTrack); try Self.bind(metadata.durationMilliseconds.map(Int64.init), at: 5, to: insertTrack); try Self.stepDone(insertTrack, connection: connection)
                 let rootStatus = try Self.prepare("SELECT status FROM storage_root WHERE id = ?;", on: connection)
@@ -1587,6 +1589,32 @@ public actor MusicDatabase {
         defer { sqlite3_finalize(statement) }
         try bind(value, at: 1, to: statement)
         return sqlite3_step(statement) == SQLITE_ROW
+    }
+
+    /// Embedded tags are advisory during import. Preserve a positive unique number, but do
+    /// not let duplicated (or zero) tags abort the whole approved proposal transaction.
+    private static func importedTrackNumber(
+        preferredNumber: Int?,
+        discID: DiscID,
+        on connection: OpaquePointer,
+    ) throws -> Int {
+        guard let preferredNumber, preferredNumber > 0 else {
+            return try nextNumber(
+                "SELECT COALESCE(MAX(number), 0) + 1 FROM track WHERE disc_id = ?;",
+                ownerID: discID.description,
+                on: connection,
+            )
+        }
+        let existing = try prepare("SELECT 1 FROM track WHERE disc_id = ? AND number = ?;", on: connection)
+        defer { sqlite3_finalize(existing) }
+        try bind(discID.description, at: 1, to: existing)
+        try bind(Int64(preferredNumber), at: 2, to: existing)
+        if sqlite3_step(existing) != SQLITE_ROW { return preferredNumber }
+        return try nextNumber(
+            "SELECT COALESCE(MAX(number), 0) + 1 FROM track WHERE disc_id = ?;",
+            ownerID: discID.description,
+            on: connection,
+        )
     }
 
     /// SQLite checks UNIQUE(disc_id, number) after each updated row. Move the affected

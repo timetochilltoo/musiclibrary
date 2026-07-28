@@ -372,6 +372,30 @@ struct MusicDatabaseTests {
         #expect(try await database.playlistItems(playlistID: playlist.id).isEmpty)
     }
 
+    @Test("Approved import assigns unique catalogue positions for duplicate embedded track numbers")
+    func importedDuplicateTrackNumbersAreRecovered() async throws {
+        let database = try MusicDatabase(url: temporaryDatabaseURL())
+        try await database.migrate()
+        let root = try await database.createStorageRoot(.init(displayName: "Music", lastKnownPath: "/Music", bookmarkData: Data([1])))
+        let batch = try await database.createImportBatch(storageRootID: root.id, sourceDescription: "/Music")
+        for path in ["Album/01.flac", "Album/02.flac", "Album/03.flac"] {
+            try await database.recordImportCandidate(batchID: batch.id, payload: .init(relativePath: path, fileName: URL(fileURLWithPath: path).lastPathComponent, contentTypeIdentifier: "public.audio", fileSize: 1, modifiedAt: nil))
+        }
+        let candidates = try await database.importCandidates(batchID: batch.id)
+        for (candidate, number) in zip(candidates, [1, 1, 0]) {
+            try await database.saveEmbeddedMetadata(.init(title: candidate.payload?.fileName, albumTitle: "Duplicate tags", artist: "Artist", albumArtist: nil, discNumber: 1, trackNumber: number, durationMilliseconds: nil, rawTags: [:]), for: candidate.id)
+        }
+        try await database.rebuildImportReleaseProposals(batchID: batch.id, drafts: [.init(title: "Duplicate tags", artist: "Artist", discCount: 1, confidence: 1, candidateIDs: candidates.map(\.id))])
+        let proposal = try #require(await database.importReleaseProposals(batchID: batch.id).first)
+        try await database.updateImportReleaseProposal(proposal.id, status: .approved)
+
+        let albumID = try await database.confirmImportReleaseProposal(proposal.id)
+
+        let disc = try #require(await database.discs(albumID: albumID).first)
+        #expect(try await database.tracks(discID: disc.id).map(\.number) == [1, 2, 3])
+        #expect(try await database.albums().map(\.id) == [albumID])
+    }
+
     @Test("Applying a relink proposal changes only the stored catalogue path")
     func applyRelinkProposal() async throws {
         let database = try MusicDatabase(url: temporaryDatabaseURL())
