@@ -535,6 +535,12 @@ Requirements:
 - Define previous-button behaviour: restart current track after a threshold, otherwise move to previous.
 - Shuffle produces a stable order for the current session and avoids immediately replaying the current item.
 
+### DSF playback decision (28 July 2026)
+
+The Mac app supports DSF import and local playback by preserving the original `.dsf` file, reading its DSF header and optional ID3 metadata, then creating a private, replaceable **24-bit PCM WAV cache** for playback. The decoder downsamples common DSD rates to the nearest compatible high-resolution PCM rate (normally 176.4 kHz) using a local low-pass decimation filter. It never rewrites, relocates, uploads, or replaces the original DSF file.
+
+Native bit-perfect DSD output and DoP are deliberately deferred. They depend on the connected DAC, USB driver, macOS output path, and the supported device formats; a future implementation must enumerate the chosen output device, expose its capability, let the user explicitly select native/DoP/PCM output, and prove the active output mode rather than infer it from the source file.
+
 ## 14. Snapshot publication protocol
 
 ### Manifest

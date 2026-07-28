@@ -116,6 +116,43 @@ struct ImportScannerTests {
         #expect(metadata.durationMilliseconds == 3_000)
     }
 
+    @Test("DSF files are scanned and expose ID3 and technical metadata")
+    func readsDSFMetadata() async throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let file = directory.appending(path: "01 ignored.dsf")
+        try makeTaggedDSF().write(to: file)
+
+        let scan = ImportScanner().scan(rootURL: directory)
+        #expect(scan.candidates.map(\.relativePath) == ["01 ignored.dsf"])
+        let metadata = await EmbeddedMetadataExtractor().extract(url: file, relativePath: "Artist/Album/01 ignored.dsf")
+        #expect(metadata.title == "DSD Song")
+        #expect(metadata.albumTitle == "DSD Album")
+        #expect(metadata.artist == "DSD Artist")
+        #expect(metadata.trackNumber == 1)
+        #expect(metadata.releaseYear == 2024)
+        #expect(metadata.codec == "DSF")
+        #expect(metadata.sampleRateHz == 2_822_400)
+        #expect(metadata.bitDepth == 1)
+        #expect(metadata.channelCount == 2)
+    }
+
+    @Test("DSF playback conversion produces a high-resolution PCM WAV cache")
+    func convertsDSFForPlayback() throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let file = directory.appending(path: "playback.dsf")
+        try makeTaggedDSF().write(to: file)
+
+        let converted = try DSFPCMTranscoder().playableURL(for: file)
+        let header = try Data(contentsOf: converted).prefix(44)
+        #expect(String(decoding: header.prefix(4), as: UTF8.self) == "RIFF")
+        #expect(String(decoding: header.dropFirst(8).prefix(4), as: UTF8.self) == "WAVE")
+        #expect(header.count == 44)
+    }
+
     @Test("Snapshot publisher writes a checksummed manifest after the revision file")
     func publishesSnapshot() throws {
         let directory = temporaryDirectory()
@@ -233,5 +270,25 @@ struct ImportScannerTests {
             vorbis += littleEndian(UInt32(bytes.count)) + bytes
         }
         return Data(Array("fLaC".utf8) + metadataBlock(type: 0, isLast: false, payload: streamInfo) + metadataBlock(type: 4, isLast: true, payload: vorbis))
+    }
+
+    private func makeTaggedDSF() -> Data {
+        func littleEndian(_ value: UInt64, bytes: Int) -> [UInt8] { (0..<bytes).map { UInt8(truncatingIfNeeded: value >> UInt64($0 * 8)) } }
+        func bigEndian(_ value: UInt32) -> [UInt8] { (0..<4).reversed().map { UInt8(truncatingIfNeeded: value >> UInt32($0 * 8)) } }
+        func synchsafe(_ value: Int) -> [UInt8] { [UInt8((value >> 21) & 0x7f), UInt8((value >> 14) & 0x7f), UInt8((value >> 7) & 0x7f), UInt8(value & 0x7f)] }
+        func textFrame(_ name: String, _ value: String) -> [UInt8] {
+            let payload = [UInt8(3)] + Array(value.utf8)
+            return Array(name.utf8) + bigEndian(UInt32(payload.count)) + [0, 0] + payload
+        }
+        let frames = textFrame("TIT2", "DSD Song") + textFrame("TALB", "DSD Album") + textFrame("TPE1", "DSD Artist") + textFrame("TRCK", "1") + textFrame("TDRC", "2024")
+        let id3 = Array("ID3".utf8) + [4, 0, 0] + synchsafe(frames.count) + frames
+        let sampleCount: UInt64 = 256
+        let audio = Array(repeating: UInt8(0xaa), count: 64)
+        let metadataOffset = UInt64(92 + audio.count)
+        let fileSize = metadataOffset + UInt64(id3.count)
+        var data = Array("DSD ".utf8) + littleEndian(28, bytes: 8) + littleEndian(fileSize, bytes: 8) + littleEndian(metadataOffset, bytes: 8)
+        data += Array("fmt ".utf8) + littleEndian(52, bytes: 8) + littleEndian(1, bytes: 4) + littleEndian(0, bytes: 4) + littleEndian(0, bytes: 4) + littleEndian(2, bytes: 4) + littleEndian(2_822_400, bytes: 4) + littleEndian(1, bytes: 4) + littleEndian(sampleCount, bytes: 8) + littleEndian(32, bytes: 4) + [0, 0, 0, 0]
+        data += Array("data".utf8) + littleEndian(UInt64(audio.count + 12), bytes: 8) + audio + id3
+        return Data(data)
     }
 }

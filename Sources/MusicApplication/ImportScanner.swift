@@ -32,9 +32,10 @@ public struct ImportScanner: Sendable {
                 let values = try url.resourceValues(forKeys: keys)
                 if values.isDirectory == true || values.isPackage == true || values.isHidden == true { continue }
                 if url.pathExtension.lowercased() == "cue" { cueFiles.append(url); continue }
-                guard let type = values.contentType, type.conforms(to: .audio) else { continue }
+                let isDSF = url.pathExtension.caseInsensitiveCompare("dsf") == .orderedSame
+                guard isDSF || values.contentType?.conforms(to: .audio) == true else { continue }
                 let relative = relativePath(of: url, within: rootURL)
-                candidates.append(.init(relativePath: relative, fileName: url.lastPathComponent, contentTypeIdentifier: type.identifier, fileSize: Int64(values.fileSize ?? 0), modifiedAt: values.contentModificationDate))
+                candidates.append(.init(relativePath: relative, fileName: url.lastPathComponent, contentTypeIdentifier: values.contentType?.identifier ?? "org.sony.dsf", fileSize: Int64(values.fileSize ?? 0), modifiedAt: values.contentModificationDate))
             } catch {
                 errors.append("\(url.lastPathComponent): \(error.localizedDescription)")
             }

@@ -6,6 +6,9 @@ public struct EmbeddedMetadataExtractor: Sendable {
     public init() {}
 
     public func extract(url: URL, relativePath: String) async -> EmbeddedMetadataPayload {
+        if url.pathExtension.caseInsensitiveCompare("dsf") == .orderedSame, let dsf = try? DSFMetadataReader().read(url: url) {
+            return metadata(from: dsf, relativePath: relativePath)
+        }
         if let flac = try? FLACMetadataReader().read(url: url) {
             return metadata(from: flac, relativePath: relativePath)
         }
@@ -30,6 +33,26 @@ public struct EmbeddedMetadataExtractor: Sendable {
         if embeddedAlbum == nil { rawTags["albumSource"] = "path" }
         if embeddedArtist == nil, fallback.artist != nil { rawTags["artistSource"] = "path" }
         return .init(title: title, albumTitle: album, artist: artist, albumArtist: nil, discNumber: fallback.discNumber, trackNumber: fallback.trackNumber, durationMilliseconds: duration, rawTags: rawTags)
+    }
+
+    private func metadata(from dsf: DSFMetadataReader.Result, relativePath: String) -> EmbeddedMetadataPayload {
+        let fallback = Self.pathFallback(relativePath: relativePath)
+        func tag(_ names: String...) -> String? { names.lazy.compactMap { dsf.tags[$0] }.first?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlank }
+        let title = tag("TITLE") ?? fallback.title
+        let album = tag("ALBUM") ?? fallback.albumTitle
+        let artist = tag("ARTIST") ?? fallback.artist
+        let albumArtist = tag("ALBUMARTIST")
+        let discNumber = number(from: tag("DISCNUMBER")) ?? fallback.discNumber
+        let trackNumber = number(from: tag("TRACKNUMBER")) ?? fallback.trackNumber
+        var rawTags = dsf.tags
+        rawTags["codec"] = "DSF"
+        rawTags["sampleRateHz"] = String(dsf.sampleRateHz)
+        rawTags["bitDepth"] = String(dsf.bitDepth)
+        rawTags["channels"] = String(dsf.channelCount)
+        if title == fallback.title, dsf.tags["TITLE"] == nil { rawTags["titleSource"] = "path" }
+        if album == fallback.albumTitle, dsf.tags["ALBUM"] == nil { rawTags["albumSource"] = "path" }
+        if artist == fallback.artist, dsf.tags["ARTIST"] == nil { rawTags["artistSource"] = "path" }
+        return .init(title: title, albumTitle: album, artist: artist, albumArtist: albumArtist, discNumber: discNumber, trackNumber: trackNumber, durationMilliseconds: dsf.durationMilliseconds, rawTags: rawTags, provenance: "dsf-id3", releaseYear: year(from: tag("DATE")), genre: tag("GENRE"), codec: "DSF", sampleRateHz: dsf.sampleRateHz, bitDepth: dsf.bitDepth, channelCount: dsf.channelCount)
     }
 
     private func metadata(from flac: FLACMetadataReader.Result, relativePath: String) -> EmbeddedMetadataPayload {

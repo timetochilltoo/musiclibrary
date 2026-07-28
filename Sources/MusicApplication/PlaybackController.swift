@@ -146,7 +146,7 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
             self.preparedNext = nil
             usedPreparedPlayer = true
         } else {
-            openedPlayer = try AVAudioPlayer(contentsOf: item.url)
+            openedPlayer = try AVAudioPlayer(contentsOf: try DSFPCMTranscoder().playableURL(for: item.url))
             usedPreparedPlayer = false
         }
         if let cueStartMilliseconds = item.cueStartMilliseconds {
@@ -155,7 +155,7 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
         if start(openedPlayer) {
             adopt(openedPlayer, item: item)
         } else if usedPreparedPlayer {
-            let fallback = try AVAudioPlayer(contentsOf: item.url)
+            let fallback = try AVAudioPlayer(contentsOf: try DSFPCMTranscoder().playableURL(for: item.url))
             if let cueStartMilliseconds = item.cueStartMilliseconds {
                 fallback.currentTime = Double(cueStartMilliseconds) / 1_000
             }
@@ -208,6 +208,7 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
         let currentTrackID = queue.currentTrackID
         let item = items[nextIndex]
         let generation = preloadGeneration
+        guard item.url.pathExtension.caseInsensitiveCompare("dsf") != .orderedSame else { return }
         preloader.prepare(url: item.url) { [weak self] prepared in
             guard let prepared else { return }
             Task { @MainActor [weak self] in
