@@ -410,6 +410,33 @@ struct MusicDatabaseTests {
         #expect(try await database.playbackAsset(trackID: track.id)?.availability == .missing)
     }
 
+    @Test("A reviewed missing asset reference can be removed without deleting its track")
+    func removesReviewedMissingAssetReference() async throws {
+        let database = try MusicDatabase(url: temporaryDatabaseURL())
+        try await database.migrate()
+        let root = try await database.createStorageRoot(.init(displayName: "Music", lastKnownPath: "/Music", bookmarkData: Data([1])))
+        let initialBatch = try await database.createImportBatch(storageRootID: root.id, sourceDescription: "/Music")
+        try await database.recordImportCandidate(batchID: initialBatch.id, payload: .init(relativePath: "Album/song.flac", fileName: "song.flac", contentTypeIdentifier: "public.audio", fileSize: 1, modifiedAt: nil))
+        let candidate = try #require(await database.importCandidates(batchID: initialBatch.id).first)
+        try await database.saveEmbeddedMetadata(.init(title: "Song", albumTitle: "Album", artist: "Artist", albumArtist: nil, discNumber: 1, trackNumber: 1, durationMilliseconds: 1000, rawTags: [:]), for: candidate.id)
+        try await database.rebuildImportReleaseProposals(batchID: initialBatch.id, drafts: [.init(title: "Album", artist: "Artist", discCount: 1, confidence: 1, candidateIDs: [candidate.id])])
+        let proposal = try #require(await database.importReleaseProposals(batchID: initialBatch.id).first)
+        try await database.updateImportReleaseProposal(proposal.id, status: .approved)
+        let albumID = try await database.confirmImportReleaseProposal(proposal.id)
+        let assetID = try #require(await database.digitalAssetIDs(albumID: albumID).first)
+        let disc = try #require(await database.discs(albumID: albumID).first)
+        let track = try #require(await database.tracks(discID: disc.id).first)
+
+        let rescan = try await database.createImportBatch(storageRootID: root.id, sourceDescription: "/Music")
+        try await database.finishImportBatch(rescan.id, status: .completed)
+        try await database.reconcileCompletedScan(batchID: rescan.id, rootID: root.id, discoveredRelativePaths: [])
+        try await database.removeMissingAssetReference(assetID, in: rescan.id)
+
+        #expect(try await database.missingAssetReviews(batchID: rescan.id).isEmpty)
+        #expect(try await database.digitalAssetIDs(albumID: albumID).isEmpty)
+        #expect(try await database.tracks(discID: disc.id).map(\.id) == [track.id])
+    }
+
     @Test("Approved import assigns unique catalogue positions for duplicate embedded track numbers")
     func importedDuplicateTrackNumbersAreRecovered() async throws {
         let database = try MusicDatabase(url: temporaryDatabaseURL())

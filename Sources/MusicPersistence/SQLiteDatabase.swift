@@ -265,6 +265,20 @@ public actor MusicDatabase {
         }
     }
 
+    public func removeMissingAssetReference(_ assetID: DigitalAssetID, in batchID: ImportBatchID) throws {
+        try transaction {
+            let review = try Self.prepare("SELECT 1 FROM root_scan_missing_asset WHERE batch_id = ? AND asset_id = ?;", on: connection)
+            defer { sqlite3_finalize(review) }
+            try Self.bind(batchID.description, at: 1, to: review); try Self.bind(assetID.description, at: 2, to: review)
+            guard sqlite3_step(review) == SQLITE_ROW else { throw DatabaseError.notFound("Missing asset review") }
+
+            let delete = try Self.prepare("DELETE FROM digital_asset WHERE id = ?;", on: connection)
+            defer { sqlite3_finalize(delete) }
+            try Self.bind(assetID.description, at: 1, to: delete); try Self.stepDone(delete, connection: connection)
+            try incrementRevision()
+        }
+    }
+
     public func recordImportCandidate(batchID: ImportBatchID, payload: ImportCandidatePayload) throws {
         let data = try JSONEncoder().encode(payload); let id = ImportCandidateID()
         try transaction {

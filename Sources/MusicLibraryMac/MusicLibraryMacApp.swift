@@ -857,6 +857,7 @@ private struct ImportBatchDetail: View {
     @State private var selections: [UUID: ExternalMetadataSelection] = [:]
     @State private var missingAssets: [MissingAssetReview] = []
     @State private var missingAssetToConfirm: MissingAssetReview?
+    @State private var missingAssetToRemove: MissingAssetReview?
 
     var body: some View {
         List {
@@ -893,8 +894,11 @@ private struct ImportBatchDetail: View {
                             Text(asset.albumTitle).font(.headline)
                             Text(asset.trackTitle).font(.caption)
                             Text(asset.relativePath).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-                            Button("Mark Catalogue Asset Missing…", role: .destructive) { missingAssetToConfirm = asset }
-                                .font(.caption)
+                            HStack {
+                                Button("Mark Catalogue Asset Missing…", role: .destructive) { missingAssetToConfirm = asset }
+                                Button("Remove Asset Reference…", role: .destructive) { missingAssetToRemove = asset }
+                            }
+                            .font(.caption)
                         }
                     }
                 }
@@ -972,6 +976,21 @@ private struct ImportBatchDetail: View {
             }
         } message: {
             Text("This keeps the catalogue track but records that its file is currently missing. It never deletes, moves, or changes source audio files.")
+        }
+        .confirmationDialog("Remove this missing asset reference?", isPresented: Binding(get: { missingAssetToRemove != nil }, set: { if !$0 { missingAssetToRemove = nil } }), titleVisibility: .visible) {
+            if let asset = missingAssetToRemove {
+                Button("Remove Asset Reference", role: .destructive) {
+                    Task {
+                        do {
+                            try await library.removeMissingAssetReference(asset.id, in: batch.id)
+                            missingAssetToRemove = nil
+                            await load()
+                        } catch { library.presentError(error) }
+                    }
+                }
+            }
+        } message: {
+            Text("This permanently removes only the stored file reference for \(missingAssetToRemove?.trackTitle ?? "this track"). The catalogue track, album, playlists, and source audio files are not deleted or changed.")
         }
         .sheet(item: $proposalToLookUp) { proposal in
             ExternalMetadataLookupView(library: library, proposal: proposal, onSelected: { await load() })

@@ -280,6 +280,12 @@ public final class LibraryStore: ObservableObject {
         try await reload()
     }
 
+    public func removeMissingAssetReference(_ assetID: DigitalAssetID, in batchID: ImportBatchID) async throws {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        try await database.removeMissingAssetReference(assetID, in: batchID)
+        try await reload()
+    }
+
     public func analyzeImportBatch(_ batchID: ImportBatchID) async throws {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
         try await refreshStorageRootAccess()
