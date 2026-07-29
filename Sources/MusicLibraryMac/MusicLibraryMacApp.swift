@@ -909,6 +909,7 @@ private struct ExternalMetadataLookupView: View {
     @State private var isSearching = false
     @State private var errorMessage: String?
     @State private var hasSearched = false
+    @State private var selectedResultID: String?
 
     init(library: LibraryStore, proposal: ImportReleaseProposal, onSelected: @escaping () async -> Void) {
         self.library = library
@@ -920,42 +921,73 @@ private struct ExternalMetadataLookupView: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Search") {
-                    TextField("Album title", text: $title)
-                    TextField("Artist (optional)", text: $artist)
-                    Text("Search sends only the text entered here to MusicBrainz. It does not upload audio, modify files, or change the catalogue.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    Button("Search MusicBrainz") { search() }.disabled(isSearching || title.nilIfBlank == nil)
-                }
-                Section("Preview results") {
-                    if isSearching { ProgressView("Searching MusicBrainz…") }
-                    else if hasSearched && results.isEmpty { Text("No matching releases found.").foregroundStyle(.secondary) }
-                    ForEach(results) { result in
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(result.title).font(.headline)
-                            Text([result.artist, result.releaseDate, result.countryCode, result.catalogueNumber].compactMap { $0 }.joined(separator: " · "))
+            VStack(spacing: 0) {
+                Form {
+                    Section("Search") {
+                        TextField("Album title", text: $title)
+                        TextField("Artist (optional)", text: $artist)
+                        HStack {
+                            Button("Search MusicBrainz") { search() }.disabled(isSearching || title.nilIfBlank == nil)
+                            Text("Only the text above is sent. Audio files are never uploaded or modified.")
                                 .font(.caption).foregroundStyle(.secondary)
-                            if result.mediaCount > 0 { Text("\(result.mediaCount) disc(s)").font(.caption).foregroundStyle(.secondary) }
-                            Text("Preview only — no catalogue change has been made.").font(.caption2).foregroundStyle(.secondary)
-                            Button("Use for Field Comparison") { save(result) }
                         }
                     }
                 }
+                .frame(height: 142)
+                Divider()
+                if isSearching {
+                    Spacer(); ProgressView("Searching MusicBrainz…"); Spacer()
+                } else if hasSearched && results.isEmpty {
+                    Spacer(); ContentUnavailableView("No matching releases", systemImage: "magnifyingglass", description: Text("Try a different album title or artist.")); Spacer()
+                } else if !results.isEmpty {
+                    HStack(spacing: 0) {
+                        List(selection: $selectedResultID) {
+                            Section("Album candidates") {
+                                ForEach(results) { result in
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(result.title).font(.headline).lineLimit(2)
+                                        Text([result.artist, result.releaseDate, result.countryCode, result.catalogueNumber].compactMap { $0 }.joined(separator: " · "))
+                                            .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                                        Text("\(result.mediaCount) disc\(result.mediaCount == 1 ? "" : "s")")
+                                            .font(.caption2).foregroundStyle(.secondary)
+                                    }
+                                    .tag(result.id)
+                                }
+                            }
+                        }
+                        .frame(minWidth: 270, maxWidth: 320)
+                        Divider()
+                        MusicBrainzCandidateComparison(proposal: proposal, result: selectedResult)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                } else {
+                    Spacer(); ContentUnavailableView("Search MusicBrainz", systemImage: "magnifyingglass", description: Text("Search for release candidates, then compare one with this imported album.")); Spacer()
+                }
             }
             .navigationTitle("MusicBrainz Lookup")
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Use Selected Release") { if let selectedResult { save(selectedResult) } }
+                        .disabled(selectedResult == nil)
+                }
+            }
             .alert("Search failed", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) { Button("OK", role: .cancel) {} } message: { Text(errorMessage ?? "") }
         }
-        .frame(width: 560, height: 520)
+        .frame(width: 960, height: 650)
     }
+
+    private var selectedResult: ExternalReleasePreview? { results.first { $0.id == selectedResultID } }
 
     private func search() {
         isSearching = true
         hasSearched = true
         results = []
         Task {
-            do { results = try await library.searchMusicBrainz(title: title, artist: artist.nilIfBlank) }
+            do {
+                results = try await library.searchMusicBrainz(title: title, artist: artist.nilIfBlank)
+                selectedResultID = results.first?.id
+            }
             catch { errorMessage = error.localizedDescription }
             isSearching = false
         }
@@ -964,6 +996,52 @@ private struct ExternalMetadataLookupView: View {
         Task {
             do { try await library.saveMusicBrainzSelection(result, for: proposal.id); await onSelected(); dismiss() }
             catch { errorMessage = error.localizedDescription }
+        }
+    }
+}
+
+private struct MusicBrainzCandidateComparison: View {
+    let proposal: ImportReleaseProposal
+    let result: ExternalReleasePreview?
+
+    var body: some View {
+        Group {
+            if let result {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Compare metadata").font(.title3.bold())
+                    Text("Review the imported values beside the selected MusicBrainz release. Choosing it still changes nothing until you press Use Selected Release, then select the fields to apply.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Grid(alignment: .leading, horizontalSpacing: 20, verticalSpacing: 12) {
+                        GridRow {
+                            Text("Field").font(.caption.bold()).foregroundStyle(.secondary)
+                            Text("Imported album").font(.caption.bold()).foregroundStyle(.secondary)
+                            Text("Selected MusicBrainz release").font(.caption.bold()).foregroundStyle(.secondary)
+                        }
+                        Divider().gridCellColumns(3)
+                        row("Album title", proposal.title, result.title)
+                        row("Artist", proposal.artist, result.artist)
+                        row("Release date", nil, result.releaseDate)
+                        row("Country / region", proposal.countryCode, result.countryCode)
+                        row("Catalogue number", proposal.catalogueNumber, result.catalogueNumber)
+                        row("Disc count", String(proposal.discCount), String(result.mediaCount))
+                        row("Imported tracks", String(proposal.trackCount), nil)
+                    }
+                    Spacer()
+                    Label("Preview only — no catalogue record, import proposal, or audio file has changed.", systemImage: "eye")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                .padding(24)
+            } else {
+                ContentUnavailableView("Select an album candidate", systemImage: "rectangle.and.text.magnifyingglass", description: Text("The selected candidate's MusicBrainz metadata will appear beside the imported values."))
+            }
+        }
+    }
+
+    @ViewBuilder private func row(_ label: String, _ imported: String?, _ musicBrainz: String?) -> some View {
+        GridRow {
+            Text(label).font(.subheadline.weight(.medium))
+            Text(imported?.nilIfBlank ?? "—").textSelection(.enabled)
+            Text(musicBrainz?.nilIfBlank ?? "—").textSelection(.enabled)
         }
     }
 }
