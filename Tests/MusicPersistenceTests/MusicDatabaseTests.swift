@@ -482,6 +482,9 @@ struct MusicDatabaseTests {
         #expect(try await database.libraryHealthIssues().map(\.kind) == [.missingArtwork])
         #expect(try await database.currentRevision() == revisionBeforeHealthCheck)
         let relink = try await database.proposeRelink(assetID: assetID, proposedRelativePath: "Album/new-song.mp3")
+        let duplicateRelink = try await database.proposeRelink(assetID: assetID, proposedRelativePath: "Album/new-song.mp3")
+        #expect(duplicateRelink.id == relink.id)
+        #expect(try await database.relinkProposals().count == 1)
         let revisionBeforeApply = try await database.currentRevision()
 
         try await database.applyRelinkProposal(relink.id)

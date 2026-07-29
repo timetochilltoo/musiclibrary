@@ -858,6 +858,7 @@ private struct ImportBatchDetail: View {
     @State private var missingAssets: [MissingAssetReview] = []
     @State private var missingAssetToConfirm: MissingAssetReview?
     @State private var missingAssetToRemove: MissingAssetReview?
+    @State private var missingAssetToRelink: MissingAssetReview?
 
     var body: some View {
         List {
@@ -895,6 +896,7 @@ private struct ImportBatchDetail: View {
                             Text(asset.trackTitle).font(.caption)
                             Text(asset.relativePath).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                             HStack {
+                                Button("Choose Replacement File…") { missingAssetToRelink = asset }
                                 Button("Mark Catalogue Asset Missing…", role: .destructive) { missingAssetToConfirm = asset }
                                 Button("Remove Asset Reference…", role: .destructive) { missingAssetToRemove = asset }
                             }
@@ -991,6 +993,23 @@ private struct ImportBatchDetail: View {
             }
         } message: {
             Text("This permanently removes only the stored file reference for \(missingAssetToRemove?.trackTitle ?? "this track"). The catalogue track, album, playlists, and source audio files are not deleted or changed.")
+        }
+        .fileImporter(isPresented: Binding(get: { missingAssetToRelink != nil }, set: { if !$0 { missingAssetToRelink = nil } }), allowedContentTypes: [.audio, .data]) { result in
+            guard let asset = missingAssetToRelink else { return }
+            switch result {
+            case .success(let url):
+                Task {
+                    do {
+                        try await library.proposeRelink(assetID: asset.id, replacementURL: url)
+                        missingAssetToRelink = nil
+                        await load()
+                    } catch {
+                        library.presentError(error)
+                    }
+                }
+            case .failure(let error):
+                library.presentError(error)
+            }
         }
         .sheet(item: $proposalToLookUp) { proposal in
             ExternalMetadataLookupView(library: library, proposal: proposal, onSelected: { await load() })

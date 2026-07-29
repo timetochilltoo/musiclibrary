@@ -682,9 +682,41 @@ public actor MusicDatabase {
         return values
     }
     public func proposeRelink(assetID: DigitalAssetID, proposedRelativePath: String) throws -> AssetRelinkProposal {
-        let id = UUID(); var current = ""
-        try transaction { let source = try Self.prepare("SELECT relative_path FROM digital_asset WHERE id = ?;", on: connection); defer { sqlite3_finalize(source) }; try Self.bind(assetID.description, at: 1, to: source); guard sqlite3_step(source) == SQLITE_ROW else { throw DatabaseError.notFound("Digital asset") }; current = Self.text(at: 0, from: source) ?? ""; let statement = try Self.prepare("INSERT OR IGNORE INTO asset_relink_proposal (id, asset_id, proposed_relative_path, created_at) VALUES (?, ?, ?, ?);", on: connection); defer { sqlite3_finalize(statement) }; try Self.bind(id.uuidString.lowercased(), at: 1, to: statement); try Self.bind(assetID.description, at: 2, to: statement); try Self.bind(proposedRelativePath, at: 3, to: statement); try Self.bind(Self.milliseconds(Date()), at: 4, to: statement); try Self.stepDone(statement, connection: connection) }
-        return .init(id: id, assetID: assetID, currentPath: current, proposedPath: proposedRelativePath)
+        let trimmedPath = proposedRelativePath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedPath.isEmpty else { throw DatabaseError.invalidOperation("A replacement file path is required.") }
+        var current = ""
+        var proposalID = UUID()
+        try transaction {
+            let source = try Self.prepare("SELECT relative_path FROM digital_asset WHERE id = ?;", on: connection)
+            defer { sqlite3_finalize(source) }
+            try Self.bind(assetID.description, at: 1, to: source)
+            guard sqlite3_step(source) == SQLITE_ROW else { throw DatabaseError.notFound("Digital asset") }
+            current = Self.text(at: 0, from: source) ?? ""
+            guard current != trimmedPath else { throw DatabaseError.invalidOperation("The replacement file is already the catalogue path for this asset.") }
+
+            let insert = try Self.prepare("INSERT OR IGNORE INTO asset_relink_proposal (id, asset_id, proposed_relative_path, created_at) VALUES (?, ?, ?, ?);", on: connection)
+            defer { sqlite3_finalize(insert) }
+            try Self.bind(proposalID.uuidString.lowercased(), at: 1, to: insert)
+            try Self.bind(assetID.description, at: 2, to: insert)
+            try Self.bind(trimmedPath, at: 3, to: insert)
+            try Self.bind(Self.milliseconds(Date()), at: 4, to: insert)
+            try Self.stepDone(insert, connection: connection)
+
+            let existing = try Self.prepare("SELECT id FROM asset_relink_proposal WHERE asset_id = ? AND proposed_relative_path = ?;", on: connection)
+            defer { sqlite3_finalize(existing) }
+            try Self.bind(assetID.description, at: 1, to: existing)
+            try Self.bind(trimmedPath, at: 2, to: existing)
+            guard sqlite3_step(existing) == SQLITE_ROW, let rawID = Self.text(at: 0, from: existing), let id = UUID(uuidString: rawID) else { throw DatabaseError.invalidIdentifier("asset_relink_proposal") }
+            proposalID = id
+        }
+        return .init(id: proposalID, assetID: assetID, currentPath: current, proposedPath: trimmedPath)
+    }
+    public func storageRootID(for assetID: DigitalAssetID) throws -> StorageRootID {
+        let statement = try Self.prepare("SELECT storage_root_id FROM digital_asset WHERE id = ?;", on: connection)
+        defer { sqlite3_finalize(statement) }
+        try Self.bind(assetID.description, at: 1, to: statement)
+        guard sqlite3_step(statement) == SQLITE_ROW, let rawID = Self.text(at: 0, from: statement), let id = UUID(uuidString: rawID) else { throw DatabaseError.notFound("Digital asset") }
+        return .init(rawValue: id)
     }
     public func relinkProposals() throws -> [AssetRelinkProposal] {
         let statement = try Self.prepare("SELECT asset_relink_proposal.id, asset_relink_proposal.asset_id, digital_asset.relative_path, asset_relink_proposal.proposed_relative_path FROM asset_relink_proposal JOIN digital_asset ON digital_asset.id = asset_relink_proposal.asset_id ORDER BY asset_relink_proposal.created_at DESC;", on: connection)

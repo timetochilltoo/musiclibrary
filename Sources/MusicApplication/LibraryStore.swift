@@ -286,6 +286,37 @@ public final class LibraryStore: ObservableObject {
         try await reload()
     }
 
+    /// Records a user-selected replacement under the asset's existing music root.
+    /// The catalogue path remains unchanged until the stored proposal is explicitly
+    /// applied from Settings.
+    public func proposeRelink(assetID: DigitalAssetID, replacementURL: URL) async throws {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        try await refreshStorageRootAccess()
+        let rootID = try await database.storageRootID(for: assetID)
+        guard let root = storageRoots.first(where: { $0.id == rootID }) else { throw DatabaseError.notFound("Storage root for digital asset") }
+        let resolved = resolveSecurityScopedBookmark(root)
+        guard resolved.status == .available, let rootURL = resolved.url else { throw DatabaseError.invalidOperation("The registered music folder is not currently available.") }
+
+        let selectedURL = replacementURL.standardizedFileURL
+        let rootAccessed = rootURL.startAccessingSecurityScopedResource()
+        let selectionAccessed = selectedURL.startAccessingSecurityScopedResource()
+        defer {
+            if selectionAccessed { selectedURL.stopAccessingSecurityScopedResource() }
+            if rootAccessed { rootURL.stopAccessingSecurityScopedResource() }
+        }
+        guard rootAccessed || selectionAccessed else { throw DatabaseError.invalidOperation("Permission to access the selected replacement file was not available.") }
+
+        let relativePath = Self.relativePath(of: selectedURL, within: rootURL)
+        guard !relativePath.isEmpty else { throw DatabaseError.invalidOperation("Choose a replacement file inside the same registered music folder.") }
+        let values = try selectedURL.resourceValues(forKeys: [.isDirectoryKey, .contentTypeKey, .isRegularFileKey])
+        guard values.isRegularFile == true, values.isDirectory != true else { throw DatabaseError.invalidOperation("Choose an audio file, not a folder.") }
+        let isDSF = selectedURL.pathExtension.caseInsensitiveCompare("dsf") == .orderedSame
+        guard isDSF || values.contentType?.conforms(to: .audio) == true else { throw DatabaseError.invalidOperation("Choose a supported audio file.") }
+
+        _ = try await database.proposeRelink(assetID: assetID, proposedRelativePath: relativePath)
+        try await reload()
+    }
+
     public func analyzeImportBatch(_ batchID: ImportBatchID) async throws {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
         try await refreshStorageRootAccess()
