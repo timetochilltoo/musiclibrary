@@ -1124,14 +1124,20 @@ private struct MusicBrainzCandidateComparison: View {
     }
 
     @ViewBuilder private func coverArtwork(for result: ExternalReleasePreview) -> some View {
-        if let url = result.coverArtworkURL {
+        if let url = result.coverArtworkThumbnailURL {
             AsyncImage(url: url, transaction: .init(animation: .default)) { phase in
                 switch phase {
                 case .success(let image): image.resizable().scaledToFill()
-                case .failure: Image(systemName: "photo.badge.exclamationmark").font(.largeTitle).foregroundStyle(.secondary)
+                case .failure:
+                    VStack(spacing: 8) {
+                        Image(systemName: "photo.badge.exclamationmark").font(.largeTitle).foregroundStyle(.secondary)
+                        Text("No MusicBrainz cover").font(.caption).multilineTextAlignment(.center).foregroundStyle(.secondary)
+                    }
                 default: ProgressView()
                 }
             }
+            // AsyncImage's loading phase is stateful; identity must change with the selected release.
+            .id(result.id)
             .frame(width: 130, height: 130)
             .background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
             .clipShape(RoundedRectangle(cornerRadius: 10))

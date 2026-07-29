@@ -15,6 +15,8 @@ public struct ExternalReleasePreview: Identifiable, Equatable, Sendable {
     }
 
     public var coverArtworkURL: URL? { URL(string: "https://coverartarchive.org/release/\(id)/front") }
+    /// A small derivative for responsive comparison previews. Downloads still use `coverArtworkURL`.
+    public var coverArtworkThumbnailURL: URL? { URL(string: "https://coverartarchive.org/release/\(id)/front-250") }
 }
 
 public protocol MetadataLookupProviding: Sendable {
