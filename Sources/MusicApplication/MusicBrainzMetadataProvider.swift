@@ -8,10 +8,13 @@ public struct ExternalReleasePreview: Identifiable, Equatable, Sendable {
     public let countryCode: String?
     public let catalogueNumber: String?
     public let mediaCount: Int
+    public let trackTitles: [String]
 
-    public init(id: String, title: String, artist: String?, releaseDate: String?, countryCode: String?, catalogueNumber: String?, mediaCount: Int) {
-        self.id = id; self.title = title; self.artist = artist; self.releaseDate = releaseDate; self.countryCode = countryCode; self.catalogueNumber = catalogueNumber; self.mediaCount = mediaCount
+    public init(id: String, title: String, artist: String?, releaseDate: String?, countryCode: String?, catalogueNumber: String?, mediaCount: Int, trackTitles: [String] = []) {
+        self.id = id; self.title = title; self.artist = artist; self.releaseDate = releaseDate; self.countryCode = countryCode; self.catalogueNumber = catalogueNumber; self.mediaCount = mediaCount; self.trackTitles = trackTitles
     }
+
+    public var coverArtworkURL: URL? { URL(string: "https://coverartarchive.org/release/\(id)/front") }
 }
 
 public protocol MetadataLookupProviding: Sendable {
@@ -50,7 +53,7 @@ public struct MusicBrainzMetadataProvider: MetadataLookupProviding {
         let query = trimmedArtist?.isEmpty == false ? "release:\"\(trimmedTitle)\" AND artist:\"\(trimmedArtist!)\"" : "release:\"\(trimmedTitle)\""
         let cacheKey = "\(trimmedTitle.lowercased())|\(trimmedArtist?.lowercased() ?? "")"
         if let cached = await cache.value(for: cacheKey) { return cached }
-        components.queryItems = [URLQueryItem(name: "query", value: query), URLQueryItem(name: "fmt", value: "json"), URLQueryItem(name: "limit", value: "12")]
+        components.queryItems = [URLQueryItem(name: "query", value: query), URLQueryItem(name: "fmt", value: "json"), URLQueryItem(name: "limit", value: "12"), URLQueryItem(name: "inc", value: "recordings")]
         guard let url = components.url else { throw MetadataLookupError.invalidResponse }
         let results = try await fetch(url: url)
         await cache.store(results, for: cacheKey)
@@ -79,7 +82,9 @@ public struct MusicBrainzMetadataProvider: MetadataLookupProviding {
 
     static func decodeReleases(from data: Data) throws -> [ExternalReleasePreview] {
         let payload = try JSONDecoder().decode(Response.self, from: data)
-        return payload.releases.map { .init(id: $0.id, title: $0.title, artist: $0.artistCredit?.map(\.name).joined(separator: ", "), releaseDate: $0.date, countryCode: $0.country ?? $0.releaseEvents?.first?.area?.iso31661Codes?.first, catalogueNumber: $0.labelInfo?.compactMap(\.catalogueNumber).first, mediaCount: $0.media?.count ?? 0) }
+        return payload.releases.map { release in
+            .init(id: release.id, title: release.title, artist: release.artistCredit?.map(\.name).joined(separator: ", "), releaseDate: release.date, countryCode: release.country ?? release.releaseEvents?.first?.area?.iso31661Codes?.first, catalogueNumber: release.labelInfo?.compactMap(\.catalogueNumber).first, mediaCount: release.media?.count ?? 0, trackTitles: release.media?.flatMap { $0.tracks ?? [] }.map(\.title) ?? [])
+        }
     }
 }
 
@@ -117,7 +122,8 @@ private extension MusicBrainzMetadataProvider {
     }
     struct ArtistCredit: Decodable { let name: String }
     struct LabelInfo: Decodable { let catalogueNumber: String?; enum CodingKeys: String, CodingKey { case catalogueNumber = "catalog-number" } }
-    struct Media: Decodable {}
+    struct Media: Decodable { let tracks: [Track]? }
+    struct Track: Decodable { let title: String }
     struct ReleaseEvent: Decodable { let area: Area? }
     struct Area: Decodable { let iso31661Codes: [String]?; enum CodingKeys: String, CodingKey { case iso31661Codes = "iso-3166-1-codes" } }
 }

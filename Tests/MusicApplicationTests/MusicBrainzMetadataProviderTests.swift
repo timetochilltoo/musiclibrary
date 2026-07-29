@@ -9,11 +9,11 @@ struct MusicBrainzMetadataProviderTests {
         { "releases": [{
           "id": "e7a1", "title": "Kind of Blue", "date": "1959-08-17", "country": "JP",
           "artist-credit": [{ "name": "Miles Davis" }],
-          "label-info": [{ "catalog-number": "SRCS 9701" }], "media": [{}, {}]
+          "label-info": [{ "catalog-number": "SRCS 9701" }], "media": [{ "tracks": [{ "title": "So What" }] }, { "tracks": [{ "title": "Flamenco Sketches" }] }]
         }] }
         """.utf8)
         let results = try MusicBrainzMetadataProvider.decodeReleases(from: data)
-        #expect(results == [.init(id: "e7a1", title: "Kind of Blue", artist: "Miles Davis", releaseDate: "1959-08-17", countryCode: "JP", catalogueNumber: "SRCS 9701", mediaCount: 2)])
+        #expect(results == [.init(id: "e7a1", title: "Kind of Blue", artist: "Miles Davis", releaseDate: "1959-08-17", countryCode: "JP", catalogueNumber: "SRCS 9701", mediaCount: 2, trackTitles: ["So What", "Flamenco Sketches"])])
     }
 
     @Test("MusicBrainz response cache returns a stored manual-search result")

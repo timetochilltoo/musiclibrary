@@ -910,6 +910,8 @@ private struct ExternalMetadataLookupView: View {
     @State private var errorMessage: String?
     @State private var hasSearched = false
     @State private var selectedResultID: String?
+    @State private var isDownloadingArtwork = false
+    @State private var artworkMessage: String?
 
     init(library: LibraryStore, proposal: ImportReleaseProposal, onSelected: @escaping () async -> Void) {
         self.library = library
@@ -922,18 +924,21 @@ private struct ExternalMetadataLookupView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                Form {
-                    Section("Search") {
-                        TextField("Album title", text: $title)
-                        TextField("Artist (optional)", text: $artist)
-                        HStack {
-                            Button("Search MusicBrainz") { search() }.disabled(isSearching || title.nilIfBlank == nil)
-                            Text("Only the text above is sent. Audio files are never uploaded or modified.")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Search").font(.headline)
+                    Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
+                        GridRow { Text("Album title").frame(width: 96, alignment: .trailing); TextField("Album title", text: $title) }
+                        GridRow { Text("Artist (optional)").frame(width: 96, alignment: .trailing); TextField("Artist", text: $artist) }
                     }
                 }
-                .frame(height: 142)
+                .padding(.horizontal, 24).padding(.vertical, 16)
+                HStack(spacing: 12) {
+                    Button("Search MusicBrainz") { search() }.disabled(isSearching || title.nilIfBlank == nil)
+                    Text("Only the text above is sent. Audio files are never uploaded or modified.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .padding(.horizontal, 24).padding(.bottom, 14)
                 Divider()
                 if isSearching {
                     Spacer(); ProgressView("Searching MusicBrainz…"); Spacer()
@@ -957,7 +962,7 @@ private struct ExternalMetadataLookupView: View {
                         }
                         .frame(minWidth: 270, maxWidth: 320)
                         Divider()
-                        MusicBrainzCandidateComparison(proposal: proposal, result: selectedResult)
+                        MusicBrainzCandidateComparison(proposal: proposal, result: selectedResult, onDownloadArtwork: downloadArtwork, isDownloadingArtwork: isDownloadingArtwork)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 } else {
@@ -973,6 +978,7 @@ private struct ExternalMetadataLookupView: View {
                 }
             }
             .alert("Search failed", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) { Button("OK", role: .cancel) {} } message: { Text(errorMessage ?? "") }
+            .alert("Cover artwork", isPresented: Binding(get: { artworkMessage != nil }, set: { if !$0 { artworkMessage = nil } })) { Button("OK", role: .cancel) {} } message: { Text(artworkMessage ?? "") }
         }
         .frame(width: 960, height: 650)
     }
@@ -998,17 +1004,60 @@ private struct ExternalMetadataLookupView: View {
             catch { errorMessage = error.localizedDescription }
         }
     }
+
+    private func downloadArtwork(_ result: ExternalReleasePreview) {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.jpeg]
+        panel.nameFieldStringValue = "\(safeFileName(result.title)).jpg"
+        panel.message = "Save the selected MusicBrainz cover as a JPEG. This does not change the catalogue or import proposal."
+        guard panel.runModal() == .OK, let destination = panel.url, let artworkURL = result.coverArtworkURL else { return }
+        isDownloadingArtwork = true
+        Task {
+            defer { isDownloadingArtwork = false }
+            do {
+                let (data, response) = try await URLSession.shared.data(from: artworkURL)
+                guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode), let image = NSImage(data: data), let tiff = image.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiff), let jpeg = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.95]) else {
+                    throw NSError(domain: "MusicLibrary", code: 1, userInfo: [NSLocalizedDescriptionKey: "MusicBrainz did not provide a usable front-cover image for this release."])
+                }
+                try jpeg.write(to: destination, options: .atomic)
+                artworkMessage = "Saved JPEG cover artwork to \(destination.lastPathComponent)."
+            } catch {
+                artworkMessage = "Could not download cover artwork: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func safeFileName(_ value: String) -> String {
+        let invalid = CharacterSet(charactersIn: "/:\\")
+        return value.components(separatedBy: invalid).joined(separator: "-").trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlank ?? "MusicBrainz Cover"
+    }
 }
 
 private struct MusicBrainzCandidateComparison: View {
     let proposal: ImportReleaseProposal
     let result: ExternalReleasePreview?
 
+    let onDownloadArtwork: (ExternalReleasePreview) -> Void
+    let isDownloadingArtwork: Bool
+
     var body: some View {
         Group {
             if let result {
+                ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    Text("Compare metadata").font(.title3.bold())
+                    HStack(alignment: .top, spacing: 18) {
+                        coverArtwork(for: result)
+                        VStack(alignment: .leading, spacing: 7) {
+                            Text("Compare metadata").font(.title3.bold())
+                            Text(result.title).font(.headline)
+                            Text([result.artist, result.releaseDate, result.countryCode, result.catalogueNumber].compactMap { $0 }.joined(separator: " · "))
+                                .font(.caption).foregroundStyle(.secondary)
+                            Button(isDownloadingArtwork ? "Downloading Cover…" : "Download Cover Artwork…", systemImage: "arrow.down.circle") { onDownloadArtwork(result) }
+                                .disabled(isDownloadingArtwork || result.coverArtworkURL == nil)
+                            Text("Saves only a JPEG copy you choose. It does not apply MusicBrainz metadata.")
+                                .font(.caption2).foregroundStyle(.secondary)
+                        }
+                    }
                     Text("Review the imported values beside the selected MusicBrainz release. Choosing it still changes nothing until you press Use Selected Release, then select the fields to apply.")
                         .font(.caption).foregroundStyle(.secondary)
                     Grid(alignment: .leading, horizontalSpacing: 20, verticalSpacing: 12) {
@@ -1026,14 +1075,42 @@ private struct MusicBrainzCandidateComparison: View {
                         row("Disc count", String(proposal.discCount), String(result.mediaCount))
                         row("Imported tracks", String(proposal.trackCount), nil)
                     }
-                    Spacer()
+                    if !result.trackTitles.isEmpty {
+                        Divider()
+                        Text("Selected release tracks").font(.headline)
+                        ForEach(Array(result.trackTitles.enumerated()), id: \.offset) { index, title in
+                            HStack(alignment: .firstTextBaseline) {
+                                Text("\(index + 1).") .foregroundStyle(.secondary).frame(width: 28, alignment: .trailing)
+                                Text(title)
+                            }
+                            .font(.subheadline)
+                        }
+                    } else {
+                        Text("MusicBrainz did not return a track list for this candidate.").font(.caption).foregroundStyle(.secondary)
+                    }
                     Label("Preview only — no catalogue record, import proposal, or audio file has changed.", systemImage: "eye")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 .padding(24)
+                }
             } else {
                 ContentUnavailableView("Select an album candidate", systemImage: "rectangle.and.text.magnifyingglass", description: Text("The selected candidate's MusicBrainz metadata will appear beside the imported values."))
             }
+        }
+    }
+
+    @ViewBuilder private func coverArtwork(for result: ExternalReleasePreview) -> some View {
+        if let url = result.coverArtworkURL {
+            AsyncImage(url: url, transaction: .init(animation: .default)) { phase in
+                switch phase {
+                case .success(let image): image.resizable().scaledToFill()
+                case .failure: Image(systemName: "photo.badge.exclamationmark").font(.largeTitle).foregroundStyle(.secondary)
+                default: ProgressView()
+                }
+            }
+            .frame(width: 130, height: 130)
+            .background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
         }
     }
 
