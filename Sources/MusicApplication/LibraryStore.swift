@@ -250,7 +250,23 @@ public final class LibraryStore: ObservableObject {
     }
     public func applyRelinkProposal(_ id: UUID) async throws {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        guard let proposal = relinkProposals.first(where: { $0.id == id }) else { throw DatabaseError.notFound("Relink proposal") }
+        try await refreshStorageRootAccess()
+        let rootID = try await database.storageRootID(for: proposal.assetID)
+        guard let root = storageRoots.first(where: { $0.id == rootID }) else { throw DatabaseError.notFound("Storage root for digital asset") }
+        let resolved = resolveSecurityScopedBookmark(root)
+        guard resolved.status == .available, let rootURL = resolved.url else { throw DatabaseError.invalidOperation("The replacement file cannot be verified because its music folder is unavailable.") }
+        let accessed = rootURL.startAccessingSecurityScopedResource()
+        defer { if accessed { rootURL.stopAccessingSecurityScopedResource() } }
+        guard accessed else { throw DatabaseError.invalidOperation("Permission to verify the replacement file was not available.") }
+        let replacementURL = rootURL.appending(path: proposal.proposedPath)
+        let values = try replacementURL.resourceValues(forKeys: [.isDirectoryKey, .contentTypeKey, .isRegularFileKey])
+        let isDSF = replacementURL.pathExtension.caseInsensitiveCompare("dsf") == .orderedSame
+        guard values.isRegularFile == true, values.isDirectory != true, isDSF || values.contentType?.conforms(to: .audio) == true else {
+            throw DatabaseError.invalidOperation("The proposed replacement file is no longer an available audio file. Its catalogue path was left unchanged.")
+        }
         try await database.applyRelinkProposal(id)
+        try await refreshAvailableAssetStatuses()
         try await reload()
     }
     public func discardRelinkProposal(_ id: UUID) async throws {
@@ -262,6 +278,11 @@ public final class LibraryStore: ObservableObject {
     public func importCandidates(batchID: ImportBatchID) async throws -> [ImportCandidate] {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
         return try await database.importCandidates(batchID: batchID)
+    }
+
+    public func unregisteredImportCandidates(batchID: ImportBatchID) async throws -> [ImportCandidate] {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        return try await database.unregisteredImportCandidates(batchID: batchID)
     }
 
     public func importReleaseProposals(batchID: ImportBatchID) async throws -> [ImportReleaseProposal] {
@@ -326,7 +347,11 @@ public final class LibraryStore: ObservableObject {
         let accessed = rootURL.startAccessingSecurityScopedResource()
         defer { if accessed { rootURL.stopAccessingSecurityScopedResource() } }
         guard accessed else { throw DatabaseError.invalidOperation("Permission to access the source storage root was not available.") }
-        let candidates = try await database.importCandidates(batchID: batchID)
+        // A rescan is primarily a health/reconciliation operation. Metadata review
+        // should be reserved for newly discovered paths, otherwise a normal rescan
+        // would repeatedly propose albums that are already in the catalogue.
+        let candidates = try await database.unregisteredImportCandidates(batchID: batchID)
+        guard !candidates.isEmpty else { return }
         let extractor = EmbeddedMetadataExtractor()
         for candidate in candidates where candidate.status != .failed {
             guard let payload = candidate.payload else { continue }
@@ -334,7 +359,7 @@ public final class LibraryStore: ObservableObject {
             let metadata = payload.applyingCue(to: extracted)
             try await database.saveEmbeddedMetadata(metadata, for: candidate.id)
         }
-        let extracted = try await database.importCandidates(batchID: batchID)
+        let extracted = try await database.unregisteredImportCandidates(batchID: batchID)
         try await database.rebuildImportReleaseProposals(batchID: batchID, drafts: MetadataProposalGrouper().group(candidates: extracted))
     }
 

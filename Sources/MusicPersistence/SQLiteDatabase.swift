@@ -208,6 +208,29 @@ public actor MusicDatabase {
         return values
     }
 
+    /// Returns only files from this batch that are not already represented by a
+    /// root-relative digital-asset path. This is display guidance for rescans;
+    /// it does not infer an album, alter candidates, or create catalogue data.
+    public func unregisteredImportCandidates(batchID: ImportBatchID) throws -> [ImportCandidate] {
+        let batch = try Self.prepare("SELECT storage_root_id FROM import_batch WHERE id = ?;", on: connection)
+        defer { sqlite3_finalize(batch) }
+        try Self.bind(batchID.description, at: 1, to: batch)
+        guard sqlite3_step(batch) == SQLITE_ROW else { throw DatabaseError.notFound("Import batch") }
+        guard let rootID = Self.text(at: 0, from: batch) else { return try importCandidates(batchID: batchID) }
+
+        let assets = try Self.prepare("SELECT relative_path FROM digital_asset WHERE storage_root_id = ?;", on: connection)
+        defer { sqlite3_finalize(assets) }
+        try Self.bind(rootID, at: 1, to: assets)
+        var registeredPaths = Set<String>()
+        while sqlite3_step(assets) == SQLITE_ROW {
+            if let path = Self.text(at: 0, from: assets) { registeredPaths.insert(path) }
+        }
+        return try importCandidates(batchID: batchID).filter { candidate in
+            guard let payload = candidate.payload else { return false }
+            return !registeredPaths.contains(payload.relativePath)
+        }
+    }
+
     public func reconcileCompletedScan(batchID: ImportBatchID, rootID: StorageRootID, discoveredRelativePaths: [String]) throws {
         try transaction {
             let batch = try Self.prepare("SELECT storage_root_id, status FROM import_batch WHERE id = ?;", on: connection)

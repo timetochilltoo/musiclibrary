@@ -410,6 +410,26 @@ struct MusicDatabaseTests {
         #expect(try await database.playbackAsset(trackID: track.id)?.availability == .missing)
     }
 
+    @Test("Rescans distinguish unregistered audio files from existing asset paths")
+    func rescanNewAudioCandidates() async throws {
+        let database = try MusicDatabase(url: temporaryDatabaseURL())
+        try await database.migrate()
+        let root = try await database.createStorageRoot(.init(displayName: "Music", lastKnownPath: "/Music", bookmarkData: Data([1])))
+        let initial = try await database.createImportBatch(storageRootID: root.id, sourceDescription: "/Music")
+        try await database.recordImportCandidate(batchID: initial.id, payload: .init(relativePath: "Album/known.flac", fileName: "known.flac", contentTypeIdentifier: "public.audio", fileSize: 1, modifiedAt: nil))
+        let initialCandidate = try #require(await database.importCandidates(batchID: initial.id).first)
+        try await database.saveEmbeddedMetadata(.init(title: "Known", albumTitle: "Album", artist: "Artist", albumArtist: nil, discNumber: 1, trackNumber: 1, durationMilliseconds: 1000, rawTags: [:]), for: initialCandidate.id)
+        try await database.rebuildImportReleaseProposals(batchID: initial.id, drafts: [.init(title: "Album", artist: "Artist", discCount: 1, confidence: 1, candidateIDs: [initialCandidate.id])])
+        let proposal = try #require(await database.importReleaseProposals(batchID: initial.id).first)
+        try await database.updateImportReleaseProposal(proposal.id, status: .approved)
+        _ = try await database.confirmImportReleaseProposal(proposal.id)
+
+        let rescan = try await database.createImportBatch(storageRootID: root.id, sourceDescription: "/Music")
+        try await database.recordImportCandidate(batchID: rescan.id, payload: .init(relativePath: "Album/known.flac", fileName: "known.flac", contentTypeIdentifier: "public.audio", fileSize: 1, modifiedAt: nil))
+        try await database.recordImportCandidate(batchID: rescan.id, payload: .init(relativePath: "Album/new.flac", fileName: "new.flac", contentTypeIdentifier: "public.audio", fileSize: 1, modifiedAt: nil))
+        #expect(try await database.unregisteredImportCandidates(batchID: rescan.id).compactMap(\.payload?.relativePath) == ["Album/new.flac"])
+    }
+
     @Test("A reviewed missing asset reference can be removed without deleting its track")
     func removesReviewedMissingAssetReference() async throws {
         let database = try MusicDatabase(url: temporaryDatabaseURL())

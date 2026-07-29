@@ -850,6 +850,7 @@ private struct ImportBatchDetail: View {
     @ObservedObject var library: LibraryStore
     let batch: ImportBatch
     @State private var candidates: [ImportCandidate] = []
+    @State private var unregisteredCandidates: [ImportCandidate] = []
     @State private var proposals: [ImportReleaseProposal] = []
     @State private var proposalToConfirm: ImportReleaseProposal?
     @State private var proposalToLookUp: ImportReleaseProposal?
@@ -875,7 +876,7 @@ private struct ImportBatchDetail: View {
                         catch { library.presentError(error) }
                     }
                 } }
-                if batch.status != .scanning { Button("Read Embedded Metadata", systemImage: "text.magnifyingglass") {
+                if batch.status != .scanning && !unregisteredCandidates.isEmpty { Button("Read Metadata for New Files", systemImage: "text.magnifyingglass") {
                     Task {
                         do {
                             try await library.analyzeImportBatch(batch.id)
@@ -885,6 +886,10 @@ private struct ImportBatchDetail: View {
                         }
                     }
                 } }
+                if batch.status != .scanning && candidates.isEmpty == false && unregisteredCandidates.isEmpty {
+                    Text("All scanned audio files already have catalogue asset paths; no metadata review is needed.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
             if !missingAssets.isEmpty {
                 Section("Missing files found by this rescan") {
@@ -941,8 +946,17 @@ private struct ImportBatchDetail: View {
                     }
                 }
             }
-            Section("Candidates") {
-                ForEach(candidates) { CandidateRow(candidate: $0) }
+            if !unregisteredCandidates.isEmpty {
+                Section("New audio files") {
+                    Text("These files are under this scan's music folder but are not yet represented by a catalogue asset path. Review their metadata before creating any catalogue records.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    ForEach(unregisteredCandidates) { CandidateRow(candidate: $0) }
+                }
+            }
+            Section("Scan diagnostics") {
+                DisclosureGroup("All scanned audio files (\(candidates.count))") {
+                    ForEach(candidates) { CandidateRow(candidate: $0) }
+                }
             }
         }
         .navigationTitle("Import Batch")
@@ -1020,6 +1034,7 @@ private struct ImportBatchDetail: View {
     private func load() async {
         do {
             let loadedCandidates = try await library.importCandidates(batchID: batch.id)
+            let loadedUnregisteredCandidates = try await library.unregisteredImportCandidates(batchID: batch.id)
             let loadedProposals = try await library.importReleaseProposals(batchID: batch.id)
             let loadedMissingAssets = try await library.missingAssetReviews(batchID: batch.id)
             var loadedSelections: [UUID: ExternalMetadataSelection] = [:]
@@ -1029,6 +1044,7 @@ private struct ImportBatchDetail: View {
                 }
             }
             candidates = loadedCandidates
+            unregisteredCandidates = loadedUnregisteredCandidates
             proposals = loadedProposals
             selections = loadedSelections
             missingAssets = loadedMissingAssets
