@@ -16,6 +16,17 @@ struct MusicBrainzMetadataProviderTests {
         #expect(results == [.init(id: "e7a1", title: "Kind of Blue", artist: "Miles Davis", releaseDate: "1959-08-17", countryCode: "JP", catalogueNumber: "SRCS 9701", mediaCount: 2, trackTitles: ["So What", "Flamenco Sketches"])])
     }
 
+    @Test("A selected release detail supplies its real track list")
+    func decodesReleaseDetails() throws {
+        let data = Data("""
+        { "id": "detail-1", "title": "Album", "artist-credit": [{ "name": "Artist" }],
+          "media": [{ "tracks": [{ "title": "First track" }, { "title": "Second track" }] }] }
+        """.utf8)
+        let result = try MusicBrainzMetadataProvider.decodeReleaseDetail(from: data)
+        #expect(result.trackTitles == ["First track", "Second track"])
+        #expect(result.mediaCount == 1)
+    }
+
     @Test("MusicBrainz response cache returns a stored manual-search result")
     func cachesResults() async {
         let cache = MusicBrainzResponseCache()

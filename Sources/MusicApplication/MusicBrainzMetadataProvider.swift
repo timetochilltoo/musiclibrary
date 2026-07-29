@@ -19,6 +19,7 @@ public struct ExternalReleasePreview: Identifiable, Equatable, Sendable {
 
 public protocol MetadataLookupProviding: Sendable {
     func searchRelease(title: String, artist: String?) async throws -> [ExternalReleasePreview]
+    func releaseDetails(id: String) async throws -> ExternalReleasePreview
 }
 
 public enum MetadataLookupError: LocalizedError, Equatable, Sendable {
@@ -60,6 +61,17 @@ public struct MusicBrainzMetadataProvider: MetadataLookupProviding {
         return results
     }
 
+    public func releaseDetails(id: String) async throws -> ExternalReleasePreview {
+        guard !id.isEmpty, let url = URL(string: "https://musicbrainz.org/ws/2/release/\(id)?inc=recordings+artist-credits+labels+release-groups&fmt=json") else { throw MetadataLookupError.invalidResponse }
+        try await rateLimiter.waitForTurn()
+        var request = URLRequest(url: url)
+        request.setValue("MusicLibrary/0.1 (+https://github.com/timetochilltoo/musiclibrary)", forHTTPHeaderField: "User-Agent")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else { throw MetadataLookupError.invalidResponse }
+        return try Self.decodeReleaseDetail(from: data)
+    }
+
     private func fetch(url: URL) async throws -> [ExternalReleasePreview] {
         for attempt in 0..<3 {
             do {
@@ -85,6 +97,11 @@ public struct MusicBrainzMetadataProvider: MetadataLookupProviding {
         return payload.releases.map { release in
             .init(id: release.id, title: release.title, artist: release.artistCredit?.map(\.name).joined(separator: ", "), releaseDate: release.date, countryCode: release.country ?? release.releaseEvents?.first?.area?.iso31661Codes?.first, catalogueNumber: release.labelInfo?.compactMap(\.catalogueNumber).first, mediaCount: release.media?.count ?? 0, trackTitles: release.media?.flatMap { $0.tracks ?? [] }.map(\.title) ?? [])
         }
+    }
+
+    static func decodeReleaseDetail(from data: Data) throws -> ExternalReleasePreview {
+        let release = try JSONDecoder().decode(Release.self, from: data)
+        return .init(id: release.id, title: release.title, artist: release.artistCredit?.map(\.name).joined(separator: ", "), releaseDate: release.date, countryCode: release.country ?? release.releaseEvents?.first?.area?.iso31661Codes?.first, catalogueNumber: release.labelInfo?.compactMap(\.catalogueNumber).first, mediaCount: release.media?.count ?? 0, trackTitles: release.media?.flatMap { $0.tracks ?? [] }.map(\.title) ?? [])
     }
 }
 

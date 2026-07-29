@@ -910,6 +910,8 @@ private struct ExternalMetadataLookupView: View {
     @State private var errorMessage: String?
     @State private var hasSearched = false
     @State private var selectedResultID: String?
+    @State private var selectedReleaseDetail: ExternalReleasePreview?
+    @State private var isLoadingReleaseDetail = false
     @State private var isDownloadingArtwork = false
     @State private var artworkMessage: String?
 
@@ -962,7 +964,7 @@ private struct ExternalMetadataLookupView: View {
                         }
                         .frame(minWidth: 270, maxWidth: 320)
                         Divider()
-                        MusicBrainzCandidateComparison(proposal: proposal, result: selectedResult, onDownloadArtwork: downloadArtwork, isDownloadingArtwork: isDownloadingArtwork)
+                        MusicBrainzCandidateComparison(proposal: proposal, result: displayedResult, onDownloadArtwork: downloadArtwork, isDownloadingArtwork: isDownloadingArtwork, isLoadingTracks: isLoadingReleaseDetail)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 } else {
@@ -981,9 +983,14 @@ private struct ExternalMetadataLookupView: View {
             .alert("Cover artwork", isPresented: Binding(get: { artworkMessage != nil }, set: { if !$0 { artworkMessage = nil } })) { Button("OK", role: .cancel) {} } message: { Text(artworkMessage ?? "") }
         }
         .frame(width: 960, height: 650)
+        .task(id: selectedResultID) { await loadSelectedReleaseDetail() }
     }
 
     private var selectedResult: ExternalReleasePreview? { results.first { $0.id == selectedResultID } }
+    private var displayedResult: ExternalReleasePreview? {
+        guard let selectedResult else { return nil }
+        return selectedReleaseDetail?.id == selectedResult.id ? selectedReleaseDetail : selectedResult
+    }
 
     private func search() {
         isSearching = true
@@ -992,11 +999,20 @@ private struct ExternalMetadataLookupView: View {
         Task {
             do {
                 results = try await library.searchMusicBrainz(title: title, artist: artist.nilIfBlank)
+                selectedReleaseDetail = nil
                 selectedResultID = results.first?.id
             }
             catch { errorMessage = error.localizedDescription }
             isSearching = false
         }
+    }
+
+    private func loadSelectedReleaseDetail() async {
+        guard let selectedResultID else { selectedReleaseDetail = nil; return }
+        isLoadingReleaseDetail = true
+        defer { isLoadingReleaseDetail = false }
+        do { selectedReleaseDetail = try await library.musicBrainzReleaseDetails(id: selectedResultID) }
+        catch { selectedReleaseDetail = nil }
     }
     private func save(_ result: ExternalReleasePreview) {
         Task {
@@ -1039,6 +1055,7 @@ private struct MusicBrainzCandidateComparison: View {
 
     let onDownloadArtwork: (ExternalReleasePreview) -> Void
     let isDownloadingArtwork: Bool
+    let isLoadingTracks: Bool
 
     var body: some View {
         Group {
@@ -1075,7 +1092,9 @@ private struct MusicBrainzCandidateComparison: View {
                         row("Disc count", String(proposal.discCount), String(result.mediaCount))
                         row("Imported tracks", String(proposal.trackCount), nil)
                     }
-                    if !result.trackTitles.isEmpty {
+                    if isLoadingTracks {
+                        HStack { ProgressView(); Text("Loading selected release tracks…").font(.caption).foregroundStyle(.secondary) }
+                    } else if !result.trackTitles.isEmpty {
                         Divider()
                         Text("Selected release tracks").font(.headline)
                         ForEach(Array(result.trackTitles.enumerated()), id: \.offset) { index, title in
