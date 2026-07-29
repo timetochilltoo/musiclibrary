@@ -286,8 +286,12 @@ public final class LibraryStore: ObservableObject {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
         let albumID = try await database.confirmImportReleaseProposal(id)
         if try await database.albumArtwork(albumID: albumID).isEmpty,
-           let artworkURL = try await importedFolderArtwork(for: id),
-           let managedArtworkStore {
+           let selectedArtwork = try await database.externalMetadataSelection(importProposalID: id)?.artworkLocalPath,
+           FileManager.default.fileExists(atPath: selectedArtwork) {
+            _ = try? await database.addAlbumArtwork(albumID: albumID, localPath: selectedArtwork, role: .front, source: "managed-musicbrainz-artwork")
+        } else if try await database.albumArtwork(albumID: albumID).isEmpty,
+                  let artworkURL = try await importedFolderArtwork(for: id),
+                  let managedArtworkStore {
             // Artwork is copied into managed storage; the NAS source stays untouched.
             if let managedURL = try? managedArtworkStore.importArtwork(from: artworkURL) {
                 _ = try? await database.addAlbumArtwork(albumID: albumID, localPath: managedURL.path, role: .front, source: "managed-imported-folder-artwork")
@@ -377,6 +381,25 @@ public final class LibraryStore: ObservableObject {
 
     public func applyExternalMetadataSelection(_ selection: ExternalMetadataSelection, fields: ExternalMetadataFieldSelection) async throws {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        if fields.frontArtwork {
+            guard let managedArtworkStore, let artworkURL = URL(string: "https://coverartarchive.org/release/\(selection.externalID)/front") else {
+                throw DatabaseError.notFound("Managed artwork storage")
+            }
+            let (data, response) = try await URLSession.shared.data(from: artworkURL)
+            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode), !data.isEmpty else {
+                throw DatabaseError.invalidOperation("MusicBrainz did not provide a usable front-cover image for this release.")
+            }
+            let temporaryURL = FileManager.default.temporaryDirectory.appending(path: "musicbrainz-cover-\(UUID().uuidString).jpg")
+            defer { try? FileManager.default.removeItem(at: temporaryURL) }
+            try data.write(to: temporaryURL, options: .atomic)
+            let managedURL = try managedArtworkStore.importArtwork(from: temporaryURL)
+            do {
+                try await database.setExternalMetadataArtworkPath(managedURL.path, for: selection.id)
+            } catch {
+                try? FileManager.default.removeItem(at: managedURL)
+                throw error
+            }
+        }
         try await database.applyExternalMetadataSelection(selection, fields: fields)
     }
 

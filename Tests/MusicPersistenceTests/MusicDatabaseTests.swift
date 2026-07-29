@@ -9,7 +9,7 @@ struct MusicDatabaseTests {
     func migrationCreatesSchema() async throws {
         let database = try MusicDatabase(url: temporaryDatabaseURL())
         try await database.migrate()
-        #expect(try await database.schemaVersion() == 13)
+        #expect(try await database.schemaVersion() == 14)
         #expect(try await database.currentRevision() == 0)
     }
 

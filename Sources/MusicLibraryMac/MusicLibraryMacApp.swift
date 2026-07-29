@@ -985,6 +985,7 @@ private struct ExternalMetadataLookupView: View {
         }
         // Flexible limits let macOS provide a larger, user-resizable sheet on larger displays.
         .frame(minWidth: 980, idealWidth: 1_200, maxWidth: 1_500, minHeight: 660, idealHeight: 800, maxHeight: 1_000)
+        .background(MusicBrainzSheetResizability())
         .task { await loadImportedPreview() }
         .task(id: selectedResultID) { await loadSelectedReleaseDetail() }
     }
@@ -1222,6 +1223,7 @@ private struct ExternalMetadataComparisonView: View {
     @State private var useCatalogueNumber = true
     @State private var useReleaseDate = false
     @State private var useTrackTitles: Bool
+    @State private var useFrontArtwork = false
     @State private var errorMessage: String?
 
     init(library: LibraryStore, selection: ExternalMetadataSelection, proposal: ImportReleaseProposal?, onApplied: @escaping () async -> Void) {
@@ -1251,6 +1253,12 @@ private struct ExternalMetadataComparisonView: View {
                 if !trackTitlesMatch {
                     Text("Track titles can only be applied when both releases contain the same number of tracks.").font(.caption).foregroundStyle(.secondary)
                 }
+                Toggle(isOn: $useFrontArtwork) {
+                    VStack(alignment: .leading) {
+                        Text("Front cover artwork")
+                        Text("Downloads the selected MusicBrainz cover into managed library storage and makes it the album cover when catalogue records are created.").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
                 Text("Only checked fields update this import proposal. Track titles are matched by disc and track number. This never changes audio tags.").font(.caption).foregroundStyle(.secondary)
             }
         }
@@ -1262,7 +1270,21 @@ private struct ExternalMetadataComparisonView: View {
         Toggle(isOn: enabled) { VStack(alignment: .leading) { Text(name); Text("Current: \(current ?? "—") → MusicBrainz: \(proposed ?? "—")").font(.caption).foregroundStyle(.secondary) } }
     }
     private var trackTitlesMatch: Bool { proposal?.trackCount == selection.trackTitles.count && !selection.trackTitles.isEmpty }
-    private func apply() { Task { do { try await library.applyExternalMetadataSelection(selection, fields: .init(title: useTitle, artist: useArtist, discCount: useDiscCount, countryCode: useCountryCode, catalogueNumber: useCatalogueNumber, releaseDate: useReleaseDate, trackTitles: useTrackTitles && trackTitlesMatch)); await onApplied(); dismiss() } catch { errorMessage = error.localizedDescription } } }
+    private func apply() { Task { do { try await library.applyExternalMetadataSelection(selection, fields: .init(title: useTitle, artist: useArtist, discCount: useDiscCount, countryCode: useCountryCode, catalogueNumber: useCatalogueNumber, releaseDate: useReleaseDate, trackTitles: useTrackTitles && trackTitlesMatch, frontArtwork: useFrontArtwork)); await onApplied(); dismiss() } catch { errorMessage = error.localizedDescription } } }
+}
+
+/// SwiftUI sheets do not inherit the main window's resizable style. This bridge makes
+/// the MusicBrainz lookup sheet explicitly resizable, with sensible catalogue-review limits.
+private struct MusicBrainzSheetResizability: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { NSView() }
+    func updateNSView(_ view: NSView, context: Context) {
+        DispatchQueue.main.async {
+            guard let window = view.window else { return }
+            window.styleMask.insert(.resizable)
+            window.minSize = .init(width: 980, height: 660)
+            window.maxSize = .init(width: 1_500, height: 1_000)
+        }
+    }
 }
 
 private struct ArtworkPreview: View {

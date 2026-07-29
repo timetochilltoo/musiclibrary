@@ -254,18 +254,27 @@ public actor MusicDatabase {
         let now = Self.milliseconds(Date())
         try transaction {
             guard try Self.exists("SELECT 1 FROM import_release_proposal WHERE id = ?;", value: importProposalID.uuidString.lowercased(), on: connection) else { throw DatabaseError.notFound("Import release proposal") }
-            let statement = try Self.prepare("INSERT INTO external_metadata_selection (id, import_proposal_id, provider, external_id, title, artist, disc_count, country_code, catalogue_number, release_date, track_titles_payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(import_proposal_id) DO UPDATE SET provider = excluded.provider, external_id = excluded.external_id, title = excluded.title, artist = excluded.artist, disc_count = excluded.disc_count, country_code = excluded.country_code, catalogue_number = excluded.catalogue_number, release_date = excluded.release_date, track_titles_payload = excluded.track_titles_payload, updated_at = excluded.updated_at;", on: connection)
+            let statement = try Self.prepare("INSERT INTO external_metadata_selection (id, import_proposal_id, provider, external_id, title, artist, disc_count, country_code, catalogue_number, release_date, track_titles_payload, artwork_local_path, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?) ON CONFLICT(import_proposal_id) DO UPDATE SET provider = excluded.provider, external_id = excluded.external_id, title = excluded.title, artist = excluded.artist, disc_count = excluded.disc_count, country_code = excluded.country_code, catalogue_number = excluded.catalogue_number, release_date = excluded.release_date, track_titles_payload = excluded.track_titles_payload, artwork_local_path = NULL, updated_at = excluded.updated_at;", on: connection)
             defer { sqlite3_finalize(statement) }
             try Self.bind(UUID().uuidString.lowercased(), at: 1, to: statement); try Self.bind(importProposalID.uuidString.lowercased(), at: 2, to: statement); try Self.bind(provider, at: 3, to: statement); try Self.bind(externalID, at: 4, to: statement); try Self.bind(title, at: 5, to: statement); try Self.bind(artist, at: 6, to: statement); try Self.bind(Int64(max(1, discCount)), at: 7, to: statement); try Self.bind(countryCode, at: 8, to: statement); try Self.bind(catalogueNumber, at: 9, to: statement); try Self.bind(releaseDate, at: 10, to: statement); try Self.bind(try JSONEncoder().encode(trackTitles), at: 11, to: statement); try Self.bind(now, at: 12, to: statement); try Self.bind(now, at: 13, to: statement); try Self.stepDone(statement, connection: connection)
         }
     }
 
     public func externalMetadataSelection(importProposalID: UUID) throws -> ExternalMetadataSelection? {
-        let statement = try Self.prepare("SELECT id, provider, external_id, title, artist, disc_count, country_code, catalogue_number, release_date, track_titles_payload FROM external_metadata_selection WHERE import_proposal_id = ?;", on: connection)
+        let statement = try Self.prepare("SELECT id, provider, external_id, title, artist, disc_count, country_code, catalogue_number, release_date, track_titles_payload, artwork_local_path FROM external_metadata_selection WHERE import_proposal_id = ?;", on: connection)
         defer { sqlite3_finalize(statement) }; try Self.bind(importProposalID.uuidString.lowercased(), at: 1, to: statement)
         guard sqlite3_step(statement) == SQLITE_ROW, let rawID = Self.text(at: 0, from: statement), let id = UUID(uuidString: rawID) else { return nil }
         let trackTitles = Self.data(at: 9, from: statement).flatMap { try? JSONDecoder().decode([String].self, from: $0) } ?? []
-        return .init(id: id, importProposalID: importProposalID, provider: Self.text(at: 1, from: statement) ?? "", externalID: Self.text(at: 2, from: statement) ?? "", title: Self.text(at: 3, from: statement) ?? "", artist: Self.text(at: 4, from: statement), discCount: Int(Self.int(at: 5, from: statement) ?? 1), countryCode: Self.text(at: 6, from: statement), catalogueNumber: Self.text(at: 7, from: statement), releaseDate: Self.text(at: 8, from: statement), trackTitles: trackTitles)
+        return .init(id: id, importProposalID: importProposalID, provider: Self.text(at: 1, from: statement) ?? "", externalID: Self.text(at: 2, from: statement) ?? "", title: Self.text(at: 3, from: statement) ?? "", artist: Self.text(at: 4, from: statement), discCount: Int(Self.int(at: 5, from: statement) ?? 1), countryCode: Self.text(at: 6, from: statement), catalogueNumber: Self.text(at: 7, from: statement), releaseDate: Self.text(at: 8, from: statement), trackTitles: trackTitles, artworkLocalPath: Self.text(at: 10, from: statement))
+    }
+
+    public func setExternalMetadataArtworkPath(_ path: String, for selectionID: UUID) throws {
+        try transaction {
+            let statement = try Self.prepare("UPDATE external_metadata_selection SET artwork_local_path = ?, updated_at = ? WHERE id = ?;", on: connection)
+            defer { sqlite3_finalize(statement) }
+            try Self.bind(path, at: 1, to: statement); try Self.bind(Self.milliseconds(Date()), at: 2, to: statement); try Self.bind(selectionID.uuidString.lowercased(), at: 3, to: statement); try Self.stepDone(statement, connection: connection)
+            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("External metadata selection") }
+        }
     }
 
     public func applyExternalMetadataSelection(_ selection: ExternalMetadataSelection, fields: ExternalMetadataFieldSelection) throws {
