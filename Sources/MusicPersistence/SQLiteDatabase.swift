@@ -208,6 +208,63 @@ public actor MusicDatabase {
         return values
     }
 
+    public func reconcileCompletedScan(batchID: ImportBatchID, rootID: StorageRootID, discoveredRelativePaths: [String]) throws {
+        try transaction {
+            let batch = try Self.prepare("SELECT storage_root_id, status FROM import_batch WHERE id = ?;", on: connection)
+            defer { sqlite3_finalize(batch) }
+            try Self.bind(batchID.description, at: 1, to: batch)
+            guard sqlite3_step(batch) == SQLITE_ROW, Self.text(at: 0, from: batch) == rootID.description else { throw DatabaseError.notFound("Import batch") }
+            guard Self.text(at: 1, from: batch) == ImportBatchStatus.completed.rawValue else { throw DatabaseError.invalidOperation("Only a completed scan can be reconciled.") }
+            let root = try Self.prepare("SELECT status FROM storage_root WHERE id = ?;", on: connection)
+            defer { sqlite3_finalize(root) }
+            try Self.bind(rootID.description, at: 1, to: root)
+            guard sqlite3_step(root) == SQLITE_ROW, Self.text(at: 0, from: root) == StorageRootStatus.available.rawValue else { throw DatabaseError.invalidOperation("An unavailable music folder cannot be used to report missing files.") }
+            let clear = try Self.prepare("DELETE FROM root_scan_missing_asset WHERE batch_id = ?;", on: connection)
+            defer { sqlite3_finalize(clear) }
+            try Self.bind(batchID.description, at: 1, to: clear); try Self.stepDone(clear, connection: connection)
+            let known = try Self.prepare("SELECT id, relative_path FROM digital_asset WHERE storage_root_id = ?;", on: connection)
+            defer { sqlite3_finalize(known) }
+            try Self.bind(rootID.description, at: 1, to: known)
+            let discovered = Set(discoveredRelativePaths)
+            let insert = try Self.prepare("INSERT OR IGNORE INTO root_scan_missing_asset (batch_id, asset_id) VALUES (?, ?);", on: connection)
+            defer { sqlite3_finalize(insert) }
+            while sqlite3_step(known) == SQLITE_ROW {
+                guard let rawAssetID = Self.text(at: 0, from: known), let path = Self.text(at: 1, from: known) else { continue }
+                guard !discovered.contains(path) else { continue }
+                sqlite3_reset(insert); sqlite3_clear_bindings(insert)
+                try Self.bind(batchID.description, at: 1, to: insert); try Self.bind(rawAssetID, at: 2, to: insert); try Self.stepDone(insert, connection: connection)
+            }
+        }
+    }
+
+    public func missingAssetReviews(batchID: ImportBatchID) throws -> [MissingAssetReview] {
+        let statement = try Self.prepare("SELECT digital_asset.id, album.id, album.title, track.title, digital_asset.relative_path FROM root_scan_missing_asset JOIN digital_asset ON digital_asset.id = root_scan_missing_asset.asset_id JOIN track ON track.id = digital_asset.track_id JOIN disc ON disc.id = track.disc_id JOIN album ON album.id = disc.album_id WHERE root_scan_missing_asset.batch_id = ? ORDER BY album.title COLLATE NOCASE, disc.number, track.number;", on: connection)
+        defer { sqlite3_finalize(statement) }
+        try Self.bind(batchID.description, at: 1, to: statement)
+        var values: [MissingAssetReview] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let rawAssetID = Self.text(at: 0, from: statement), let assetID = UUID(uuidString: rawAssetID), let rawAlbumID = Self.text(at: 1, from: statement), let albumID = UUID(uuidString: rawAlbumID) else { throw DatabaseError.invalidIdentifier("Missing asset review") }
+            values.append(.init(id: .init(rawValue: assetID), albumID: .init(rawValue: albumID), albumTitle: Self.text(at: 2, from: statement) ?? "", trackTitle: Self.text(at: 3, from: statement) ?? "", relativePath: Self.text(at: 4, from: statement) ?? ""))
+        }
+        return values
+    }
+
+    public func confirmAssetMissing(_ assetID: DigitalAssetID, in batchID: ImportBatchID) throws {
+        try transaction {
+            let review = try Self.prepare("SELECT 1 FROM root_scan_missing_asset WHERE batch_id = ? AND asset_id = ?;", on: connection)
+            defer { sqlite3_finalize(review) }
+            try Self.bind(batchID.description, at: 1, to: review); try Self.bind(assetID.description, at: 2, to: review)
+            guard sqlite3_step(review) == SQLITE_ROW else { throw DatabaseError.notFound("Missing asset review") }
+            let update = try Self.prepare("UPDATE digital_asset SET availability = ? WHERE id = ?;", on: connection)
+            defer { sqlite3_finalize(update) }
+            try Self.bind(DigitalAssetAvailability.missing.rawValue, at: 1, to: update); try Self.bind(assetID.description, at: 2, to: update); try Self.stepDone(update, connection: connection)
+            let delete = try Self.prepare("DELETE FROM root_scan_missing_asset WHERE batch_id = ? AND asset_id = ?;", on: connection)
+            defer { sqlite3_finalize(delete) }
+            try Self.bind(batchID.description, at: 1, to: delete); try Self.bind(assetID.description, at: 2, to: delete); try Self.stepDone(delete, connection: connection)
+            try incrementRevision()
+        }
+    }
+
     public func recordImportCandidate(batchID: ImportBatchID, payload: ImportCandidatePayload) throws {
         let data = try JSONEncoder().encode(payload); let id = ImportCandidateID()
         try transaction {

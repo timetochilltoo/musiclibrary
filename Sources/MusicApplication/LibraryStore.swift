@@ -269,6 +269,17 @@ public final class LibraryStore: ObservableObject {
         return try await database.importReleaseProposals(batchID: batchID)
     }
 
+    public func missingAssetReviews(batchID: ImportBatchID) async throws -> [MissingAssetReview] {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        return try await database.missingAssetReviews(batchID: batchID)
+    }
+
+    public func confirmAssetMissing(_ assetID: DigitalAssetID, in batchID: ImportBatchID) async throws {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        try await database.confirmAssetMissing(assetID, in: batchID)
+        try await reload()
+    }
+
     public func analyzeImportBatch(_ batchID: ImportBatchID) async throws {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
         try await refreshStorageRootAccess()
@@ -611,6 +622,9 @@ public final class LibraryStore: ObservableObject {
                 for error in result.errors { try await database.recordImportError(batchID: batch.id, message: error) }
                 let status: ImportBatchStatus = (result.wasCancelled || Task.isCancelled) ? .cancelled : .completed
                 try await database.finishImportBatch(batch.id, status: status, errorSummary: result.errors.first)
+                if status == .completed {
+                    try await database.reconcileCompletedScan(batchID: batch.id, rootID: rootID, discoveredRelativePaths: result.candidates.map(\.relativePath))
+                }
             } catch {
                 try? await database.finishImportBatch(batch.id, status: .failed, errorSummary: error.localizedDescription)
             }

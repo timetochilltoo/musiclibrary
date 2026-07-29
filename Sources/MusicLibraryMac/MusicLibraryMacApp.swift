@@ -840,6 +840,8 @@ private struct ImportBatchDetail: View {
     @State private var proposalToLookUp: ImportReleaseProposal?
     @State private var selectionToReview: ExternalMetadataSelection?
     @State private var selections: [UUID: ExternalMetadataSelection] = [:]
+    @State private var missingAssets: [MissingAssetReview] = []
+    @State private var missingAssetToConfirm: MissingAssetReview?
 
     var body: some View {
         List {
@@ -866,6 +868,21 @@ private struct ImportBatchDetail: View {
                         }
                     }
                 } }
+            }
+            if !missingAssets.isEmpty {
+                Section("Missing files found by this rescan") {
+                    Text("These catalogue asset references were not found while this available folder was scanned. Nothing has been removed automatically.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    ForEach(missingAssets) { asset in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(asset.albumTitle).font(.headline)
+                            Text(asset.trackTitle).font(.caption)
+                            Text(asset.relativePath).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                            Button("Mark Catalogue Asset Missing…", role: .destructive) { missingAssetToConfirm = asset }
+                                .font(.caption)
+                        }
+                    }
+                }
             }
             Section("Release Proposals") {
                 if proposals.isEmpty { Text("Read embedded metadata to create local proposals. No catalogue records or source files will be changed.").foregroundStyle(.secondary) }
@@ -926,6 +943,21 @@ private struct ImportBatchDetail: View {
         } message: {
             Text(proposalToConfirm.map(proposalConfirmationMessage) ?? "")
         }
+        .confirmationDialog("Mark this catalogue asset missing?", isPresented: Binding(get: { missingAssetToConfirm != nil }, set: { if !$0 { missingAssetToConfirm = nil } }), titleVisibility: .visible) {
+            if let asset = missingAssetToConfirm {
+                Button("Mark Asset Missing", role: .destructive) {
+                    Task {
+                        do {
+                            try await library.confirmAssetMissing(asset.id, in: batch.id)
+                            missingAssetToConfirm = nil
+                            await load()
+                        } catch { library.presentError(error) }
+                    }
+                }
+            }
+        } message: {
+            Text("This keeps the catalogue track but records that its file is currently missing. It never deletes, moves, or changes source audio files.")
+        }
         .sheet(item: $proposalToLookUp) { proposal in
             ExternalMetadataLookupView(library: library, proposal: proposal, onSelected: { await load() })
         }
@@ -936,6 +968,7 @@ private struct ImportBatchDetail: View {
         do {
             let loadedCandidates = try await library.importCandidates(batchID: batch.id)
             let loadedProposals = try await library.importReleaseProposals(batchID: batch.id)
+            let loadedMissingAssets = try await library.missingAssetReviews(batchID: batch.id)
             var loadedSelections: [UUID: ExternalMetadataSelection] = [:]
             for proposal in loadedProposals {
                 if let selection = try await library.externalMetadataSelection(for: proposal.id) {
@@ -945,6 +978,7 @@ private struct ImportBatchDetail: View {
             candidates = loadedCandidates
             proposals = loadedProposals
             selections = loadedSelections
+            missingAssets = loadedMissingAssets
         } catch {
             library.presentError(error)
         }

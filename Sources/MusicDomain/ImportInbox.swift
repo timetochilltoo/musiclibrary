@@ -168,6 +168,20 @@ public struct AssetDuplicate: Identifiable, Equatable, Sendable { public let id:
 public struct AssetRelinkProposal: Identifiable, Equatable, Sendable { public let id: UUID; public let assetID: DigitalAssetID; public let currentPath: String; public let proposedPath: String; public init(id: UUID, assetID: DigitalAssetID, currentPath: String, proposedPath: String) { self.id = id; self.assetID = assetID; self.currentPath = currentPath; self.proposedPath = proposedPath } }
 public struct AssetFingerprintCandidate: Sendable { public let id: DigitalAssetID; public let rootID: StorageRootID; public let relativePath: String; public init(id: DigitalAssetID, rootID: StorageRootID, relativePath: String) { self.id = id; self.rootID = rootID; self.relativePath = relativePath } }
 
+/// A stored asset not seen during an explicit completed rescan of its available
+/// root. It is review-only until the user confirms an action.
+public struct MissingAssetReview: Identifiable, Equatable, Sendable {
+    public let id: DigitalAssetID
+    public let albumID: AlbumID
+    public let albumTitle: String
+    public let trackTitle: String
+    public let relativePath: String
+
+    public init(id: DigitalAssetID, albumID: AlbumID, albumTitle: String, trackTitle: String, relativePath: String) {
+        self.id = id; self.albumID = albumID; self.albumTitle = albumTitle; self.trackTitle = trackTitle; self.relativePath = relativePath
+    }
+}
+
 public struct CatalogueActivity: Identifiable, Equatable, Sendable {
     public let id: UUID
     public let revision: Int64
