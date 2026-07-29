@@ -381,6 +381,7 @@ public final class LibraryStore: ObservableObject {
 
     public func applyExternalMetadataSelection(_ selection: ExternalMetadataSelection, fields: ExternalMetadataFieldSelection) async throws {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        var managedArtworkPath: String?
         if fields.frontArtwork {
             guard let managedArtworkStore, let artworkURL = URL(string: "https://coverartarchive.org/release/\(selection.externalID)/front") else {
                 throw DatabaseError.notFound("Managed artwork storage")
@@ -395,12 +396,18 @@ public final class LibraryStore: ObservableObject {
             let managedURL = try managedArtworkStore.importArtwork(from: temporaryURL)
             do {
                 try await database.setExternalMetadataArtworkPath(managedURL.path, for: selection.id)
+                managedArtworkPath = managedURL.path
             } catch {
                 try? FileManager.default.removeItem(at: managedURL)
                 throw error
             }
         }
         try await database.applyExternalMetadataSelection(selection, fields: fields)
+        if let managedArtworkPath, let albumID = try await database.createdAlbumID(forImportProposal: selection.importProposalID) {
+            // If catalogue records already exist, make the explicitly accepted cover visible now.
+            _ = try await database.addAlbumArtwork(albumID: albumID, localPath: managedArtworkPath, role: .front, source: "managed-musicbrainz-artwork")
+            try await reload()
+        }
     }
 
     public func playbackURL(for trackID: TrackID) async throws -> (url: URL, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?) {

@@ -277,6 +277,15 @@ public actor MusicDatabase {
         }
     }
 
+    public func createdAlbumID(forImportProposal proposalID: UUID) throws -> AlbumID? {
+        let statement = try Self.prepare("SELECT created_album_id FROM import_release_proposal WHERE id = ?;", on: connection)
+        defer { sqlite3_finalize(statement) }
+        try Self.bind(proposalID.uuidString.lowercased(), at: 1, to: statement)
+        guard sqlite3_step(statement) == SQLITE_ROW else { throw DatabaseError.notFound("Import release proposal") }
+        guard let rawID = Self.text(at: 0, from: statement), let id = UUID(uuidString: rawID) else { return nil }
+        return .init(rawValue: id)
+    }
+
     public func applyExternalMetadataSelection(_ selection: ExternalMetadataSelection, fields: ExternalMetadataFieldSelection) throws {
         try transaction {
             let existing = try Self.prepare("SELECT title, artist, disc_count, country_code, catalogue_number FROM import_release_proposal WHERE id = ?;", on: connection)
