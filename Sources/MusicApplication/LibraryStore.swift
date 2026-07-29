@@ -597,33 +597,67 @@ public final class LibraryStore: ObservableObject {
     }
 
     public func startImportScan(rootID: StorageRootID) async throws {
+        try await startImportScan(rootID: rootID, folderURL: nil)
+    }
+
+    public func startImportScan(containing folderURL: URL) async throws {
+        guard database != nil else { throw DatabaseError.notFound("Catalogue database") }
+        try await refreshStorageRootAccess()
+        let selectedPath = folderURL.standardizedFileURL.path
+        let matchingRoots = storageRoots.compactMap { root -> (StorageRoot, URL)? in
+            let resolved = resolveSecurityScopedBookmark(root)
+            guard resolved.status == .available, let rootURL = resolved.url else { return nil }
+            let rootPath = rootURL.standardizedFileURL.path
+            guard selectedPath == rootPath || selectedPath.hasPrefix(rootPath.hasSuffix("/") ? rootPath : rootPath + "/") else { return nil }
+            return (root, rootURL)
+        }
+        guard let match = matchingRoots.max(by: { $0.1.path.count < $1.1.path.count }) else {
+            throw DatabaseError.invalidOperation("Choose an album folder inside one of the registered music folders.")
+        }
+        try await startImportScan(rootID: match.0.id, folderURL: folderURL)
+    }
+
+    private func startImportScan(rootID: StorageRootID, folderURL: URL?) async throws {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
         try await refreshStorageRootAccess()
         guard let root = storageRoots.first(where: { $0.id == rootID }) else { throw DatabaseError.notFound("Storage root") }
         let resolved = resolveSecurityScopedBookmark(root)
-        guard resolved.status == .available, let url = resolved.url else { throw DatabaseError.invalidOperation("The selected storage root is not available.") }
-        let batch = try await database.createImportBatch(storageRootID: rootID, sourceDescription: url.path)
+        guard resolved.status == .available, let rootURL = resolved.url else { throw DatabaseError.invalidOperation("The selected storage root is not available.") }
+        let scanURL = (folderURL ?? rootURL).standardizedFileURL
+        let rootPath = rootURL.standardizedFileURL.path
+        let scanPath = scanURL.path
+        guard scanPath == rootPath || scanPath.hasPrefix(rootPath.hasSuffix("/") ? rootPath : rootPath + "/") else {
+            throw DatabaseError.invalidOperation("The selected album folder must be inside its registered music folder.")
+        }
+        let scannedRoot = scanPath == rootPath
+        let relativeDirectory = Self.relativePath(of: scanURL, within: rootURL)
+        let batch = try await database.createImportBatch(storageRootID: rootID, sourceDescription: scanURL.path)
         await refreshImportBatches()
         let task = Task.detached { [weak self, database] in
-            let accessed = url.startAccessingSecurityScopedResource()
-            defer { if accessed { url.stopAccessingSecurityScopedResource() } }
-            guard accessed else {
+            let rootAccessed = rootURL.startAccessingSecurityScopedResource()
+            let scanAccessed = scannedRoot ? false : scanURL.startAccessingSecurityScopedResource()
+            defer {
+                if scanAccessed { scanURL.stopAccessingSecurityScopedResource() }
+                if rootAccessed { rootURL.stopAccessingSecurityScopedResource() }
+            }
+            guard rootAccessed, scannedRoot || scanAccessed else {
                 try? await database.finishImportBatch(batch.id, status: .failed, errorSummary: "Permission to access the selected folder was not available.")
                 await self?.refreshImportBatches()
                 return
             }
-            let result = ImportScanner().scan(rootURL: url)
+            let rawResult = ImportScanner().scan(rootURL: scanURL)
+            let candidates = rawResult.candidates.map { $0.prefixed(relativeDirectory: relativeDirectory) }
             do {
-                for (index, candidate) in result.candidates.enumerated() {
+                for (index, candidate) in candidates.enumerated() {
                     if Task.isCancelled { break }
                     try await database.recordImportCandidate(batchID: batch.id, payload: candidate)
                     if index.isMultiple(of: 20) { await self?.refreshImportBatches() }
                 }
-                for error in result.errors { try await database.recordImportError(batchID: batch.id, message: error) }
-                let status: ImportBatchStatus = (result.wasCancelled || Task.isCancelled) ? .cancelled : .completed
-                try await database.finishImportBatch(batch.id, status: status, errorSummary: result.errors.first)
-                if status == .completed {
-                    try await database.reconcileCompletedScan(batchID: batch.id, rootID: rootID, discoveredRelativePaths: result.candidates.map(\.relativePath))
+                for error in rawResult.errors { try await database.recordImportError(batchID: batch.id, message: error) }
+                let status: ImportBatchStatus = (rawResult.wasCancelled || Task.isCancelled) ? .cancelled : .completed
+                try await database.finishImportBatch(batch.id, status: status, errorSummary: rawResult.errors.first)
+                if status == .completed, scannedRoot {
+                    try await database.reconcileCompletedScan(batchID: batch.id, rootID: rootID, discoveredRelativePaths: candidates.map(\.relativePath))
                 }
             } catch {
                 try? await database.finishImportBatch(batch.id, status: .failed, errorSummary: error.localizedDescription)
@@ -640,7 +674,14 @@ public final class LibraryStore: ObservableObject {
     public func retryImportScan(_ batchID: ImportBatchID) async throws {
         guard let batch = importBatches.first(where: { $0.id == batchID }), let rootID = batch.storageRootID else { throw DatabaseError.notFound("Storage root for import batch") }
         guard batch.status != .scanning else { throw DatabaseError.invalidOperation("This import batch is already scanning.") }
-        try await startImportScan(rootID: rootID)
+        let folderURL = batch.sourceDescription.map(URL.init(fileURLWithPath:))
+        try await startImportScan(rootID: rootID, folderURL: folderURL)
+    }
+
+    private static func relativePath(of url: URL, within rootURL: URL) -> String {
+        let root = rootURL.standardizedFileURL.path.hasSuffix("/") ? rootURL.standardizedFileURL.path : rootURL.standardizedFileURL.path + "/"
+        let path = url.standardizedFileURL.path
+        return path.hasPrefix(root) ? String(path.dropFirst(root.count)) : ""
     }
 
     public func addLocation(_ draft: NewPhysicalLocation) async throws {

@@ -6,6 +6,16 @@ import Testing
 
 @Suite("Import scanner")
 struct ImportScannerTests {
+    @Test("Child-folder candidates retain their registered-root-relative paths")
+    func prefixesChildFolderCandidates() {
+        let candidate = ImportCandidatePayload(relativePath: "Disc 1/01 Song.flac", fileName: "01 Song.flac", contentTypeIdentifier: "public.flac", fileSize: 1, modifiedAt: nil, cueStartMilliseconds: 1_000, cueTrackNumber: 1)
+        let prefixed = candidate.prefixed(relativeDirectory: "/Artist/Album/")
+
+        #expect(prefixed.relativePath == "Artist/Album/Disc 1/01 Song.flac")
+        #expect(prefixed.cueStartMilliseconds == 1_000)
+        #expect(prefixed.cueTrackNumber == 1)
+    }
+
     @Test("Scanner discovers audio by content type and skips hidden files")
     func discoversAudioAndSkipsHidden() {
         let root = temporaryDirectory()

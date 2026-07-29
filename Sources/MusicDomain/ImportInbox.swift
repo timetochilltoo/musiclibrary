@@ -47,6 +47,12 @@ public struct ImportCandidatePayload: Codable, Equatable, Sendable {
         self.relativePath = relativePath; self.fileName = fileName; self.contentTypeIdentifier = contentTypeIdentifier; self.fileSize = fileSize; self.modifiedAt = modifiedAt; self.cueStartMilliseconds = cueStartMilliseconds; self.cueEndMilliseconds = cueEndMilliseconds; self.cueTrackNumber = cueTrackNumber; self.cueTitle = cueTitle; self.cueArtist = cueArtist; self.cueAlbumTitle = cueAlbumTitle; self.cueAlbumArtist = cueAlbumArtist
     }
 
+    public func prefixed(relativeDirectory: String) -> ImportCandidatePayload {
+        let directory = relativeDirectory.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard !directory.isEmpty else { return self }
+        return .init(relativePath: "\(directory)/\(relativePath)", fileName: fileName, contentTypeIdentifier: contentTypeIdentifier, fileSize: fileSize, modifiedAt: modifiedAt, cueStartMilliseconds: cueStartMilliseconds, cueEndMilliseconds: cueEndMilliseconds, cueTrackNumber: cueTrackNumber, cueTitle: cueTitle, cueArtist: cueArtist, cueAlbumTitle: cueAlbumTitle, cueAlbumArtist: cueAlbumArtist)
+    }
+
     public func applyingCue(to metadata: EmbeddedMetadataPayload) -> EmbeddedMetadataPayload {
         guard let cueStartMilliseconds else { return metadata }
         var tags = metadata.rawTags

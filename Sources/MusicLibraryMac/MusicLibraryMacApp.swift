@@ -700,6 +700,7 @@ private struct StorageRootRenameEditor: View {
 private struct ScanRootPicker: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var library: LibraryStore
+    @State private var showsChildFolderPicker = false
 
     var body: some View {
         NavigationStack {
@@ -710,9 +711,23 @@ private struct ScanRootPicker: View {
                 .disabled(root.status != .available)
             }
             .navigationTitle("Choose Music Folder")
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .primaryAction) { Button("Scan Album Folder…", systemImage: "folder") { showsChildFolderPicker = true } }
+            }
         }
         .frame(width: 520, height: 360)
+        .fileImporter(isPresented: $showsChildFolderPicker, allowedContentTypes: [.folder]) { result in
+            guard case let .success(url) = result else { return }
+            Task {
+                do {
+                    try await library.startImportScan(containing: url)
+                    dismiss()
+                } catch {
+                    library.presentError(error)
+                }
+            }
+        }
     }
 
     private func scan(_ root: StorageRoot) { Task { do { try await library.startImportScan(rootID: root.id); dismiss() } catch { library.presentError(error) } } }
