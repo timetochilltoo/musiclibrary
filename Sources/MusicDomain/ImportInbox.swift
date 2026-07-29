@@ -121,13 +121,13 @@ public struct ExternalMetadataSelection: Identifiable, Equatable, Sendable {
     public let externalID: String
     public let title: String
     public let artist: String?
-    public let discCount: Int; public let countryCode: String?; public let catalogueNumber: String?
-    public init(id: UUID, importProposalID: UUID, provider: String, externalID: String, title: String, artist: String?, discCount: Int, countryCode: String? = nil, catalogueNumber: String? = nil) { self.id = id; self.importProposalID = importProposalID; self.provider = provider; self.externalID = externalID; self.title = title; self.artist = artist; self.discCount = discCount; self.countryCode = countryCode; self.catalogueNumber = catalogueNumber }
+    public let discCount: Int; public let countryCode: String?; public let catalogueNumber: String?; public let releaseDate: String?; public let trackTitles: [String]
+    public init(id: UUID, importProposalID: UUID, provider: String, externalID: String, title: String, artist: String?, discCount: Int, countryCode: String? = nil, catalogueNumber: String? = nil, releaseDate: String? = nil, trackTitles: [String] = []) { self.id = id; self.importProposalID = importProposalID; self.provider = provider; self.externalID = externalID; self.title = title; self.artist = artist; self.discCount = discCount; self.countryCode = countryCode; self.catalogueNumber = catalogueNumber; self.releaseDate = releaseDate; self.trackTitles = trackTitles }
 }
 
 public struct ExternalMetadataFieldSelection: Equatable, Sendable {
-    public var title: Bool; public var artist: Bool; public var discCount: Bool; public var countryCode: Bool; public var catalogueNumber: Bool
-    public init(title: Bool, artist: Bool, discCount: Bool, countryCode: Bool = false, catalogueNumber: Bool = false) { self.title = title; self.artist = artist; self.discCount = discCount; self.countryCode = countryCode; self.catalogueNumber = catalogueNumber }
+    public var title: Bool; public var artist: Bool; public var discCount: Bool; public var countryCode: Bool; public var catalogueNumber: Bool; public var releaseDate: Bool; public var trackTitles: Bool
+    public init(title: Bool, artist: Bool, discCount: Bool, countryCode: Bool = false, catalogueNumber: Bool = false, releaseDate: Bool = false, trackTitles: Bool = false) { self.title = title; self.artist = artist; self.discCount = discCount; self.countryCode = countryCode; self.catalogueNumber = catalogueNumber; self.releaseDate = releaseDate; self.trackTitles = trackTitles }
 }
 
 public enum LibraryHealthKind: String, Codable, CaseIterable, Sendable {

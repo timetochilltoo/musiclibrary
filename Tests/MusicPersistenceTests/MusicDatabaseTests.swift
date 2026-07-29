@@ -9,7 +9,7 @@ struct MusicDatabaseTests {
     func migrationCreatesSchema() async throws {
         let database = try MusicDatabase(url: temporaryDatabaseURL())
         try await database.migrate()
-        #expect(try await database.schemaVersion() == 12)
+        #expect(try await database.schemaVersion() == 13)
         #expect(try await database.currentRevision() == 0)
     }
 
@@ -121,13 +121,18 @@ struct MusicDatabaseTests {
         try await database.saveEmbeddedMetadata(.init(title: "Track", albumTitle: "Local title", artist: "Local artist", albumArtist: "Local artist", discNumber: 1, trackNumber: 1, durationMilliseconds: nil, rawTags: [:]), for: candidate.id)
         try await database.rebuildImportReleaseProposals(batchID: batch.id, drafts: [.init(title: "Local title", artist: "Local artist", discCount: 1, confidence: 1, candidateIDs: [candidate.id])])
         let proposal = try #require(await database.importReleaseProposals(batchID: batch.id).first)
-        try await database.saveExternalMetadataSelection(importProposalID: proposal.id, provider: "musicbrainz", externalID: "mb-1", title: "Corrected title", artist: "Corrected artist", discCount: 2)
+        try await database.saveExternalMetadataSelection(importProposalID: proposal.id, provider: "musicbrainz", externalID: "mb-1", title: "Corrected title", artist: "Corrected artist", discCount: 2, releaseDate: "2022-09-28", trackTitles: ["Corrected track"])
         let selected = try #require(await database.externalMetadataSelection(importProposalID: proposal.id))
-        try await database.applyExternalMetadataSelection(selected, fields: .init(title: true, artist: false, discCount: true))
+        #expect(selected.releaseDate == "2022-09-28")
+        #expect(selected.trackTitles == ["Corrected track"])
+        try await database.applyExternalMetadataSelection(selected, fields: .init(title: true, artist: false, discCount: true, releaseDate: true, trackTitles: true))
         let updated = try #require(await database.importReleaseProposals(batchID: batch.id).first)
         #expect(updated.title == "Corrected title")
         #expect(updated.artist == "Local artist")
         #expect(updated.discCount == 2)
+        let updatedCandidate = try #require(await database.importCandidates(batchID: batch.id).first)
+        #expect(updatedCandidate.metadata?.title == "Corrected track")
+        #expect(updatedCandidate.metadata?.releaseYear == 2022)
         #expect(try await database.currentRevision() == 1)
     }
 

@@ -983,7 +983,8 @@ private struct ExternalMetadataLookupView: View {
             .alert("Search failed", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) { Button("OK", role: .cancel) {} } message: { Text(errorMessage ?? "") }
             .alert("Cover artwork", isPresented: Binding(get: { artworkMessage != nil }, set: { if !$0 { artworkMessage = nil } })) { Button("OK", role: .cancel) {} } message: { Text(artworkMessage ?? "") }
         }
-        .frame(width: 960, height: 650)
+        // Flexible limits let macOS provide a larger, user-resizable sheet on larger displays.
+        .frame(minWidth: 980, idealWidth: 1_200, maxWidth: 1_500, minHeight: 660, idealHeight: 800, maxHeight: 1_000)
         .task { await loadImportedPreview() }
         .task(id: selectedResultID) { await loadSelectedReleaseDetail() }
     }
@@ -1022,7 +1023,16 @@ private struct ExternalMetadataLookupView: View {
     }
     private func save(_ result: ExternalReleasePreview) {
         Task {
-            do { try await library.saveMusicBrainzSelection(result, for: proposal.id); await onSelected(); dismiss() }
+            do {
+                // Persist the full detail response, not the lightweight search row, so the later
+                // field-application step can safely offer MusicBrainz track titles.
+                let release = displayedResult?.id == result.id && !(displayedResult?.trackTitles.isEmpty ?? true)
+                    ? displayedResult!
+                    : try await library.musicBrainzReleaseDetails(id: result.id)
+                try await library.saveMusicBrainzSelection(release, for: proposal.id)
+                await onSelected()
+                dismiss()
+            }
             catch { errorMessage = error.localizedDescription }
         }
     }
@@ -1210,7 +1220,17 @@ private struct ExternalMetadataComparisonView: View {
     @State private var useDiscCount = true
     @State private var useCountryCode = true
     @State private var useCatalogueNumber = true
+    @State private var useReleaseDate = false
+    @State private var useTrackTitles: Bool
     @State private var errorMessage: String?
+
+    init(library: LibraryStore, selection: ExternalMetadataSelection, proposal: ImportReleaseProposal?, onApplied: @escaping () async -> Void) {
+        self.library = library
+        self.selection = selection
+        self.proposal = proposal
+        self.onApplied = onApplied
+        _useTrackTitles = State(initialValue: proposal?.trackCount == selection.trackTitles.count && !selection.trackTitles.isEmpty)
+    }
 
     var body: some View {
         Form {
@@ -1220,7 +1240,18 @@ private struct ExternalMetadataComparisonView: View {
                 comparison("Disc count", current: proposal.map { String($0.discCount) }, proposed: String(selection.discCount), enabled: $useDiscCount)
                 comparison("Country/region", current: proposal?.countryCode, proposed: selection.countryCode, enabled: $useCountryCode)
                 comparison("Catalogue number", current: proposal?.catalogueNumber, proposed: selection.catalogueNumber, enabled: $useCatalogueNumber)
-                Text("Only checked fields update this import proposal. This does not yet create or edit a catalogue album, and never changes audio tags.").font(.caption).foregroundStyle(.secondary)
+                comparison("Release date", current: "From imported audio tags", proposed: selection.releaseDate, enabled: $useReleaseDate)
+                Toggle(isOn: $useTrackTitles) {
+                    VStack(alignment: .leading) {
+                        Text("Track titles")
+                        Text("Imported: \(proposal?.trackCount ?? 0) tracks → MusicBrainz: \(selection.trackTitles.count) tracks").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                .disabled(!trackTitlesMatch)
+                if !trackTitlesMatch {
+                    Text("Track titles can only be applied when both releases contain the same number of tracks.").font(.caption).foregroundStyle(.secondary)
+                }
+                Text("Only checked fields update this import proposal. Track titles are matched by disc and track number. This never changes audio tags.").font(.caption).foregroundStyle(.secondary)
             }
         }
         .padding().frame(width: 520)
@@ -1230,7 +1261,8 @@ private struct ExternalMetadataComparisonView: View {
     private func comparison(_ name: String, current: String?, proposed: String?, enabled: Binding<Bool>) -> some View {
         Toggle(isOn: enabled) { VStack(alignment: .leading) { Text(name); Text("Current: \(current ?? "—") → MusicBrainz: \(proposed ?? "—")").font(.caption).foregroundStyle(.secondary) } }
     }
-    private func apply() { Task { do { try await library.applyExternalMetadataSelection(selection, fields: .init(title: useTitle, artist: useArtist, discCount: useDiscCount, countryCode: useCountryCode, catalogueNumber: useCatalogueNumber)); await onApplied(); dismiss() } catch { errorMessage = error.localizedDescription } } }
+    private var trackTitlesMatch: Bool { proposal?.trackCount == selection.trackTitles.count && !selection.trackTitles.isEmpty }
+    private func apply() { Task { do { try await library.applyExternalMetadataSelection(selection, fields: .init(title: useTitle, artist: useArtist, discCount: useDiscCount, countryCode: useCountryCode, catalogueNumber: useCatalogueNumber, releaseDate: useReleaseDate, trackTitles: useTrackTitles && trackTitlesMatch)); await onApplied(); dismiss() } catch { errorMessage = error.localizedDescription } } }
 }
 
 private struct ArtworkPreview: View {

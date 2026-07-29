@@ -2,7 +2,7 @@ import Foundation
 import SQLite3
 
 enum SchemaMigrator {
-    static let currentVersion = 12
+    static let currentVersion = 13
 
     static func migrate(_ connection: OpaquePointer) throws {
         var statement: OpaquePointer?
@@ -27,7 +27,8 @@ enum SchemaMigrator {
         if version == 8 { try migrateToVersion9(connection); version = 9 }
         if version == 9 { try migrateToVersion10(connection); version = 10 }
         if version == 10 { try migrateToVersion11(connection); version = 11 }
-        if version == 11 { try migrateToVersion12(connection) }
+        if version == 11 { try migrateToVersion12(connection); version = 12 }
+        if version == 12 { try migrateToVersion13(connection) }
     }
 
     private static func migrateToVersion1(_ connection: OpaquePointer) throws {
@@ -394,6 +395,10 @@ enum SchemaMigrator {
     }
     private static func migrateToVersion12(_ connection: OpaquePointer) throws {
         let sql = "BEGIN IMMEDIATE; ALTER TABLE digital_asset ADD COLUMN cue_start_ms INTEGER; ALTER TABLE digital_asset ADD COLUMN cue_end_ms INTEGER; DROP INDEX IF EXISTS digital_asset_path_index; CREATE UNIQUE INDEX digital_asset_path_index ON digital_asset(storage_root_id, relative_path, cue_start_ms); PRAGMA user_version = 12; UPDATE catalogue_state SET schema_version = 12 WHERE singleton_id = 1; COMMIT;"
+        var error: UnsafeMutablePointer<CChar>?; guard sqlite3_exec(connection, sql, nil, nil, &error) == SQLITE_OK else { defer { sqlite3_free(error) }; throw DatabaseError.sqlite(message: error.map { String(cString: $0) } ?? String(cString: sqlite3_errmsg(connection))) }
+    }
+    private static func migrateToVersion13(_ connection: OpaquePointer) throws {
+        let sql = "BEGIN IMMEDIATE; ALTER TABLE external_metadata_selection ADD COLUMN release_date TEXT; ALTER TABLE external_metadata_selection ADD COLUMN track_titles_payload BLOB; PRAGMA user_version = 13; UPDATE catalogue_state SET schema_version = 13 WHERE singleton_id = 1; COMMIT;"
         var error: UnsafeMutablePointer<CChar>?; guard sqlite3_exec(connection, sql, nil, nil, &error) == SQLITE_OK else { defer { sqlite3_free(error) }; throw DatabaseError.sqlite(message: error.map { String(cString: $0) } ?? String(cString: sqlite3_errmsg(connection))) }
     }
 }
