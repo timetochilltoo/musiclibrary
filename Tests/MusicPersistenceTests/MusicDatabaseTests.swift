@@ -9,7 +9,7 @@ struct MusicDatabaseTests {
     func migrationCreatesSchema() async throws {
         let database = try MusicDatabase(url: temporaryDatabaseURL())
         try await database.migrate()
-        #expect(try await database.schemaVersion() == 14)
+        #expect(try await database.schemaVersion() == 15)
         #expect(try await database.currentRevision() == 0)
     }
 
@@ -296,6 +296,9 @@ struct MusicDatabaseTests {
         let bookmark = Data([0x01, 0x02, 0x03])
         let root = try await database.createStorageRoot(.init(displayName: "NAS Music", lastKnownPath: "/Volumes/Music", bookmarkData: bookmark))
         #expect(try await database.storageRoots().first?.bookmarkData == bookmark)
+        #expect(try await database.storageRoots().first?.scope == .localOnly)
+        try await database.updateStorageRootScope(root.id, to: .nasPublished)
+        #expect(try await database.storageRoots().first?.scope == .nasPublished)
         try await database.updateStorageRootAccess(root.id, status: .offline)
         let offline = try #require(await database.storageRoots().first)
         #expect(offline.status == .offline)
@@ -305,7 +308,7 @@ struct MusicDatabaseTests {
         #expect(try await database.storageRoots().first?.displayName == "NAS")
         try await database.deleteStorageRoot(root.id)
         #expect(try await database.storageRoots().isEmpty)
-        #expect(try await database.currentRevision() == 4)
+        #expect(try await database.currentRevision() == 5)
     }
 
     @Test("Import Inbox persists scan candidates without changing the catalogue")

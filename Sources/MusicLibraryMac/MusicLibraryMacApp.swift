@@ -22,6 +22,11 @@ struct MusicLibraryMacApp: App {
 }
 
 private struct LibraryShellView: View {
+    private enum AlbumSourceFilter: String, CaseIterable, Identifiable {
+        case all, nas, local
+        var id: Self { self }
+        var title: String { switch self { case .all: "All Music"; case .nas: "NAS / iPad Music"; case .local: "This Mac Only" } }
+    }
     private enum Section: Hashable, CaseIterable, Identifiable {
         case albums, contributors, locations, boxSets, importInbox, playlists, settings
         var id: Self { self }
@@ -31,7 +36,7 @@ private struct LibraryShellView: View {
             case .contributors: "Contributors"
             case .locations: "Locations"
             case .boxSets: "Box Sets"
-            case .importInbox: "Import Inbox"
+            case .importInbox: "Library Changes"
             case .playlists: "Playlists"
             case .settings: "Settings"
             }
@@ -58,6 +63,7 @@ private struct LibraryShellView: View {
     @State private var selectedImportBatchID: ImportBatchID?
     @State private var selectedPlaylistID: PlaylistID?
     @State private var searchText = ""
+    @State private var albumSourceFilter: AlbumSourceFilter = .all
     @State private var contributorSearchText = ""
     @State private var showsAlbumEditor = false
     @State private var showsLocationEditor = false
@@ -152,14 +158,14 @@ private struct LibraryShellView: View {
     @ViewBuilder private var content: some View {
         switch section {
         case .albums:
-            List(library.albums, selection: $selectedAlbumID) { album in
+            List(scopedAlbums, selection: $selectedAlbumID) { album in
                 AlbumRow(album: album).tag(album.id).contextMenu { Button("Move to Recently Deleted", role: .destructive) { Task { do { try await library.softDeleteAlbum(album.id); if selectedAlbumID == album.id { selectedAlbumID = nil } } catch { library.presentError(error) } } } }
             }
             .searchable(text: $searchText, prompt: "Albums, editions, or catalogue numbers")
             .onChange(of: searchText) { _, value in Task { await library.search(value) } }
             .overlay {
                 if library.isReady && library.albums.isEmpty {
-                    ContentUnavailableView("No albums yet", systemImage: "opticaldisc", description: Text("Add a physical CD, a digital album, or both."))
+                    ContentUnavailableView("No matching albums", systemImage: "opticaldisc", description: Text("Change the music source filter or add an album."))
                 }
             }
         case .locations:
@@ -184,13 +190,13 @@ private struct LibraryShellView: View {
             }
             .overlay { if library.isReady && library.boxSets.isEmpty { ContentUnavailableView("No box sets", systemImage: "shippingbox", description: Text("Create a box set to group its member albums at one location.")) } }
         case .importInbox:
-            List(library.importBatches, selection: $selectedImportBatchID) { batch in
+            List(latestImportBatchesByRoot, selection: $selectedImportBatchID) { batch in
                 VStack(alignment: .leading) {
                     Text(batch.sourceDescription ?? "Music folder").lineLimit(1)
                     Text("\(batch.candidateCount) audio files · \(batch.errorCount) errors · \(batch.status.rawValue)").font(.caption).foregroundStyle(.secondary)
                 }.tag(batch.id)
             }
-            .overlay { if library.isReady && library.importBatches.isEmpty { ContentUnavailableView("No import batches", systemImage: "tray", description: Text("Choose an available music folder to scan into the review inbox.")) } }
+            .overlay { if library.isReady && latestImportBatchesByRoot.isEmpty { ContentUnavailableView("No library changes", systemImage: "tray", description: Text("Rescan a registered music folder when you want to review new or changed albums.")) } }
         case .playlists:
             List(library.playlists, selection: $selectedPlaylistID) { playlist in
                 Text(playlist.name)
@@ -233,6 +239,22 @@ private struct LibraryShellView: View {
         return library.contributors.filter { $0.name.localizedCaseInsensitiveContains(term) || ($0.sortName?.localizedCaseInsensitiveContains(term) ?? false) }
     }
 
+    private var scopedAlbums: [Album] {
+        switch albumSourceFilter {
+        case .all: library.albums
+        case .nas: library.albums.filter { library.publishedAlbumIDs.contains($0.id) }
+        case .local: library.albums.filter { library.localAlbumIDs.contains($0.id) }
+        }
+    }
+
+    private var latestImportBatchesByRoot: [ImportBatch] {
+        var seen = Set<StorageRootID>()
+        return library.importBatches.filter { batch in
+            guard let rootID = batch.storageRootID else { return true }
+            return seen.insert(rootID).inserted
+        }
+    }
+
     @ViewBuilder private var detail: some View {
         if section == .contributors, let selectedContributorID, let contributor = library.contributors.first(where: { $0.id == selectedContributorID }) {
             ContributorDetail(library: library, contributor: contributor, onShowAlbum: { albumID in selectedAlbumID = albumID; section = .albums })
@@ -250,8 +272,16 @@ private struct LibraryShellView: View {
     }
 
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
+        if section == .albums {
+            ToolbarItem(placement: .automatic) {
+                Picker("Show", selection: $albumSourceFilter) {
+                    ForEach(AlbumSourceFilter.allCases) { filter in Text(filter.title).tag(filter) }
+                }
+                .pickerStyle(.menu)
+            }
+        }
         ToolbarItem(placement: .primaryAction) {
-            Button(section == .locations ? "Add Location" : section == .boxSets ? "Add Box Set" : section == .settings ? "Add Music Folder" : section == .importInbox ? "Scan Music Folder" : section == .playlists ? "Add Playlist" : "Add Album", systemImage: "plus") {
+            Button(section == .locations ? "Add Location" : section == .boxSets ? "Add Box Set" : section == .settings ? "Add Music Folder" : section == .importInbox ? "Rescan Music Folder" : section == .playlists ? "Add Playlist" : "Add Album", systemImage: "plus") {
                 switch section {
                 case .locations: showsLocationEditor = true
                 case .boxSets: showsBoxSetEditor = true
@@ -393,14 +423,33 @@ private struct StorageRootList: View {
                     ContentUnavailableView("No music folders", systemImage: "externaldrive", description: Text("Add a local or NAS folder. The app saves access permission, not NAS credentials."))
                 }
                 ForEach(library.storageRoots) { root in
-                    HStack {
-                        Image(systemName: symbol(for: root.status)).foregroundStyle(color(for: root.status))
-                        VStack(alignment: .leading) {
-                            Text(root.displayName).font(.headline)
-                            Text(root.lastKnownPath).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Image(systemName: symbol(for: root.status)).foregroundStyle(color(for: root.status))
+                            VStack(alignment: .leading) {
+                                Text(root.displayName).font(.headline)
+                                Text(root.lastKnownPath).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                            }
+                            Spacer()
+                            Text(label(for: root.status)).font(.caption).foregroundStyle(color(for: root.status))
                         }
-                        Spacer()
-                        Text(label(for: root.status)).font(.caption).foregroundStyle(color(for: root.status))
+                        HStack {
+                            Picker("Use", selection: Binding(get: { root.scope }, set: { scope in
+                                Task { do { try await library.updateStorageRootScope(root.id, to: scope) } catch { library.presentError(error) } }
+                            })) {
+                                ForEach(StorageRootScope.allCases, id: \.self) { scope in Text(scope.displayName).tag(scope) }
+                            }
+                            .labelsHidden()
+                            .pickerStyle(.menu)
+                            Button("Rescan", systemImage: "arrow.clockwise") {
+                                Task { do { try await library.startImportScan(rootID: root.id) } catch { library.presentError(error) } }
+                            }
+                            .disabled(root.status != .available)
+                            if let lastScan = latestBatch(for: root.id) {
+                                Text("Last scan \(lastScan.startedAt.formatted(date: .abbreviated, time: .shortened))")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
                     }
                     .contextMenu {
                         Button("Rename") { rootToRename = root }
@@ -598,6 +647,10 @@ private struct StorageRootList: View {
 
     private var importBatchesNeedingAttention: [ImportBatch] {
         library.importBatches.filter { $0.status == .failed || $0.status == .cancelled || $0.errorCount > 0 }
+    }
+
+    private func latestBatch(for rootID: StorageRootID) -> ImportBatch? {
+        library.importBatches.first(where: { $0.storageRootID == rootID })
     }
 
     private func importAttentionDetail(_ batch: ImportBatch) -> String {

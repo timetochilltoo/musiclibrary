@@ -56,6 +56,7 @@ Completed and verified:
 - Album rating/favourite UI complete: add/edit forms expose the agreed shared 1–5 rating and favourite marker, album detail displays the saved values, and the published read-only album payload carries the rating.
 - Basic catalogue activity history complete: every successful revision increment records a transactional Mac-originated event, and Settings shows recent revision/time rows. This is an audit indicator, not yet a field-by-field change diff or undo system.
 - Import attention routing complete: Settings lists failed, cancelled, or error-containing import batches and routes **Review Import** directly to the selected Import Inbox batch. It does not retry or alter a scan automatically.
+- Folder-scope foundation complete: every registered music folder is explicitly **This Mac only** or **NAS / iPad music**. The Mac Album list filters All Music, NAS / iPad Music, or This Mac Only; an album with assets under both roots appears in both source views. Published snapshots include only NAS / iPad albums and assets, so a local-only recording is never offered to the companion. Settings exposes an explicit per-folder scope picker and Rescan action. The Library Changes list intentionally shows only the most recent scan for each registered folder while retaining earlier batches internally for audit/debugging.
 - Track rating UI complete: schema 10 stores the same optional 1–5 scale on tracks; the Mac add/edit-track sheets set it, album detail displays it, and published read-only track data includes it.
 - Detailed track-editor UI complete: the Mac editor corrects a track's title, display position, duration, work, movement number/name, and instrumental flag. These are catalogue-only corrections and never modify source audio tags.
 - Contributor-credit maintenance complete: album and track credits have explicit destructive controls plus a catalogue-only credited-name/role editor. Removing a credit preserves the shared contributor record and other credits; editing the displayed name or role does not alter the shared person or source audio files. A role change appends the credit to the selected role's ordered list.
@@ -110,6 +111,7 @@ These decisions are requirements unless the user explicitly changes them:
 - **Track:** a position on a disc and its catalogue metadata.
 - **Digital asset:** one concrete audio file associated with a track.
 - **Storage root:** a folder selected by the user, such as a local Music folder or mounted NAS share.
+- **Storage-root scope:** `localOnly` means playable on the Mac but absent from companion snapshots; `nasPublished` means included in companion snapshots. It is a user-editable folder property, not inferred from an individual album title or path.
 - **Box set:** a physical container grouping multiple album profiles.
 - **Candidate:** a not-yet-confirmed album assembled from files, barcode/photo input, or online search.
 - **Proposal:** metadata from an external source presented for comparison.

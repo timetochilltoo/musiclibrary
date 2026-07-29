@@ -105,21 +105,33 @@ public actor MusicDatabase {
         let valid = try draft.validated()
         let id = StorageRootID(); let now = Date()
         try transaction {
-            let statement = try Self.prepare("INSERT INTO storage_root (id, display_name, last_known_path, bookmark_data, volume_identifier, status, last_seen_at, bookmark_needs_refresh) VALUES (?, ?, ?, ?, ?, ?, ?, 0);", on: connection)
+            let statement = try Self.prepare("INSERT INTO storage_root (id, display_name, last_known_path, bookmark_data, volume_identifier, status, last_seen_at, bookmark_needs_refresh, scope) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?);", on: connection)
             defer { sqlite3_finalize(statement) }
-            try Self.bind(id.description, at: 1, to: statement); try Self.bind(valid.displayName, at: 2, to: statement); try Self.bind(valid.lastKnownPath, at: 3, to: statement); try Self.bind(valid.bookmarkData, at: 4, to: statement); try Self.bind(valid.volumeIdentifier, at: 5, to: statement); try Self.bind(valid.status.rawValue, at: 6, to: statement); try Self.bind(valid.status == .available ? Self.milliseconds(now) : nil, at: 7, to: statement); try Self.stepDone(statement, connection: connection)
+            try Self.bind(id.description, at: 1, to: statement); try Self.bind(valid.displayName, at: 2, to: statement); try Self.bind(valid.lastKnownPath, at: 3, to: statement); try Self.bind(valid.bookmarkData, at: 4, to: statement); try Self.bind(valid.volumeIdentifier, at: 5, to: statement); try Self.bind(valid.status.rawValue, at: 6, to: statement); try Self.bind(valid.status == .available ? Self.milliseconds(now) : nil, at: 7, to: statement); try Self.bind(valid.scope.rawValue, at: 8, to: statement); try Self.stepDone(statement, connection: connection)
             try incrementRevision()
         }
-        return .init(id: id, displayName: valid.displayName, lastKnownPath: valid.lastKnownPath, bookmarkData: valid.bookmarkData, volumeIdentifier: valid.volumeIdentifier, status: valid.status, bookmarkNeedsRefresh: false, lastSeenAt: valid.status == .available ? now : nil)
+        return .init(id: id, displayName: valid.displayName, lastKnownPath: valid.lastKnownPath, bookmarkData: valid.bookmarkData, volumeIdentifier: valid.volumeIdentifier, status: valid.status, scope: valid.scope, bookmarkNeedsRefresh: false, lastSeenAt: valid.status == .available ? now : nil)
     }
 
     public func storageRoots() throws -> [StorageRoot] {
-        let statement = try Self.prepare("SELECT id, display_name, last_known_path, bookmark_data, volume_identifier, status, bookmark_needs_refresh, last_seen_at FROM storage_root ORDER BY display_name COLLATE NOCASE;", on: connection)
+        let statement = try Self.prepare("SELECT id, display_name, last_known_path, bookmark_data, volume_identifier, status, scope, bookmark_needs_refresh, last_seen_at FROM storage_root ORDER BY display_name COLLATE NOCASE;", on: connection)
         defer { sqlite3_finalize(statement) }
         var values: [StorageRoot] = []
         while sqlite3_step(statement) == SQLITE_ROW {
-            guard let rawID = Self.text(at: 0, from: statement), let uuid = UUID(uuidString: rawID), let rawStatus = Self.text(at: 5, from: statement), let status = StorageRootStatus(rawValue: rawStatus) else { throw DatabaseError.invalidIdentifier("storage_root") }
-            values.append(.init(id: .init(rawValue: uuid), displayName: Self.text(at: 1, from: statement) ?? "", lastKnownPath: Self.text(at: 2, from: statement) ?? "", bookmarkData: Self.data(at: 3, from: statement), volumeIdentifier: Self.text(at: 4, from: statement), status: status, bookmarkNeedsRefresh: Self.int(at: 6, from: statement) == 1, lastSeenAt: Self.int(at: 7, from: statement).map(Self.date(fromMilliseconds:))))
+            guard let rawID = Self.text(at: 0, from: statement), let uuid = UUID(uuidString: rawID), let rawStatus = Self.text(at: 5, from: statement), let status = StorageRootStatus(rawValue: rawStatus), let rawScope = Self.text(at: 6, from: statement), let scope = StorageRootScope(rawValue: rawScope) else { throw DatabaseError.invalidIdentifier("storage_root") }
+            values.append(.init(id: .init(rawValue: uuid), displayName: Self.text(at: 1, from: statement) ?? "", lastKnownPath: Self.text(at: 2, from: statement) ?? "", bookmarkData: Self.data(at: 3, from: statement), volumeIdentifier: Self.text(at: 4, from: statement), status: status, scope: scope, bookmarkNeedsRefresh: Self.int(at: 7, from: statement) == 1, lastSeenAt: Self.int(at: 8, from: statement).map(Self.date(fromMilliseconds:))))
+        }
+        return values
+    }
+
+    public func albumIDs(withAssetsIn scope: StorageRootScope) throws -> Set<AlbumID> {
+        let statement = try Self.prepare("SELECT DISTINCT disc.album_id FROM digital_asset JOIN storage_root ON storage_root.id = digital_asset.storage_root_id JOIN track ON track.id = digital_asset.track_id JOIN disc ON disc.id = track.disc_id JOIN album ON album.id = disc.album_id WHERE album.deleted_at IS NULL AND storage_root.scope = ?;", on: connection)
+        defer { sqlite3_finalize(statement) }
+        try Self.bind(scope.rawValue, at: 1, to: statement)
+        var values = Set<AlbumID>()
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let rawID = Self.text(at: 0, from: statement), let uuid = UUID(uuidString: rawID) else { throw DatabaseError.invalidIdentifier("album scope") }
+            values.insert(.init(rawValue: uuid))
         }
         return values
     }
@@ -130,6 +142,16 @@ public actor MusicDatabase {
             let statement = try Self.prepare("UPDATE storage_root SET display_name = ? WHERE id = ?;", on: connection)
             defer { sqlite3_finalize(statement) }; try Self.bind(displayName, at: 1, to: statement); try Self.bind(id.description, at: 2, to: statement); try Self.stepDone(statement, connection: connection)
             guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Storage root") }; try incrementRevision()
+        }
+    }
+
+    public func updateStorageRootScope(_ id: StorageRootID, to scope: StorageRootScope) throws {
+        try transaction {
+            let statement = try Self.prepare("UPDATE storage_root SET scope = ? WHERE id = ?;", on: connection)
+            defer { sqlite3_finalize(statement) }
+            try Self.bind(scope.rawValue, at: 1, to: statement); try Self.bind(id.description, at: 2, to: statement); try Self.stepDone(statement, connection: connection)
+            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Storage root") }
+            try incrementRevision()
         }
     }
 
@@ -503,7 +525,29 @@ public actor MusicDatabase {
         }
         return ([header.map(Self.csvValue).joined(separator: ",")] + rows).joined(separator: "\n") + "\n"
     }
-    public func publicationRevisionAndJSON() throws -> (Int64, String) { (try currentRevision(), try catalogueExportJSON()) }
+    /// iPad snapshots intentionally contain only assets from NAS / iPad roots.
+    /// The full export remains available for the Mac's own backup/export workflow.
+    public func publicationRevisionAndJSON() throws -> (Int64, String) { (try currentRevision(), try catalogueExportJSON(assetScope: .nasPublished)) }
+
+    private func catalogueExportJSON(assetScope: StorageRootScope?) throws -> String {
+        let allAlbums = try self.albums()
+        let includedIDs: Set<AlbumID>
+        if let assetScope { includedIDs = try albumIDs(withAssetsIn: assetScope) }
+        else { includedIDs = Set(allAlbums.map(\.id)) }
+        let albums = allAlbums.filter { includedIDs.contains($0.id) }
+        let digitalAlbumIDs = try albumIDsWithDigitalAssets()
+        let rows: [[String: Any]] = try albums.map {
+            var row: [String: Any] = ["id": $0.id.description, "title": $0.title, "hasCD": $0.hasCD, "hasDigital": digitalAlbumIDs.contains($0.id.description)]
+            if let editionLabel = $0.editionLabel, !editionLabel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { row["editionLabel"] = editionLabel }
+            if let releaseYear = $0.releaseYear { row["releaseYear"] = releaseYear }
+            if let catalogueNumber = $0.catalogueNumber, !catalogueNumber.isEmpty { row["catalogueNumber"] = catalogueNumber }
+            if let rating = $0.rating { row["rating"] = rating }
+            row["discs"] = try snapshotDiscRows(albumID: $0.id, assetScope: assetScope)
+            return row
+        }
+        let data = try JSONSerialization.data(withJSONObject: ["format": "music-library-json", "schemaVersion": try schemaVersion(), "catalogueRevision": try currentRevision(), "albums": rows], options: [.prettyPrinted, .sortedKeys])
+        return String(decoding: data, as: UTF8.self)
+    }
 
     private func albumIDsWithDigitalAssets() throws -> Set<String> {
         let statement = try Self.prepare("SELECT DISTINCT disc.album_id FROM digital_asset JOIN track ON track.id = digital_asset.track_id JOIN disc ON disc.id = track.disc_id;", on: connection)
@@ -515,27 +559,31 @@ public actor MusicDatabase {
         return values
     }
 
-    private func snapshotDiscRows(albumID: AlbumID) throws -> [[String: Any]] {
-        try discs(albumID: albumID).map { disc in
-            var row: [String: Any] = ["id": disc.id.description, "number": disc.number, "tracks": try snapshotTrackRows(discID: disc.id)]
+    private func snapshotDiscRows(albumID: AlbumID, assetScope: StorageRootScope? = nil) throws -> [[String: Any]] {
+        try discs(albumID: albumID).compactMap { disc in
+            let tracks = try snapshotTrackRows(discID: disc.id, assetScope: assetScope)
+            guard !tracks.isEmpty || assetScope == nil else { return nil }
+            var row: [String: Any] = ["id": disc.id.description, "number": disc.number, "tracks": tracks]
             if let title = disc.title, !title.isEmpty { row["title"] = title }
             return row
         }
     }
 
-    private func snapshotTrackRows(discID: DiscID) throws -> [[String: Any]] {
-        try tracks(discID: discID).map { track in
-            var row: [String: Any] = ["id": track.id.description, "number": track.number, "title": track.title, "assets": try snapshotAssetRows(trackID: track.id)]
+    private func snapshotTrackRows(discID: DiscID, assetScope: StorageRootScope? = nil) throws -> [[String: Any]] {
+        try tracks(discID: discID).compactMap { track in
+            let assets = try snapshotAssetRows(trackID: track.id, assetScope: assetScope)
+            guard !assets.isEmpty || assetScope == nil else { return nil }
+            var row: [String: Any] = ["id": track.id.description, "number": track.number, "title": track.title, "assets": assets]
             if let durationMilliseconds = track.durationMilliseconds { row["durationMilliseconds"] = durationMilliseconds }
             if let rating = track.rating { row["rating"] = rating }
             return row
         }
     }
 
-    private func snapshotAssetRows(trackID: TrackID) throws -> [[String: Any]] {
-        let statement = try Self.prepare("SELECT digital_asset.storage_root_id, digital_asset.relative_path, digital_asset.availability, storage_root.status FROM digital_asset JOIN storage_root ON storage_root.id = digital_asset.storage_root_id WHERE digital_asset.track_id = ? ORDER BY digital_asset.id;", on: connection)
+    private func snapshotAssetRows(trackID: TrackID, assetScope: StorageRootScope? = nil) throws -> [[String: Any]] {
+        let statement = try Self.prepare("SELECT digital_asset.storage_root_id, digital_asset.relative_path, digital_asset.availability, storage_root.status FROM digital_asset JOIN storage_root ON storage_root.id = digital_asset.storage_root_id WHERE digital_asset.track_id = ? AND (? IS NULL OR storage_root.scope = ?) ORDER BY digital_asset.id;", on: connection)
         defer { sqlite3_finalize(statement) }
-        try Self.bind(trackID.description, at: 1, to: statement)
+        try Self.bind(trackID.description, at: 1, to: statement); try Self.bind(assetScope?.rawValue, at: 2, to: statement); try Self.bind(assetScope?.rawValue, at: 3, to: statement)
         var rows: [[String: Any]] = []
         while sqlite3_step(statement) == SQLITE_ROW {
             guard let rootID = Self.text(at: 0, from: statement), let relativePath = Self.text(at: 1, from: statement) else { continue }

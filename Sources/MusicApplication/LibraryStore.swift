@@ -24,6 +24,8 @@ public final class LibraryStore: ObservableObject {
     @Published public private(set) var boxSets: [BoxSet] = []
     @Published public private(set) var deletedBoxSets: [BoxSet] = []
     @Published public private(set) var storageRoots: [StorageRoot] = []
+    @Published public private(set) var localAlbumIDs: Set<AlbumID> = []
+    @Published public private(set) var publishedAlbumIDs: Set<AlbumID> = []
     @Published public private(set) var importBatches: [ImportBatch] = []
     @Published public private(set) var libraryHealthIssues: [LibraryHealthIssue] = []
     @Published public private(set) var playlists: [Playlist] = []
@@ -91,6 +93,8 @@ public final class LibraryStore: ObservableObject {
         async let loadedBoxSets = database.boxSets()
         async let loadedDeletedBoxSets = database.deletedBoxSets()
         async let loadedStorageRoots = database.storageRoots()
+        async let loadedLocalAlbumIDs = database.albumIDs(withAssetsIn: .localOnly)
+        async let loadedPublishedAlbumIDs = database.albumIDs(withAssetsIn: .nasPublished)
         async let loadedImportBatches = database.importBatches()
         async let loadedHealth = database.libraryHealthIssues()
         async let loadedPlaylists = database.playlists()
@@ -102,6 +106,8 @@ public final class LibraryStore: ObservableObject {
         boxSets = try await loadedBoxSets
         deletedBoxSets = try await loadedDeletedBoxSets
         storageRoots = try await loadedStorageRoots
+        localAlbumIDs = try await loadedLocalAlbumIDs
+        publishedAlbumIDs = try await loadedPublishedAlbumIDs
         importBatches = try await loadedImportBatches
         libraryHealthIssues = try await loadedHealth
         playlists = try await loadedPlaylists
@@ -203,13 +209,20 @@ public final class LibraryStore: ObservableObject {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
         let bookmarkData = try makeSecurityScopedBookmark(for: url)
         let values = try? url.resourceValues(forKeys: [.volumeUUIDStringKey])
-        _ = try await database.createStorageRoot(.init(displayName: url.lastPathComponent, lastKnownPath: url.path, bookmarkData: bookmarkData, volumeIdentifier: values?.volumeUUIDString, status: .available))
+        let scope: StorageRootScope = url.path.hasPrefix("/Volumes/") ? .nasPublished : .localOnly
+        _ = try await database.createStorageRoot(.init(displayName: url.lastPathComponent, lastKnownPath: url.path, bookmarkData: bookmarkData, volumeIdentifier: values?.volumeUUIDString, status: .available, scope: scope))
         try await reload()
     }
 
     public func renameStorageRoot(_ id: StorageRootID, to displayName: String) async throws {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
         try await database.renameStorageRoot(id, to: displayName)
+        try await reload()
+    }
+
+    public func updateStorageRootScope(_ id: StorageRootID, to scope: StorageRootScope) async throws {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        try await database.updateStorageRootScope(id, to: scope)
         try await reload()
     }
 
