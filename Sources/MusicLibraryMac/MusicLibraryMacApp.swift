@@ -912,6 +912,7 @@ private struct ExternalMetadataLookupView: View {
     @State private var selectedResultID: String?
     @State private var selectedReleaseDetail: ExternalReleasePreview?
     @State private var isLoadingReleaseDetail = false
+    @State private var importedPreview = ImportProposalPreview(trackTitles: [], artworkURL: nil)
     @State private var isDownloadingArtwork = false
     @State private var artworkMessage: String?
 
@@ -964,7 +965,7 @@ private struct ExternalMetadataLookupView: View {
                         }
                         .frame(minWidth: 270, maxWidth: 320)
                         Divider()
-                        MusicBrainzCandidateComparison(proposal: proposal, result: displayedResult, onDownloadArtwork: downloadArtwork, isDownloadingArtwork: isDownloadingArtwork, isLoadingTracks: isLoadingReleaseDetail)
+                        MusicBrainzCandidateComparison(proposal: proposal, result: displayedResult, importedPreview: importedPreview, onDownloadArtwork: downloadArtwork, isDownloadingArtwork: isDownloadingArtwork, isLoadingTracks: isLoadingReleaseDetail)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 } else {
@@ -983,6 +984,7 @@ private struct ExternalMetadataLookupView: View {
             .alert("Cover artwork", isPresented: Binding(get: { artworkMessage != nil }, set: { if !$0 { artworkMessage = nil } })) { Button("OK", role: .cancel) {} } message: { Text(artworkMessage ?? "") }
         }
         .frame(width: 960, height: 650)
+        .task { await loadImportedPreview() }
         .task(id: selectedResultID) { await loadSelectedReleaseDetail() }
     }
 
@@ -1013,6 +1015,10 @@ private struct ExternalMetadataLookupView: View {
         defer { isLoadingReleaseDetail = false }
         do { selectedReleaseDetail = try await library.musicBrainzReleaseDetails(id: selectedResultID) }
         catch { selectedReleaseDetail = nil }
+    }
+
+    private func loadImportedPreview() async {
+        importedPreview = (try? await library.importProposalPreview(proposal)) ?? .init(trackTitles: [], artworkURL: nil)
     }
     private func save(_ result: ExternalReleasePreview) {
         Task {
@@ -1052,6 +1058,7 @@ private struct ExternalMetadataLookupView: View {
 private struct MusicBrainzCandidateComparison: View {
     let proposal: ImportReleaseProposal
     let result: ExternalReleasePreview?
+    let importedPreview: ImportProposalPreview
 
     let onDownloadArtwork: (ExternalReleasePreview) -> Void
     let isDownloadingArtwork: Bool
@@ -1063,7 +1070,14 @@ private struct MusicBrainzCandidateComparison: View {
                 ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack(alignment: .top, spacing: 18) {
-                        coverArtwork(for: result)
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Imported cover").font(.caption.bold()).foregroundStyle(.secondary)
+                            importedArtwork()
+                        }
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("MusicBrainz cover").font(.caption.bold()).foregroundStyle(.secondary)
+                            coverArtwork(for: result)
+                        }
                         VStack(alignment: .leading, spacing: 7) {
                             Text("Compare metadata").font(.title3.bold())
                             Text(result.title).font(.headline)
@@ -1092,20 +1106,11 @@ private struct MusicBrainzCandidateComparison: View {
                         row("Disc count", String(proposal.discCount), String(result.mediaCount))
                         row("Imported tracks", String(proposal.trackCount), nil)
                     }
+                    Divider()
                     if isLoadingTracks {
                         HStack { ProgressView(); Text("Loading selected release tracks…").font(.caption).foregroundStyle(.secondary) }
-                    } else if !result.trackTitles.isEmpty {
-                        Divider()
-                        Text("Selected release tracks").font(.headline)
-                        ForEach(Array(result.trackTitles.enumerated()), id: \.offset) { index, title in
-                            HStack(alignment: .firstTextBaseline) {
-                                Text("\(index + 1).") .foregroundStyle(.secondary).frame(width: 28, alignment: .trailing)
-                                Text(title)
-                            }
-                            .font(.subheadline)
-                        }
                     } else {
-                        Text("MusicBrainz did not return a track list for this candidate.").font(.caption).foregroundStyle(.secondary)
+                        TrackListComparison(importedTracks: importedPreview.trackTitles, musicBrainzTracks: result.trackTitles)
                     }
                     Label("Preview only — no catalogue record, import proposal, or audio file has changed.", systemImage: "eye")
                         .font(.caption).foregroundStyle(.secondary)
@@ -1133,12 +1138,58 @@ private struct MusicBrainzCandidateComparison: View {
         }
     }
 
+    @ViewBuilder private func importedArtwork() -> some View {
+        if let url = importedPreview.artworkURL, let image = NSImage(contentsOf: url) {
+            Image(nsImage: image).resizable().scaledToFill()
+                .frame(width: 130, height: 130)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+        } else {
+            VStack(spacing: 8) {
+                Image(systemName: "photo").font(.largeTitle).foregroundStyle(.secondary)
+                Text("No folder artwork found").font(.caption).multilineTextAlignment(.center).foregroundStyle(.secondary)
+            }
+            .frame(width: 130, height: 130)
+            .background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
+        }
+    }
+
     @ViewBuilder private func row(_ label: String, _ imported: String?, _ musicBrainz: String?) -> some View {
         GridRow {
             Text(label).font(.subheadline.weight(.medium))
             Text(imported?.nilIfBlank ?? "—").textSelection(.enabled)
             Text(musicBrainz?.nilIfBlank ?? "—").textSelection(.enabled)
         }
+    }
+}
+
+private struct TrackListComparison: View {
+    let importedTracks: [String]
+    let musicBrainzTracks: [String]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Track comparison").font(.headline)
+            HStack(alignment: .top, spacing: 24) {
+                trackColumn(title: "Imported tracks (\(importedTracks.count))", tracks: importedTracks, empty: "No extracted imported tracks.")
+                Divider()
+                trackColumn(title: "MusicBrainz tracks (\(musicBrainzTracks.count))", tracks: musicBrainzTracks, empty: "MusicBrainz did not return a track list.")
+            }
+        }
+    }
+
+    private func trackColumn(title: String, tracks: [String], empty: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title).font(.subheadline.bold())
+            if tracks.isEmpty { Text(empty).font(.caption).foregroundStyle(.secondary) }
+            ForEach(Array(tracks.enumerated()), id: \.offset) { index, track in
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text("\(index + 1).") .foregroundStyle(.secondary).frame(width: 28, alignment: .trailing)
+                    Text(track)
+                }
+                .font(.subheadline)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

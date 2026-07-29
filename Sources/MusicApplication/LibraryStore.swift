@@ -5,6 +5,16 @@ import MusicDomain
 import MusicPersistence
 import UniformTypeIdentifiers
 
+public struct ImportProposalPreview: Sendable {
+    public let trackTitles: [String]
+    public let artworkURL: URL?
+
+    public init(trackTitles: [String], artworkURL: URL?) {
+        self.trackTitles = trackTitles
+        self.artworkURL = artworkURL
+    }
+}
+
 @MainActor
 public final class LibraryStore: ObservableObject {
     @Published public private(set) var albums: [Album] = []
@@ -331,6 +341,24 @@ public final class LibraryStore: ObservableObject {
 
     public func searchMusicBrainz(title: String, artist: String?) async throws -> [ExternalReleasePreview] {
         try await metadataLookupProvider.searchRelease(title: title, artist: artist)
+    }
+
+    public func importProposalPreview(_ proposal: ImportReleaseProposal) async throws -> ImportProposalPreview {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        let candidates = try await database.importCandidates(batchID: proposal.batchID)
+            .filter { $0.proposalID == proposal.id }
+            .sorted {
+                let lhs = $0.metadata?.discNumber ?? 1; let rhs = $1.metadata?.discNumber ?? 1
+                if lhs != rhs { return lhs < rhs }
+                let left = $0.metadata?.trackNumber ?? Int.max; let right = $1.metadata?.trackNumber ?? Int.max
+                if left != right { return left < right }
+                return ($0.payload?.fileName ?? "").localizedStandardCompare($1.payload?.fileName ?? "") == .orderedAscending
+            }
+        let titles = candidates.compactMap { candidate -> String? in
+            if let title = candidate.metadata?.title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty { return title }
+            return candidate.payload?.fileName
+        }
+        return .init(trackTitles: titles, artworkURL: try await importedFolderArtwork(for: proposal.id))
     }
 
     public func musicBrainzReleaseDetails(id: String) async throws -> ExternalReleasePreview {
