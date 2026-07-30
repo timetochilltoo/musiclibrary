@@ -27,6 +27,7 @@ public final class LibraryStore: ObservableObject {
     @Published public private(set) var localAlbumIDs: Set<AlbumID> = []
     @Published public private(set) var publishedAlbumIDs: Set<AlbumID> = []
     @Published public private(set) var importBatches: [ImportBatch] = []
+    @Published public private(set) var importScanProgress: [ImportBatchID: ImportScanProgress] = [:]
     @Published public private(set) var libraryHealthIssues: [LibraryHealthIssue] = []
     @Published public private(set) var playlists: [Playlist] = []
     @Published public private(set) var deletedPlaylists: [Playlist] = []
@@ -695,6 +696,11 @@ public final class LibraryStore: ObservableObject {
         let relativeDirectory = Self.relativePath(of: scanURL, within: rootURL)
         let batch = try await database.createImportBatch(storageRootID: rootID, sourceDescription: scanURL.path)
         await refreshImportBatches()
+        let progressSink: @Sendable (ImportScanProgress) -> Void = { [store = self, batchID = batch.id] progress in
+            Task { @MainActor in
+                store.recordImportScanProgress(progress, for: batchID)
+            }
+        }
         let task = Task.detached { [weak self, database] in
             let rootAccessed = rootURL.startAccessingSecurityScopedResource()
             let scanAccessed = scannedRoot ? false : scanURL.startAccessingSecurityScopedResource()
@@ -705,9 +711,14 @@ public final class LibraryStore: ObservableObject {
             guard rootAccessed, scannedRoot || scanAccessed else {
                 try? await database.finishImportBatch(batch.id, status: .failed, errorSummary: "Permission to access the selected folder was not available.")
                 await self?.refreshImportBatches()
+                await self?.clearImportScanProgress(for: batch.id)
                 return
             }
-            let rawResult = ImportScanner().scan(rootURL: scanURL)
+            let rawResult = ImportScanner().scan(
+                rootURL: scanURL,
+                isCancelled: { Task.isCancelled },
+                onProgress: progressSink
+            )
             let candidates = rawResult.candidates.map { $0.prefixed(relativeDirectory: relativeDirectory) }
             do {
                 for (index, candidate) in candidates.enumerated() {
@@ -725,12 +736,23 @@ public final class LibraryStore: ObservableObject {
                 try? await database.finishImportBatch(batch.id, status: .failed, errorSummary: error.localizedDescription)
             }
             await self?.refreshImportBatches()
+            await self?.clearImportScanProgress(for: batch.id)
         }
         scanTasks[batch.id] = task
     }
 
     public func cancelImportScan(_ batchID: ImportBatchID) async {
         scanTasks[batchID]?.cancel()
+    }
+
+    private func recordImportScanProgress(_ progress: ImportScanProgress, for batchID: ImportBatchID) {
+        guard importBatches.first(where: { $0.id == batchID })?.status == .scanning else { return }
+        importScanProgress[batchID] = progress
+    }
+
+    private func clearImportScanProgress(for batchID: ImportBatchID) {
+        importScanProgress.removeValue(forKey: batchID)
+        scanTasks.removeValue(forKey: batchID)
     }
 
     public func retryImportScan(_ batchID: ImportBatchID) async throws {

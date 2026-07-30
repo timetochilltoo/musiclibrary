@@ -12,10 +12,29 @@ public struct ImportScanResult: Sendable {
     }
 }
 
+/// A transient progress update while a folder walk is underway. It is kept
+/// separate from the persisted import-batch counters: those counters describe
+/// successfully recorded candidates and errors after the scan completes.
+public struct ImportScanProgress: Equatable, Sendable {
+    public let examinedItemCount: Int
+    public let audioCandidateCount: Int
+    public let currentRelativePath: String?
+
+    public init(examinedItemCount: Int, audioCandidateCount: Int, currentRelativePath: String?) {
+        self.examinedItemCount = examinedItemCount
+        self.audioCandidateCount = audioCandidateCount
+        self.currentRelativePath = currentRelativePath
+    }
+}
+
 public struct ImportScanner: Sendable {
     public init() {}
 
-    public func scan(rootURL: URL, isCancelled: @Sendable () -> Bool = { Task.isCancelled }) -> ImportScanResult {
+    public func scan(
+        rootURL: URL,
+        isCancelled: @Sendable () -> Bool = { Task.isCancelled },
+        onProgress: @Sendable (ImportScanProgress) -> Void = { _ in }
+    ) -> ImportScanResult {
         let keys: Set<URLResourceKey> = [.isDirectoryKey, .isPackageKey, .isHiddenKey, .contentTypeKey, .fileSizeKey, .contentModificationDateKey]
         var errors: [String] = []
         guard let enumerator = FileManager.default.enumerator(at: rootURL, includingPropertiesForKeys: Array(keys), options: [.skipsHiddenFiles, .skipsPackageDescendants], errorHandler: { url, error in
@@ -26,18 +45,26 @@ public struct ImportScanner: Sendable {
         }
         var candidates: [ImportCandidatePayload] = []
         var cueFiles: [URL] = []
+        var examinedItemCount = 0
         for case let url as URL in enumerator {
-            if isCancelled() { return .init(candidates: candidates, errors: errors, wasCancelled: true) }
+            if isCancelled() {
+                onProgress(.init(examinedItemCount: examinedItemCount, audioCandidateCount: candidates.count, currentRelativePath: nil))
+                return .init(candidates: candidates, errors: errors, wasCancelled: true)
+            }
+            examinedItemCount += 1
             do {
                 let values = try url.resourceValues(forKeys: keys)
+                let relative = relativePath(of: url, within: rootURL)
+                onProgress(.init(examinedItemCount: examinedItemCount, audioCandidateCount: candidates.count, currentRelativePath: relative))
                 if values.isDirectory == true || values.isPackage == true || values.isHidden == true { continue }
                 if url.pathExtension.lowercased() == "cue" { cueFiles.append(url); continue }
                 let isDSF = url.pathExtension.caseInsensitiveCompare("dsf") == .orderedSame
                 guard isDSF || values.contentType?.conforms(to: .audio) == true else { continue }
-                let relative = relativePath(of: url, within: rootURL)
                 candidates.append(.init(relativePath: relative, fileName: url.lastPathComponent, contentTypeIdentifier: values.contentType?.identifier ?? "org.sony.dsf", fileSize: Int64(values.fileSize ?? 0), modifiedAt: values.contentModificationDate))
+                onProgress(.init(examinedItemCount: examinedItemCount, audioCandidateCount: candidates.count, currentRelativePath: relative))
             } catch {
                 errors.append("\(url.lastPathComponent): \(error.localizedDescription)")
+                onProgress(.init(examinedItemCount: examinedItemCount, audioCandidateCount: candidates.count, currentRelativePath: url.lastPathComponent))
             }
         }
         for cueURL in cueFiles {
@@ -62,6 +89,7 @@ public struct ImportScanner: Sendable {
                 }
             } catch { errors.append("\(cueURL.lastPathComponent): \(error.localizedDescription)") }
         }
+        onProgress(.init(examinedItemCount: examinedItemCount, audioCandidateCount: candidates.count, currentRelativePath: nil))
         return .init(candidates: candidates, errors: errors, wasCancelled: isCancelled())
     }
 

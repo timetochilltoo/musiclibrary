@@ -44,6 +44,24 @@ struct ImportScannerTests {
         #expect(result.candidates.isEmpty)
     }
 
+    @Test("Scanner reports progress while it walks a folder")
+    func reportsProgress() throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try Data([0]).write(to: root.appending(path: "first.mp3"))
+        try Data("ignore".utf8).write(to: root.appending(path: "notes.txt"))
+
+        let recorder = ProgressRecorder()
+        let result = ImportScanner().scan(rootURL: root, onProgress: { recorder.append($0) })
+        let updates = recorder.values
+
+        #expect(result.candidates.count == 1)
+        #expect(updates.contains { $0.examinedItemCount >= 2 })
+        #expect(updates.contains { $0.audioCandidateCount == 1 })
+        #expect(updates.last?.currentRelativePath == nil)
+    }
+
     @Test("Scanner expands a WAV plus CUE sheet into timed virtual tracks")
     func expandsCueSheet() throws {
         let root = temporaryDirectory()
@@ -300,5 +318,22 @@ struct ImportScannerTests {
         data += Array("fmt ".utf8) + littleEndian(52, bytes: 8) + littleEndian(1, bytes: 4) + littleEndian(0, bytes: 4) + littleEndian(0, bytes: 4) + littleEndian(2, bytes: 4) + littleEndian(2_822_400, bytes: 4) + littleEndian(1, bytes: 4) + littleEndian(sampleCount, bytes: 8) + littleEndian(32, bytes: 4) + [0, 0, 0, 0]
         data += Array("data".utf8) + littleEndian(UInt64(audio.count + 12), bytes: 8) + audio + id3
         return Data(data)
+    }
+}
+
+private final class ProgressRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedValues: [ImportScanProgress] = []
+
+    func append(_ value: ImportScanProgress) {
+        lock.lock()
+        storedValues.append(value)
+        lock.unlock()
+    }
+
+    var values: [ImportScanProgress] {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedValues
     }
 }

@@ -861,6 +861,9 @@ private struct ImportBatchDetail: View {
     @State private var missingAssetToRemove: MissingAssetReview?
     @State private var missingAssetToRelink: MissingAssetReview?
 
+    private var audioCandidates: [ImportCandidate] { candidates.filter { $0.payload != nil } }
+    private var failedCandidates: [ImportCandidate] { candidates.filter { $0.status == .failed } }
+
     var body: some View {
         List {
             Section("Scan") {
@@ -869,6 +872,14 @@ private struct ImportBatchDetail: View {
                 LabeledContent("Audio candidates", value: String(batch.candidateCount))
                 LabeledContent("Errors", value: String(batch.errorCount))
                 if let error = batch.errorSummary { Text(error).foregroundStyle(.secondary) }
+                if let progress = library.importScanProgress[batch.id] {
+                    LabeledContent("Items checked", value: String(progress.examinedItemCount))
+                    LabeledContent("Audio found so far", value: String(progress.audioCandidateCount))
+                    if let path = progress.currentRelativePath {
+                        Text(path).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    ProgressView()
+                }
                 if batch.status == .scanning { Button("Cancel Scan", role: .destructive) { Task { await library.cancelImportScan(batch.id) } } }
                 if batch.status != .scanning { Button("Retry Scan", systemImage: "arrow.clockwise") {
                     Task {
@@ -889,6 +900,18 @@ private struct ImportBatchDetail: View {
                 if batch.status != .scanning && candidates.isEmpty == false && unregisteredCandidates.isEmpty {
                     Text("All scanned audio files already have catalogue asset paths; no metadata review is needed.")
                         .font(.caption).foregroundStyle(.secondary)
+                }
+                if batch.status == .completed {
+                    Text(scanOutcome).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            if !failedCandidates.isEmpty {
+                Section("File-level scan errors") {
+                    Text("These files could not be fully scanned. The rest of the scan remains available for review.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    ForEach(failedCandidates) { candidate in
+                        Text(candidate.errorMessage ?? "Unknown scan error").font(.caption)
+                    }
                 }
             }
             if !missingAssets.isEmpty {
@@ -954,8 +977,8 @@ private struct ImportBatchDetail: View {
                 }
             }
             Section("Scan diagnostics") {
-                DisclosureGroup("All scanned audio files (\(candidates.count))") {
-                    ForEach(candidates) { CandidateRow(candidate: $0) }
+                DisclosureGroup("All scanned audio files (\(audioCandidates.count))") {
+                    ForEach(audioCandidates) { CandidateRow(candidate: $0) }
                 }
             }
         }
@@ -1051,6 +1074,19 @@ private struct ImportBatchDetail: View {
         } catch {
             library.presentError(error)
         }
+    }
+
+    private var scanOutcome: String {
+        if audioCandidates.isEmpty {
+            return "This completed scan found no supported audio files. Hidden files and package contents are skipped."
+        }
+        if unregisteredCandidates.isEmpty && missingAssets.isEmpty {
+            return "No catalogue changes were found by this rescan: every scanned audio path is already registered and no registered path is missing."
+        }
+        var parts: [String] = []
+        if !unregisteredCandidates.isEmpty { parts.append("\(unregisteredCandidates.count) new audio file\(unregisteredCandidates.count == 1 ? "" : "s")") }
+        if !missingAssets.isEmpty { parts.append("\(missingAssets.count) missing catalogue reference\(missingAssets.count == 1 ? "" : "s")") }
+        return "This completed scan found " + parts.joined(separator: " and ") + ". Review the items below; nothing is changed automatically."
     }
 }
 
