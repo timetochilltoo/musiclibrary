@@ -68,6 +68,20 @@ struct MusicDatabaseTests {
         #expect(try await database.currentRevision() == 2)
     }
 
+    @Test("Manual lyrics retain language, type, and source")
+    func manualLyricsPersistence() async throws {
+        let database = try MusicDatabase(url: temporaryDatabaseURL())
+        try await database.migrate()
+        let album = try await database.createAlbum(.init(title: "Lyrics test"))
+        let disc = try await database.createDisc(albumID: album.id, title: nil)
+        let track = try await database.createTrack(discID: disc.id, draft: .init(title: "Song"))
+        let entry = LyricsEntry(trackID: track.id, language: "zh-Hant", kind: .plain, text: "First line", source: "manual")
+        try await database.saveLyrics(entry)
+        #expect(try await database.lyrics(trackID: track.id) == [entry])
+        try await database.deleteLyrics(entry.id)
+        #expect(try await database.lyrics(trackID: track.id).isEmpty)
+    }
+
     @Test("An invalid box set leaves album creation atomic")
     func invalidBoxSetRollsBackAlbum() async throws {
         let database = try MusicDatabase(url: temporaryDatabaseURL())

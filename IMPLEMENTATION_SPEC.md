@@ -637,7 +637,22 @@ Each item must link to a repair action. Avoid a dashboard that reports problems 
 - Soft-deleted records are excluded unless searching Recently Deleted.
 - Search remains local and works offline on every client.
 
-## 18. Error handling
+## 18. Phase 4 write-back and lyrics implementation
+
+### Supported source-file matrix
+
+| Source format | Write-back status | Notes |
+|---|---|---|
+| FLAC with Vorbis comments | Supported | TITLE, ALBUM, ARTIST, ALBUMARTIST, TRACKNUMBER, DISCNUMBER, and DATE are previewed and may be explicitly written. Encoded audio frames are copied without transcoding. |
+| WAV + CUE | Catalogue-only | Cue parsing and playback remain supported; source files are not changed. |
+| DSF | Catalogue-only | Playback conversion and ID3 reading remain supported; no tag writer is enabled. |
+| AIFF, ALAC, MP3, other formats | Catalogue-only | A format-specific implementation and tests are required first. |
+
+Each confirmed FLAC batch creates a full original copy in `Application Support/MusicLibrary/TagWriteBackups/<batch-id>/`, writes a temporary sibling FLAC, verifies the changed tags and FLAC stream properties, replaces only after verification, and saves a retained `journal.json`. The journal can restore untouched original files. Failed entries are visible in the journal and do not silently change later files.
+
+Lyrics are persisted as manual plain text or synchronized LRC, with language, source, and user-edited state. No provider is enabled until the user chooses one and accepts its terms; lack of lyrics is normal for instrumental and classical recordings.
+
+## 19. Error handling
 
 Use typed errors with a user action:
 

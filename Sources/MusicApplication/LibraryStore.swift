@@ -542,6 +542,45 @@ public final class LibraryStore: ObservableObject {
     public func restorePlaylist(_ id: PlaylistID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.restorePlaylist(id); try await reload() }
     public func permanentlyDeletePlaylist(_ id: PlaylistID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.permanentlyDeletePlaylist(id); try await reload() }
     public func embeddedMetadata(trackID: TrackID) async throws -> EmbeddedMetadataPayload? { guard let database else { throw DatabaseError.notFound("Catalogue database") }; return try await database.embeddedMetadata(trackID: trackID) }
+    public func lyrics(trackID: TrackID) async throws -> [LyricsEntry] { guard let database else { throw DatabaseError.notFound("Catalogue database") }; return try await database.lyrics(trackID: trackID) }
+    public func saveLyrics(_ entry: LyricsEntry) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.saveLyrics(entry); try await reload() }
+    public func deleteLyrics(_ id: UUID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.deleteLyrics(id); try await reload() }
+
+    /// Builds a dry-run only. The caller must explicitly confirm before any source
+    /// file is copied, backed up, or changed.
+    public func tagWritePreviews(album: Album, discs: [Disc], tracksByDisc: [DiscID: [Track]], albumCredits: [ContributorCredit], trackCredits: [TrackID: [ContributorCredit]]) async throws -> [FLACTagWriteCoordinator.Preview] {
+        let albumArtist = albumCredits.first(where: { $0.role == .albumArtist }).map { $0.creditedName ?? $0.contributor.name }
+        var previews: [FLACTagWriteCoordinator.Preview] = []
+        for disc in discs {
+            for track in tracksByDisc[disc.id] ?? [] {
+                let asset = try await playbackURL(for: track.id)
+                var changes: [String: String] = [
+                    "TITLE": track.title,
+                    "ALBUM": album.title,
+                    "TRACKNUMBER": String(track.number),
+                    "DISCNUMBER": String(disc.number)
+                ]
+                if let year = album.releaseYear { changes["DATE"] = String(year) }
+                if let albumArtist { changes["ALBUMARTIST"] = albumArtist }
+                if let artist = trackCredits[track.id]?.first(where: { $0.role == .performer || $0.role == .soloist || $0.role == .featuredArtist }).map({ $0.creditedName ?? $0.contributor.name }) ?? albumArtist { changes["ARTIST"] = artist }
+                let plan = FLACTagWriteCoordinator.PlannedWrite(trackID: track.id.rawValue, trackTitle: track.title, sourcePath: asset.url.path, changes: changes)
+                previews.append(try FLACTagWriteCoordinator().preview(plan))
+            }
+        }
+        return previews
+    }
+
+    public func executeTagWrite(previews: [FLACTagWriteCoordinator.Preview]) async throws -> FLACTagWriteCoordinator.Journal {
+        let directory = try applicationSupportDirectory().appending(path: "TagWriteBackups", directoryHint: .isDirectory)
+        let journal = try await Task.detached(priority: .userInitiated) {
+            try FLACTagWriteCoordinator().execute(previews, backupRoot: directory)
+        }.value
+        return journal
+    }
+
+    public func tagWriteBackupDirectory() throws -> URL {
+        try applicationSupportDirectory().appending(path: "TagWriteBackups", directoryHint: .isDirectory)
+    }
     public func addTrack(_ trackID: TrackID, toPlaylist id: PlaylistID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.addTrack(trackID, to: id); try await reload() }
     public func removePlaylistItem(_ id: UUID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.removePlaylistItem(id); try await reload() }
     public func movePlaylistItem(_ id: UUID, to position: Int) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.movePlaylistItem(id, to: position); try await reload() }

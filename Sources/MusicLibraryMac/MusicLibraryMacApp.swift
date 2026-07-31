@@ -1498,6 +1498,122 @@ private struct ArtworkPreview: View {
     }
 }
 
+private struct TagWritePreviewSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var library: LibraryStore
+    let album: Album
+    let discs: [Disc]
+    let tracksByDisc: [DiscID: [Track]]
+    let albumCredits: [ContributorCredit]
+    let trackCredits: [TrackID: [ContributorCredit]]
+    @State private var previews: [FLACTagWriteCoordinator.Preview] = []
+    @State private var isLoading = true
+    @State private var isWriting = false
+    @State private var result: String?
+    @State private var errorMessage: String?
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("Safety") {
+                    Text("Nothing changes until you press Back Up and Write. Every selected FLAC is copied first to Music Library’s TagWriteBackups folder, written through a temporary replacement, then read again for verification. Audio frames are copied without transcoding.")
+                }
+                Section("Supported-format matrix") {
+                    LabeledContent("FLAC / Vorbis comments", value: "Supported")
+                    LabeledContent("WAV + CUE, DSF, AIFF, ALAC, MP3", value: "Catalogue-only")
+                }
+                if isLoading {
+                    ProgressView("Preparing preview…")
+                } else {
+                    Section("Planned changes") {
+                        ForEach(previews) { preview in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(preview.planned.trackTitle).font(.headline)
+                                Text(URL(fileURLWithPath: preview.planned.sourcePath).lastPathComponent).font(.caption).foregroundStyle(.secondary)
+                                if let reason = preview.unsupportedReason { Text(reason).font(.caption).foregroundStyle(.orange) }
+                                else if preview.changedKeys.isEmpty { Text("Already matches the catalogue; no write needed.").font(.caption).foregroundStyle(.secondary) }
+                                else { Text("Will update: \(preview.changedKeys.joined(separator: ", "))").font(.caption).foregroundStyle(.secondary) }
+                            }
+                        }
+                    }
+                }
+                if let result { Section("Result") { Text(result) } }
+            }
+            .navigationTitle("Preview Tag Write-Back")
+            .task { await load() }
+            .alert("Tag write-back could not finish", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) { Button("OK", role: .cancel) {} } message: { Text(errorMessage ?? "") }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Back Up and Write \(previews.filter(\.isWritable).count) FLAC File(s)") { write() }
+                        .disabled(isLoading || isWriting || previews.filter(\.isWritable).isEmpty)
+                }
+            }
+        }
+        .frame(minWidth: 680, minHeight: 520)
+    }
+
+    private func load() async {
+        do { previews = try await library.tagWritePreviews(album: album, discs: discs, tracksByDisc: tracksByDisc, albumCredits: albumCredits, trackCredits: trackCredits) }
+        catch { errorMessage = error.localizedDescription }
+        isLoading = false
+    }
+    private func write() {
+        isWriting = true
+        Task {
+            do {
+                let journal = try await library.executeTagWrite(previews: previews)
+                let completed = journal.entries.filter { $0.status == "completed" }.count
+                let failed = journal.entries.filter { $0.status == "failed" }.count
+                result = "Completed \(completed) file(s)\(failed == 0 ? "" : "; \(failed) failed"). The batch journal and untouched backups were retained for recovery."
+            } catch { errorMessage = error.localizedDescription }
+            isWriting = false
+        }
+    }
+}
+
+private struct LyricsEditor: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var library: LibraryStore
+    let track: Track
+    @State private var entries: [LyricsEntry] = []
+    @State private var text = ""
+    @State private var language = ""
+    @State private var kind: LyricsKind = .plain
+    @State private var errorMessage: String?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                if track.isInstrumental == true { Text("This track is marked instrumental. Lyrics are optional.").font(.caption).foregroundStyle(.secondary) }
+                Section("Saved lyrics") {
+                    if entries.isEmpty { Text("No lyrics stored. This is not treated as an error.").foregroundStyle(.secondary) }
+                    ForEach(entries) { entry in
+                        VStack(alignment: .leading) {
+                            Text("\(entry.kind.rawValue.capitalized) · \(entry.language ?? "No language") · \(entry.source)").font(.caption).foregroundStyle(.secondary)
+                            Text(entry.text).lineLimit(3)
+                        }
+                        .swipeActions { Button(role: .destructive) { Task { try? await library.deleteLyrics(entry.id); await load() } } label: { Label("Delete", systemImage: "trash") } }
+                    }
+                }
+                Section("Manual import or edit") {
+                    TextField("Language, e.g. en or zh-Hant", text: $language)
+                    Picker("Kind", selection: $kind) { Text("Plain").tag(LyricsKind.plain); Text("Synchronized (LRC)").tag(LyricsKind.synchronized) }
+                    TextEditor(text: $text).font(.body).frame(minHeight: 180)
+                    Text("Lyrics providers are intentionally not enabled yet. This editor stores only text you manually paste or type.").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle("Lyrics — \(track.title)")
+            .task { await load() }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button("Save") { save() }.disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) } }
+            .alert("Unable to save lyrics", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) { Button("OK", role: .cancel) {} } message: { Text(errorMessage ?? "") }
+        }
+        .frame(minWidth: 620, minHeight: 560)
+    }
+    private func load() async { entries = (try? await library.lyrics(trackID: track.id)) ?? [] }
+    private func save() { Task { do { try await library.saveLyrics(.init(trackID: track.id, language: language.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : language, kind: kind, text: text)); text = ""; await load() } catch { errorMessage = error.localizedDescription } } }
+}
+
 private struct MetadataInspectionSelection: Identifiable {
     let trackID: TrackID
     let title: String
@@ -1581,12 +1697,14 @@ private struct AlbumDetail: View {
     @State private var trackForContributor: Track?
     @State private var trackToEdit: Track?
     @State private var metadataSelection: MetadataInspectionSelection?
+    @State private var trackForLyrics: Track?
     @State private var trackPendingDeletion: Track?
     @State private var contributorToEdit: Contributor?
     @State private var albumCreditToEdit: ContributorCredit?
     @State private var trackCreditToEdit: TrackCreditSelection?
     @State private var showsArtworkPicker = false
     @State private var discPendingDeletion: Disc?
+    @State private var showsTagWritePreview = false
 
     var body: some View {
         Form {
@@ -1632,6 +1750,7 @@ private struct AlbumDetail: View {
                                     Button("Edit", systemImage: "pencil") { trackToEdit = track }.labelStyle(.iconOnly)
                                     Button("Play", systemImage: "play.fill") { play(track) }.labelStyle(.iconOnly)
                                     Button("Show embedded metadata", systemImage: "info.circle") { metadataSelection = .init(trackID: track.id, title: track.title) }.labelStyle(.iconOnly)
+                                    Button("Lyrics", systemImage: "quote.bubble") { trackForLyrics = track }.labelStyle(.iconOnly)
                                     Menu("Add to Playlist") {
                                         if library.playlists.isEmpty {
                                             Text("Create a playlist from the Playlists sidebar first.")
@@ -1664,6 +1783,12 @@ private struct AlbumDetail: View {
                 }
             } else {
                 Section("Tracks") { Button("Add Disc", systemImage: "plus") { showsAddDisc = true } }
+            }
+            Section("Source file tag write-back") {
+                Text("Phase 4 supports FLAC Vorbis comments only. WAV/CUE, DSF, and other formats remain catalogue-only and are never changed.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Button("Preview FLAC Tag Changes…", systemImage: "tag") { showsTagWritePreview = true }
+                    .disabled(discs.isEmpty)
             }
             Section("Contributors") {
                 ForEach(credits) { credit in
@@ -1714,6 +1839,8 @@ private struct AlbumDetail: View {
         .sheet(item: $trackForContributor) { track in AddTrackContributorEditor(library: library, track: track, onAdded: { await loadContent() }) }
         .sheet(item: $trackToEdit) { track in EditTrackEditor(library: library, track: track, onSaved: { await loadContent() }) }
         .sheet(item: $metadataSelection) { selection in TrackMetadataInspector(library: library, selection: selection) }
+        .sheet(item: $trackForLyrics) { track in LyricsEditor(library: library, track: track) }
+        .sheet(isPresented: $showsTagWritePreview) { TagWritePreviewSheet(library: library, album: album, discs: discs, tracksByDisc: tracksByDisc, albumCredits: credits, trackCredits: trackCredits) }
         .sheet(item: $contributorToEdit) { contributor in EditContributorEditor(library: library, contributor: contributor, onSaved: { await loadContent() }) }
         .sheet(item: $albumCreditToEdit) { credit in EditAlbumCreditedNameEditor(library: library, albumID: album.id, credit: credit, onSaved: { await loadContent() }) }
         .sheet(item: $trackCreditToEdit) { selection in EditTrackCreditedNameEditor(library: library, track: selection.track, credit: selection.credit, onSaved: { await loadContent() }) }

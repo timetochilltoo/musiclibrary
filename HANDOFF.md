@@ -404,7 +404,7 @@ Do not implement all of this at once. Complete and test one vertical slice per c
 5. Digital assets, availability health, duplicate detection, and relocation.
 6. Lossless playback engine, queue, and playlists.
 7. Library Health, soft delete/recovery, edit history, JSON/CSV export.
-8. Safe tag write-back and lyrics only after robust backup/recovery work.
+8. Phase 4 Mac-first tag write-back and manual lyrics are implemented. FLAC Vorbis comments are the only supported source-file write format: preview, full original backup, temporary replacement, re-read verification, retained JSON journal, and journal-based undo. WAV+CUE, DSF, and all other formats remain catalogue-only. Manual plain/LRC lyrics are stored in SQLite with language, source, and user-edited status; no network lyrics provider is active.
 9. Mac snapshot publisher and validation harness.
 10. Read-only iPad client, manifest check, snapshot replacement, and SMB root mapping.
 11. AI/OCR/music generation last and behind provider protocols.
@@ -443,7 +443,7 @@ database without explicit permission.
 
 Do not silently choose these when their implementation becomes necessary:
 
-- Exact supported audio containers and metadata write-back matrix, deferred until the opt-in write-back feature is built.
-- Exact external metadata, lyrics, and AI provider selections, deferred until their respective manually triggered adapter screens are built.
+- Future source-file write support beyond the Phase 4 FLAC/Vorbis matrix: WAV+CUE, DSF, AIFF, ALAC, MP3, and other containers each need a separately reviewed implementation.
+- Exact lyrics and AI provider selections remain deferred. The lyrics UI intentionally has no internet provider enabled and supports manual import/edit only until the user selects a service and accepts its terms.
 
 The user has already decided: iPad first; SMB for companion audio access; no CD ripping; manual and automatic Mac snapshot publishing; current plus three prior published snapshots with a five-second automatic-publish delay; explicit NAS master backups; manual preview-only metadata lookup; managed artwork storage; device-local companion listening preferences; explicit unknown CD locations; and shared 1–5 catalogue ratings.

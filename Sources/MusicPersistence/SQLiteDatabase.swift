@@ -553,6 +553,29 @@ public actor MusicDatabase {
         return try? JSONDecoder().decode(EmbeddedMetadataPayload.self, from: data)
     }
 
+    public func lyrics(trackID: TrackID) throws -> [LyricsEntry] {
+        let statement = try Self.prepare("SELECT id, language, kind, text, source, provider_id, is_user_edited FROM lyrics WHERE track_id = ? ORDER BY language, kind;", on: connection)
+        defer { sqlite3_finalize(statement) }; try Self.bind(trackID.description, at: 1, to: statement)
+        var values: [LyricsEntry] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let rawID = Self.text(at: 0, from: statement), let id = UUID(uuidString: rawID), let kindRaw = Self.text(at: 2, from: statement), let kind = LyricsKind(rawValue: kindRaw), let text = Self.text(at: 3, from: statement), let source = Self.text(at: 4, from: statement) else { throw DatabaseError.invalidIdentifier("Lyrics") }
+            values.append(.init(id: id, trackID: trackID, language: Self.text(at: 1, from: statement), kind: kind, text: text, source: source, providerID: Self.text(at: 5, from: statement), isUserEdited: Self.int(at: 6, from: statement) != 0))
+        }
+        return values
+    }
+
+    public func saveLyrics(_ entry: LyricsEntry) throws {
+        try transaction {
+            let statement = try Self.prepare("INSERT INTO lyrics (id, track_id, language, kind, text, source, provider_id, is_user_edited) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET language = excluded.language, kind = excluded.kind, text = excluded.text, source = excluded.source, provider_id = excluded.provider_id, is_user_edited = excluded.is_user_edited;", on: connection)
+            defer { sqlite3_finalize(statement) }
+            try Self.bind(entry.id.uuidString, at: 1, to: statement); try Self.bind(entry.trackID.description, at: 2, to: statement); try Self.bind(entry.language, at: 3, to: statement); try Self.bind(entry.kind.rawValue, at: 4, to: statement); try Self.bind(entry.text, at: 5, to: statement); try Self.bind(entry.source, at: 6, to: statement); try Self.bind(entry.providerID, at: 7, to: statement); try Self.bind(entry.isUserEdited ? 1 : 0, at: 8, to: statement); try Self.stepDone(statement, connection: connection); try incrementRevision()
+        }
+    }
+
+    public func deleteLyrics(_ id: UUID) throws {
+        try transaction { let statement = try Self.prepare("DELETE FROM lyrics WHERE id = ?;", on: connection); defer { sqlite3_finalize(statement) }; try Self.bind(id.uuidString, at: 1, to: statement); try Self.stepDone(statement, connection: connection); try incrementRevision() }
+    }
+
     public func softDeleteAlbum(_ id: AlbumID) throws {
         try transaction { let statement = try Self.prepare("UPDATE album SET deleted_at = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL;", on: connection); defer { sqlite3_finalize(statement) }; let now = Self.milliseconds(Date()); try Self.bind(now, at: 1, to: statement); try Self.bind(now, at: 2, to: statement); try Self.bind(id.description, at: 3, to: statement); try Self.stepDone(statement, connection: connection); guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Album") }; try incrementRevision() }
     }

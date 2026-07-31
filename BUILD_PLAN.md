@@ -284,6 +284,8 @@ Exit: hours-long playback is stable and the queue survives relaunch.
 - Lyrics provider adapter; store synced/plain lyrics, language, instrumental status, and source.
 - Manual lyrics import/edit. Do not treat “no lyrics” as an error for classical or instrumental works.
 
+**Phase 4 v1 implementation decision (Mac-first, July 2026):** FLAC Vorbis-comment write-back is supported. WAV+CUE, DSF, AIFF, ALAC, MP3, and every other container remain catalogue-only until each has a separately tested write-back implementation. Every FLAC write is previewed, backed up before mutation, written through a temporary file, re-read for verification, and recorded in a retained JSON batch journal that can restore the untouched originals. Lyrics are stored as manually entered plain or LRC text with language and source. A provider adapter remains deliberately inactive until a lyrics provider and its terms are chosen.
+
 Exit: a deliberately interrupted tag-write operation does not leave the library silently inconsistent.
 
 ### Phase 5 — Snapshot distribution and read-only clients (3–6+ weeks)
