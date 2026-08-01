@@ -125,21 +125,26 @@ public struct EmbeddedMetadataExtractor: Sendable {
 }
 
 public struct MetadataProposalGrouper: Sendable {
+    private struct GroupKey: Hashable {
+        let title: String
+        let artist: String?
+    }
+
+    private struct Group {
+        let title: String
+        let artist: String?
+        var candidates: [ImportCandidate]
+    }
+
     public init() {}
 
     public func group(candidates: [ImportCandidate]) -> [ImportReleaseProposalDraft] {
-        struct Key: Hashable { let title: String; let artist: String? }
-        struct Group {
-            let title: String
-            let artist: String?
-            var candidates: [ImportCandidate]
-        }
-        var groups: [Key: Group] = [:]
+        var groups: [GroupKey: Group] = [:]
         for candidate in candidates {
             guard candidate.status == .proposed, let payload = candidate.payload, let metadata = candidate.metadata else { continue }
             let title = metadata.albumTitle?.nilIfBlank ?? fallbackAlbumTitle(relativePath: payload.relativePath)
             let artist = metadata.albumArtist?.nilIfBlank ?? metadata.artist?.nilIfBlank
-            let key = Key(title: groupingKey(title), artist: artist.map { groupingKey($0) })
+            let key = GroupKey(title: groupingKey(title), artist: artist.map { groupingKey($0) })
             if var group = groups[key] {
                 group.candidates.append(candidate)
                 groups[key] = group
@@ -150,7 +155,7 @@ public struct MetadataProposalGrouper: Sendable {
                 groups[key] = Group(title: title, artist: artist, candidates: [candidate])
             }
         }
-        return groups.values.map { group in
+        return mergeSingleTrackArtistOutliers(Array(groups.values)).map { group in
             let members = group.candidates
             let discs = members.compactMap(\.metadata?.discNumber).max() ?? 1
             let hasEmbeddedAlbum = members.allSatisfy { $0.metadata?.rawTags["albumSource"] != "path" && $0.metadata?.albumTitle?.nilIfBlank != nil }
@@ -163,6 +168,51 @@ public struct MetadataProposalGrouper: Sendable {
         let canonical = value.precomposedStringWithCanonicalMapping
         let collapsed = canonical.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
         return collapsed.lowercased()
+    }
+
+    /// A number of rippers write a track's title into ARTIST on one file while
+    /// leaving ALBUM correct. Attach that single outlier to the clear majority
+    /// only when it lives in the same album folder and has no ALBUMARTIST tag.
+    /// This deliberately does not merge same-titled albums in separate folders.
+    private func mergeSingleTrackArtistOutliers(_ initialGroups: [Group]) -> [Group] {
+        var groups = initialGroups
+        let titleKeys = Set(groups.map { groupingKey($0.title) })
+
+        for titleKey in titleKeys {
+            let matchingIndices = groups.indices.filter { groupingKey(groups[$0].title) == titleKey }
+            guard matchingIndices.count > 1 else { continue }
+            let sortedBySize = matchingIndices.sorted { groups[$0].candidates.count > groups[$1].candidates.count }
+            guard let dominantIndex = sortedBySize.first,
+                  groups[dominantIndex].candidates.count > 1,
+                  sortedBySize.dropFirst().first.map({ groups[$0].candidates.count }) != groups[dominantIndex].candidates.count
+            else { continue }
+
+            let dominantFolders = Set(groups[dominantIndex].candidates.compactMap(\.payload).map { albumFolderKey($0.relativePath) })
+            guard !dominantFolders.isEmpty else { continue }
+            var outlierIndices: [Int] = []
+            for index in matchingIndices where index != dominantIndex {
+                let group = groups[index]
+                let folders = Set(group.candidates.compactMap(\.payload).map { albumFolderKey($0.relativePath) })
+                let lacksAlbumArtist = group.candidates.allSatisfy { $0.metadata?.albumArtist?.nilIfBlank == nil }
+                if group.candidates.count == 1, lacksAlbumArtist, !folders.isEmpty, folders.isSubset(of: dominantFolders) {
+                    outlierIndices.append(index)
+                }
+            }
+            guard !outlierIndices.isEmpty else { continue }
+            for index in outlierIndices { groups[dominantIndex].candidates.append(contentsOf: groups[index].candidates) }
+            for index in outlierIndices.sorted(by: >) { groups.remove(at: index) }
+        }
+        return groups
+    }
+
+    private func albumFolderKey(_ relativePath: String) -> String {
+        let folder = URL(fileURLWithPath: relativePath).deletingLastPathComponent().path
+        let withoutDiscSuffix = folder.replacingOccurrences(
+            of: #"(?i)\\s*\\[(?:disc|cd)\\s*\\d+\\]$"#,
+            with: "",
+            options: .regularExpression
+        )
+        return groupingKey(withoutDiscSuffix)
     }
 
     private func fallbackAlbumTitle(relativePath: String) -> String {

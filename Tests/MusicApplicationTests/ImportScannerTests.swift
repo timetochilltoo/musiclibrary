@@ -129,6 +129,22 @@ struct ImportScannerTests {
         #expect(proposals.first?.candidateIDs.count == 2)
     }
 
+    @Test("Metadata grouping repairs a single malformed track artist in its album folder")
+    func groupsSingleTrackArtistOutlier() {
+        let batchID = ImportBatchID()
+        let commonMetadata = EmbeddedMetadataPayload(title: "Track", albumTitle: "Love Never Dies (deluxe edition) CD2", artist: "Andrew Lloyd Webber", albumArtist: nil, discNumber: 1, trackNumber: 1, durationMilliseconds: nil, rawTags: [:])
+        let regular = (1...12).map { number in
+            ImportCandidate(id: ImportCandidateID(), batchID: batchID, status: .proposed, payload: .init(relativePath: "Phase 4 Tag Test/\(String(format: "%02d", number)).flac", fileName: "\(number).flac", contentTypeIdentifier: "public.flac", fileSize: 1, modifiedAt: nil), errorMessage: nil, metadata: commonMetadata)
+        }
+        let malformed = ImportCandidate(id: ImportCandidateID(), batchID: batchID, status: .proposed, payload: .init(relativePath: "Phase 4 Tag Test/13.flac", fileName: "13.flac", contentTypeIdentifier: "public.flac", fileSize: 1, modifiedAt: nil), errorMessage: nil, metadata: .init(title: "The Coney Island Waltz", albumTitle: "Love Never Dies (deluxe edition) CD2", artist: "Ladies....gents!", albumArtist: nil, discNumber: 1, trackNumber: 13, durationMilliseconds: nil, rawTags: [:]))
+
+        let proposals = MetadataProposalGrouper().group(candidates: regular + [malformed])
+
+        #expect(proposals.count == 1)
+        #expect(proposals.first?.artist == "Andrew Lloyd Webber")
+        #expect(proposals.first?.candidateIDs.count == 13)
+    }
+
     @Test("Path fallback joins disc folders and derives ordered track titles")
     func pathFallbackMetadata() {
         let first = EmbeddedMetadataExtractor.pathFallback(relativePath: "Andrew Lloyd Webber/The Phantom Of The Opera [Disc 1]/01 Prologue - The Stage Of Paris.flac")
