@@ -102,6 +102,33 @@ struct ImportScannerTests {
         #expect(proposals.first?.candidateIDs.count == 2)
     }
 
+    @Test("Metadata grouping ignores harmless whitespace and case differences")
+    func groupsEquivalentTagSpellings() {
+        let batchID = ImportBatchID()
+        let first = ImportCandidate(
+            id: ImportCandidateID(),
+            batchID: batchID,
+            status: .proposed,
+            payload: .init(relativePath: "Artist/Album/01.flac", fileName: "01.flac", contentTypeIdentifier: "public.flac", fileSize: 1, modifiedAt: nil),
+            errorMessage: nil,
+            metadata: .init(title: "One", albumTitle: "Love Never Dies (deluxe edition) CD2", artist: "Andrew Lloyd Webber", albumArtist: nil, discNumber: 1, trackNumber: 1, durationMilliseconds: nil, rawTags: [:])
+        )
+        let second = ImportCandidate(
+            id: ImportCandidateID(),
+            batchID: batchID,
+            status: .proposed,
+            payload: .init(relativePath: "Artist/Album/02.flac", fileName: "02.flac", contentTypeIdentifier: "public.flac", fileSize: 1, modifiedAt: nil),
+            errorMessage: nil,
+            metadata: .init(title: "Two", albumTitle: "love  never dies (deluxe edition) cd2 ", artist: "ANDREW LLOYD WEBBER ", albumArtist: nil, discNumber: 1, trackNumber: 2, durationMilliseconds: nil, rawTags: [:])
+        )
+
+        let proposals = MetadataProposalGrouper().group(candidates: [first, second])
+
+        #expect(proposals.count == 1)
+        #expect(proposals.first?.title == "Love Never Dies (deluxe edition) CD2")
+        #expect(proposals.first?.candidateIDs.count == 2)
+    }
+
     @Test("Path fallback joins disc folders and derives ordered track titles")
     func pathFallbackMetadata() {
         let first = EmbeddedMetadataExtractor.pathFallback(relativePath: "Andrew Lloyd Webber/The Phantom Of The Opera [Disc 1]/01 Prologue - The Stage Of Paris.flac")

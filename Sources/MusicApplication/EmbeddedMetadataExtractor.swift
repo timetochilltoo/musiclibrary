@@ -129,19 +129,40 @@ public struct MetadataProposalGrouper: Sendable {
 
     public func group(candidates: [ImportCandidate]) -> [ImportReleaseProposalDraft] {
         struct Key: Hashable { let title: String; let artist: String? }
-        var groups: [Key: [ImportCandidate]] = [:]
+        struct Group {
+            let title: String
+            let artist: String?
+            var candidates: [ImportCandidate]
+        }
+        var groups: [Key: Group] = [:]
         for candidate in candidates {
             guard candidate.status == .proposed, let payload = candidate.payload, let metadata = candidate.metadata else { continue }
             let title = metadata.albumTitle?.nilIfBlank ?? fallbackAlbumTitle(relativePath: payload.relativePath)
             let artist = metadata.albumArtist?.nilIfBlank ?? metadata.artist?.nilIfBlank
-            groups[.init(title: title, artist: artist), default: []].append(candidate)
+            let key = Key(title: groupingKey(title), artist: artist.map { groupingKey($0) })
+            if var group = groups[key] {
+                group.candidates.append(candidate)
+                groups[key] = group
+            } else {
+                // Keep the first source spelling for the proposal UI. Only the
+                // identity key is normalized, so catalogue metadata is never
+                // silently rewritten by the grouping pass.
+                groups[key] = Group(title: title, artist: artist, candidates: [candidate])
+            }
         }
-        return groups.map { key, members in
+        return groups.values.map { group in
+            let members = group.candidates
             let discs = members.compactMap(\.metadata?.discNumber).max() ?? 1
             let hasEmbeddedAlbum = members.allSatisfy { $0.metadata?.rawTags["albumSource"] != "path" && $0.metadata?.albumTitle?.nilIfBlank != nil }
-            let confidence = hasEmbeddedAlbum ? (key.artist == nil ? 0.75 : 0.9) : 0.35
-            return .init(title: key.title, artist: key.artist, discCount: discs, confidence: confidence, candidateIDs: members.map(\.id))
+            let confidence = hasEmbeddedAlbum ? (group.artist == nil ? 0.75 : 0.9) : 0.35
+            return .init(title: group.title, artist: group.artist, discCount: discs, confidence: confidence, candidateIDs: members.map(\.id))
         }.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+    }
+
+    private func groupingKey(_ value: String) -> String {
+        let canonical = value.precomposedStringWithCanonicalMapping
+        let collapsed = canonical.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        return collapsed.lowercased()
     }
 
     private func fallbackAlbumTitle(relativePath: String) -> String {

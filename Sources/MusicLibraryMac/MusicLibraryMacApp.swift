@@ -98,6 +98,19 @@ private struct LibraryShellView: View {
             let restoredItems = await library.playbackURLs(trackIDs: playback.queue.trackIDs)
             playback.restore(items: restoredItems)
         }
+        .onChange(of: library.importBatches) { previous, current in
+            // A retry creates a new audit batch. Select it immediately so the
+            // Library Changes detail pane follows the rescan rather than
+            // remaining attached to the historical batch it replaced.
+            guard section == .importInbox else { return }
+            let previousIDs = Set(previous.map(\.id))
+            if let newlyCreated = current.first(where: { !previousIDs.contains($0.id) }) {
+                selectedImportBatchID = newlyCreated.id
+            } else if let selectedImportBatchID,
+                      !current.contains(where: { $0.id == selectedImportBatchID }) {
+                self.selectedImportBatchID = latestImportBatchesByRoot.first?.id
+            }
+        }
         .sheet(isPresented: $showsAlbumEditor) { AlbumEditor(library: library) }
         .sheet(isPresented: $showsLocationEditor) { LocationEditor(library: library) }
         .sheet(isPresented: $showsBoxSetEditor) { BoxSetEditor(library: library) }
@@ -261,7 +274,7 @@ private struct LibraryShellView: View {
         } else if section == .boxSets, let selectedBoxSetID, let box = library.boxSets.first(where: { $0.id == selectedBoxSetID }) {
             BoxSetDetail(library: library, boxSet: box)
         } else if section == .importInbox, let selectedImportBatchID, let batch = library.importBatches.first(where: { $0.id == selectedImportBatchID }) {
-            ImportBatchDetail(library: library, batch: batch)
+            ImportBatchDetail(library: library, batch: batch, onRescanStarted: { self.selectedImportBatchID = $0 })
         } else if section == .playlists, let selectedPlaylistID, let playlist = library.playlists.first(where: { $0.id == selectedPlaylistID }) {
             PlaylistDetail(library: library, playback: playback, playlist: playlist)
         } else if let selectedAlbumID, let album = library.albums.first(where: { $0.id == selectedAlbumID }) {
@@ -442,7 +455,7 @@ private struct StorageRootList: View {
                             .labelsHidden()
                             .pickerStyle(.menu)
                             Button("Rescan", systemImage: "arrow.clockwise") {
-                                Task { do { try await library.startImportScan(rootID: root.id) } catch { library.presentError(error) } }
+                                Task { do { _ = try await library.startImportScan(rootID: root.id) } catch { library.presentError(error) } }
                             }
                             .disabled(root.status != .available)
                             if let lastScan = latestBatch(for: root.id) {
@@ -721,7 +734,7 @@ private struct ScanRootPicker: View {
             guard case let .success(url) = result else { return }
             Task {
                 do {
-                    try await library.startImportScan(containing: url)
+                    _ = try await library.startImportScan(containing: url)
                     dismiss()
                 } catch {
                     library.presentError(error)
@@ -730,7 +743,7 @@ private struct ScanRootPicker: View {
         }
     }
 
-    private func scan(_ root: StorageRoot) { Task { do { try await library.startImportScan(rootID: root.id); dismiss() } catch { library.presentError(error) } } }
+    private func scan(_ root: StorageRoot) { Task { do { _ = try await library.startImportScan(rootID: root.id); dismiss() } catch { library.presentError(error) } } }
 }
 
 private struct PlaylistEditor: View {
@@ -849,6 +862,7 @@ private struct PlaylistDetail: View {
 private struct ImportBatchDetail: View {
     @ObservedObject var library: LibraryStore
     let batch: ImportBatch
+    let onRescanStarted: (ImportBatchID) -> Void
     @State private var candidates: [ImportCandidate] = []
     @State private var unregisteredCandidates: [ImportCandidate] = []
     @State private var proposals: [ImportReleaseProposal] = []
@@ -883,7 +897,10 @@ private struct ImportBatchDetail: View {
                 if batch.status == .scanning { Button("Cancel Scan", role: .destructive) { Task { await library.cancelImportScan(batch.id) } } }
                 if batch.status != .scanning { Button("Retry Scan", systemImage: "arrow.clockwise") {
                     Task {
-                        do { try await library.retryImportScan(batch.id) }
+                        do {
+                            let newBatchID = try await library.retryImportScan(batch.id)
+                            onRescanStarted(newBatchID)
+                        }
                         catch { library.presentError(error) }
                     }
                 } }
@@ -983,7 +1000,7 @@ private struct ImportBatchDetail: View {
             }
         }
         .navigationTitle("Import Batch")
-        .task(id: batch.id) { await load() }
+        .task(id: batchRefreshToken) { await load() }
         .confirmationDialog("Create catalogue records?", isPresented: Binding(get: { proposalToConfirm != nil }, set: { if !$0 { proposalToConfirm = nil } }), titleVisibility: .visible) {
             if let proposal = proposalToConfirm {
                 Button("Create Album, Tracks, and Assets") {
@@ -1074,6 +1091,10 @@ private struct ImportBatchDetail: View {
         } catch {
             library.presentError(error)
         }
+    }
+
+    private var batchRefreshToken: String {
+        "\(batch.id.description)|\(batch.status.rawValue)|\(batch.processedCount)|\(batch.candidateCount)|\(batch.errorCount)|\(batch.completedAt?.timeIntervalSince1970 ?? 0)"
     }
 
     private var scanOutcome: String {

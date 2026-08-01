@@ -698,11 +698,11 @@ public final class LibraryStore: ObservableObject {
         }
     }
 
-    public func startImportScan(rootID: StorageRootID) async throws {
-        try await startImportScan(rootID: rootID, folderURL: nil)
+    public func startImportScan(rootID: StorageRootID) async throws -> ImportBatchID {
+        return try await startImportScan(rootID: rootID, folderURL: nil)
     }
 
-    public func startImportScan(containing folderURL: URL) async throws {
+    public func startImportScan(containing folderURL: URL) async throws -> ImportBatchID {
         guard database != nil else { throw DatabaseError.notFound("Catalogue database") }
         try await refreshStorageRootAccess()
         let selectedPath = folderURL.standardizedFileURL.path
@@ -716,10 +716,10 @@ public final class LibraryStore: ObservableObject {
         guard let match = matchingRoots.max(by: { $0.1.path.count < $1.1.path.count }) else {
             throw DatabaseError.invalidOperation("Choose an album folder inside one of the registered music folders.")
         }
-        try await startImportScan(rootID: match.0.id, folderURL: folderURL)
+        return try await startImportScan(rootID: match.0.id, folderURL: folderURL)
     }
 
-    private func startImportScan(rootID: StorageRootID, folderURL: URL?) async throws {
+    private func startImportScan(rootID: StorageRootID, folderURL: URL?) async throws -> ImportBatchID {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
         try await refreshStorageRootAccess()
         guard let root = storageRoots.first(where: { $0.id == rootID }) else { throw DatabaseError.notFound("Storage root") }
@@ -778,6 +778,7 @@ public final class LibraryStore: ObservableObject {
             await self?.clearImportScanProgress(for: batch.id)
         }
         scanTasks[batch.id] = task
+        return batch.id
     }
 
     public func cancelImportScan(_ batchID: ImportBatchID) async {
@@ -794,11 +795,11 @@ public final class LibraryStore: ObservableObject {
         scanTasks.removeValue(forKey: batchID)
     }
 
-    public func retryImportScan(_ batchID: ImportBatchID) async throws {
+    public func retryImportScan(_ batchID: ImportBatchID) async throws -> ImportBatchID {
         guard let batch = importBatches.first(where: { $0.id == batchID }), let rootID = batch.storageRootID else { throw DatabaseError.notFound("Storage root for import batch") }
         guard batch.status != .scanning else { throw DatabaseError.invalidOperation("This import batch is already scanning.") }
         let folderURL = batch.sourceDescription.map(URL.init(fileURLWithPath:))
-        try await startImportScan(rootID: rootID, folderURL: folderURL)
+        return try await startImportScan(rootID: rootID, folderURL: folderURL)
     }
 
     private static func relativePath(of url: URL, within rootURL: URL) -> String {
