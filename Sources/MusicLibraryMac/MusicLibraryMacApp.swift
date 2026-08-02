@@ -1605,31 +1605,80 @@ private struct LyricsEditor: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                if track.isInstrumental == true { Text("This track is marked instrumental. Lyrics are optional.").font(.caption).foregroundStyle(.secondary) }
-                Section("Saved lyrics") {
-                    if entries.isEmpty { Text("No lyrics stored. This is not treated as an error.").foregroundStyle(.secondary) }
-                    ForEach(entries) { entry in
-                        VStack(alignment: .leading) {
-                            Text("\(entry.kind.rawValue.capitalized) · \(entry.language ?? "No language") · \(entry.source)").font(.caption).foregroundStyle(.secondary)
-                            Text(entry.text).lineLimit(3)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    if track.isInstrumental == true {
+                        Label("This track is marked instrumental. Lyrics are optional.", systemImage: "music.note")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    GroupBox("Saved lyrics") {
+                        if entries.isEmpty {
+                            Text("No lyrics stored. This is not treated as an error.")
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        } else {
+                            VStack(alignment: .leading, spacing: 12) {
+                                ForEach(entries) { entry in
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        HStack {
+                                            Text("\(entry.kind.rawValue.capitalized) · \(entry.language ?? "No language") · \(entry.source)")
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                            Spacer()
+                                            Button("Delete", systemImage: "trash", role: .destructive) {
+                                                Task { try? await library.deleteLyrics(entry.id); await load() }
+                                            }
+                                            .labelStyle(.iconOnly)
+                                        }
+                                        ScrollView {
+                                            Text(entry.text)
+                                                .frame(maxWidth: .infinity, alignment: .leading)
+                                                .textSelection(.enabled)
+                                        }
+                                        .frame(minHeight: 72, maxHeight: 180)
+                                        .padding(8)
+                                        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 6))
+                                    }
+                                    if entry.id != entries.last?.id { Divider() }
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
-                        .swipeActions { Button(role: .destructive) { Task { try? await library.deleteLyrics(entry.id); await load() } } label: { Label("Delete", systemImage: "trash") } }
+                    }
+
+                    GroupBox("Manual import or edit") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Language (optional)").font(.caption).foregroundStyle(.secondary)
+                            TextField("e.g. en or zh-Hant", text: $language)
+                            Text("Kind").font(.caption).foregroundStyle(.secondary)
+                            Picker("Kind", selection: $kind) {
+                                Text("Plain").tag(LyricsKind.plain)
+                                Text("Synchronized (LRC)").tag(LyricsKind.synchronized)
+                            }
+                            .pickerStyle(.menu)
+                            Text("Lyrics text").font(.caption).foregroundStyle(.secondary)
+                            TextEditor(text: $text)
+                                .font(.body)
+                                .frame(minWidth: 620, minHeight: 320)
+                                .padding(6)
+                                .overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
+                            Text("Lyrics providers are intentionally not enabled yet. This editor stores only text you manually paste or type.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
-                Section("Manual import or edit") {
-                    TextField("Language, e.g. en or zh-Hant", text: $language)
-                    Picker("Kind", selection: $kind) { Text("Plain").tag(LyricsKind.plain); Text("Synchronized (LRC)").tag(LyricsKind.synchronized) }
-                    TextEditor(text: $text).font(.body).frame(minHeight: 180)
-                    Text("Lyrics providers are intentionally not enabled yet. This editor stores only text you manually paste or type.").font(.caption).foregroundStyle(.secondary)
-                }
+                .padding(24)
             }
             .navigationTitle("Lyrics — \(track.title)")
             .task { await load() }
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button("Save") { save() }.disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) } }
             .alert("Unable to save lyrics", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) { Button("OK", role: .cancel) {} } message: { Text(errorMessage ?? "") }
         }
-        .frame(minWidth: 620, minHeight: 560)
+        .frame(minWidth: 760, idealWidth: 820, minHeight: 700, idealHeight: 760)
     }
     private func load() async { entries = (try? await library.lyrics(trackID: track.id)) ?? [] }
     private func save() { Task { do { try await library.saveLyrics(.init(trackID: track.id, language: language.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : language, kind: kind, text: text)); text = ""; await load() } catch { errorMessage = error.localizedDescription } } }

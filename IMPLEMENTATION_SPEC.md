@@ -651,7 +651,7 @@ Each item must link to a repair action. Avoid a dashboard that reports problems 
 
 Each confirmed FLAC batch creates a full original copy in `Application Support/MusicLibrary/TagWriteBackups/<batch-id>/`, writes a temporary sibling FLAC, verifies the changed tags and FLAC stream properties, replaces only after verification, and saves a retained `journal.json`. The journal can restore untouched original files. Failed entries are visible in the journal and do not silently change later files.
 
-Lyrics are persisted as manual plain text or synchronized LRC, with language, source, and user-edited state. No provider is enabled until the user chooses one and accepts its terms; lack of lyrics is normal for instrumental and classical recordings.
+Lyrics are persisted as manual plain text or synchronized LRC, with language, source, and user-edited state. The Mac lyrics editor uses a scrollable layout with a large multiline editor and bounded previews for saved lyrics, so long lyrics remain readable without relying on a single-line form field. No provider is enabled until the user chooses one and accepts its terms; lack of lyrics is normal for instrumental and classical recordings.
 
 ## 19. Error handling
 
