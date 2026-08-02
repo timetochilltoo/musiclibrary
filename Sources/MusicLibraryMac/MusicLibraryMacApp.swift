@@ -866,6 +866,7 @@ private struct ImportBatchDetail: View {
     @State private var candidates: [ImportCandidate] = []
     @State private var unregisteredCandidates: [ImportCandidate] = []
     @State private var proposals: [ImportReleaseProposal] = []
+    @State private var proposalPreviews: [UUID: ImportProposalPreview] = [:]
     @State private var proposalToConfirm: ImportReleaseProposal?
     @State private var proposalToLookUp: ImportReleaseProposal?
     @State private var selectionToReview: ExternalMetadataSelection?
@@ -953,37 +954,61 @@ private struct ImportBatchDetail: View {
             Section("Release Proposals") {
                 if proposals.isEmpty { Text("Read embedded metadata to create local proposals. No catalogue records or source files will be changed.").foregroundStyle(.secondary) }
                 ForEach(proposals) { proposal in
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack { Text(proposal.title).font(.headline); Spacer(); Text(proposal.status.rawValue.capitalized).font(.caption).foregroundStyle(.secondary) }
-                        Text(proposalSummary(proposal)).font(.caption).foregroundStyle(.secondary)
-                        Text("Source: \(proposal.provenance). Approval only marks this proposal for later catalogue creation.").font(.caption2).foregroundStyle(.secondary)
-                        Button("Search MusicBrainz…", systemImage: "magnifyingglass") { proposalToLookUp = proposal }
-                        if let selection = selections[proposal.id] { Button("Review MusicBrainz Fields…", systemImage: "rectangle.and.pencil.and.ellipsis") { selectionToReview = selection } }
-                        if proposal.status == .proposed { HStack {
-                            Button("Approve for Later") {
-                                Task {
-                                    do {
-                                        try await library.setImportReleaseProposal(proposal.id, status: .approved)
-                                        await load()
-                                    } catch {
-                                        library.presentError(error)
+                    HStack(alignment: .top, spacing: 14) {
+                        proposalArtwork(for: proposal)
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text(proposal.title).font(.headline)
+                                Spacer(minLength: 8)
+                                Text(proposal.status.rawValue.capitalized).font(.caption).foregroundStyle(.secondary)
+                            }
+                            Text(proposal.artist ?? "Unknown artist").font(.subheadline)
+                            Text("Source: \(proposal.provenance)").font(.caption).foregroundStyle(.secondary)
+                            Text(proposalSummary(proposal)).font(.caption2).foregroundStyle(.secondary)
+                            Text("Approval only marks this proposal for later catalogue creation.")
+                                .font(.caption2).foregroundStyle(.secondary)
+                            if let albumID = proposal.createdAlbumID {
+                                Text("Created catalogue album: \(albumID.description)")
+                                    .font(.caption).foregroundStyle(.green)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        VStack(alignment: .trailing, spacing: 8) {
+                            Button("Search MusicBrainz…", systemImage: "magnifyingglass") { proposalToLookUp = proposal }
+                            if let selection = selections[proposal.id] {
+                                Button("Review MusicBrainz Fields…", systemImage: "rectangle.and.pencil.and.ellipsis") { selectionToReview = selection }
+                            }
+                            if proposal.status == .proposed {
+                                HStack(spacing: 8) {
+                                    Button("Approve for Later") {
+                                        Task {
+                                            do {
+                                                try await library.setImportReleaseProposal(proposal.id, status: .approved)
+                                                await load()
+                                            } catch {
+                                                library.presentError(error)
+                                            }
+                                        }
+                                    }
+                                    Button("Dismiss", role: .destructive) {
+                                        Task {
+                                            do {
+                                                try await library.setImportReleaseProposal(proposal.id, status: .dismissed)
+                                                await load()
+                                            } catch {
+                                                library.presentError(error)
+                                            }
+                                        }
                                     }
                                 }
                             }
-                            Button("Dismiss", role: .destructive) {
-                                Task {
-                                    do {
-                                        try await library.setImportReleaseProposal(proposal.id, status: .dismissed)
-                                        await load()
-                                    } catch {
-                                        library.presentError(error)
-                                    }
-                                }
+                            if proposal.status == .approved && proposal.createdAlbumID == nil {
+                                Button("Create Catalogue Records…", systemImage: "checkmark.seal") { proposalToConfirm = proposal }
                             }
-                        } }
-                        if proposal.status == .approved && proposal.createdAlbumID == nil { Button("Create Catalogue Records…", systemImage: "checkmark.seal") { proposalToConfirm = proposal } }
-                        if let albumID = proposal.createdAlbumID { Text("Created catalogue album: \(albumID.description)").font(.caption).foregroundStyle(.green) }
+                        }
+                        .frame(minWidth: 230, alignment: .trailing)
                     }
+                    .padding(.vertical, 8)
                 }
             }
             if !unregisteredCandidates.isEmpty {
@@ -1078,14 +1103,19 @@ private struct ImportBatchDetail: View {
             let loadedProposals = try await library.importReleaseProposals(batchID: batch.id)
             let loadedMissingAssets = try await library.missingAssetReviews(batchID: batch.id)
             var loadedSelections: [UUID: ExternalMetadataSelection] = [:]
+            var loadedPreviews: [UUID: ImportProposalPreview] = [:]
             for proposal in loadedProposals {
                 if let selection = try await library.externalMetadataSelection(for: proposal.id) {
                     loadedSelections[proposal.id] = selection
+                }
+                if let preview = try? await library.importProposalPreview(proposal) {
+                    loadedPreviews[proposal.id] = preview
                 }
             }
             candidates = loadedCandidates
             unregisteredCandidates = loadedUnregisteredCandidates
             proposals = loadedProposals
+            proposalPreviews = loadedPreviews
             selections = loadedSelections
             missingAssets = loadedMissingAssets
         } catch {
@@ -1095,6 +1125,23 @@ private struct ImportBatchDetail: View {
 
     private var batchRefreshToken: String {
         "\(batch.id.description)|\(batch.status.rawValue)|\(batch.processedCount)|\(batch.candidateCount)|\(batch.errorCount)|\(batch.completedAt?.timeIntervalSince1970 ?? 0)"
+    }
+
+    @ViewBuilder
+    private func proposalArtwork(for proposal: ImportReleaseProposal) -> some View {
+        if let url = proposalPreviews[proposal.id]?.artworkURL, let image = NSImage(contentsOf: url) {
+            Image(nsImage: image)
+                .resizable()
+                .scaledToFill()
+                .frame(width: 96, height: 96)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+        } else {
+            Image(systemName: "music.note.list")
+                .font(.title2)
+                .foregroundStyle(.secondary)
+                .frame(width: 96, height: 96)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+        }
     }
 
     private var scanOutcome: String {
