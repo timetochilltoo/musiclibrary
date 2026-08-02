@@ -68,6 +68,35 @@ struct MusicDatabaseTests {
         #expect(try await database.currentRevision() == 2)
     }
 
+    @Test("Location hierarchy supports safe moves and guarded deletion")
+    func locationHierarchyManagement() async throws {
+        let database = try MusicDatabase(url: temporaryDatabaseURL())
+        try await database.migrate()
+        let parent = try await database.createLocation(.init(name: "Cabinet"))
+        let child = try await database.createLocation(.init(name: "Shelf", parentID: parent.id))
+
+        try await database.moveLocation(child.id, under: nil)
+        #expect(try await database.locations().first(where: { $0.id == child.id })?.parentID == nil)
+
+        let nested = try await database.createLocation(.init(name: "Drawer", parentID: parent.id))
+        await #expect(throws: DatabaseError.invalidOperation("A location cannot be moved inside one of its descendants.")) {
+            try await database.moveLocation(parent.id, under: nested.id)
+        }
+        await #expect(throws: DatabaseError.invalidOperation("Move or remove child locations before deleting this location.")) {
+            try await database.deleteLocation(parent.id)
+        }
+
+        try await database.moveLocation(nested.id, under: nil)
+        let album = try await database.createAlbum(.init(title: "Stored album", hasCD: true, physicalLocationID: parent.id))
+        #expect(try await database.albums(matching: "Cabinet").contains(where: { $0.id == album.id }))
+        await #expect(throws: DatabaseError.invalidOperation("Move albums using this location before deleting it.")) {
+            try await database.deleteLocation(parent.id)
+        }
+        let unused = try await database.createLocation(.init(name: "Unused"))
+        try await database.deleteLocation(unused.id)
+        #expect(try await database.locations().contains(where: { $0.id == unused.id }) == false)
+    }
+
     @Test("Manual lyrics retain language, type, and source")
     func manualLyricsPersistence() async throws {
         let database = try MusicDatabase(url: temporaryDatabaseURL())

@@ -2041,7 +2041,10 @@ private struct AlbumDetail: View {
         if let placement { return "In box set: \(placement.boxSetTitle)" }
         if album.isPhysicalLocationUnknown { return "Unknown" }
         guard let id = album.physicalLocationID else { return "Not recorded" }
-        return locations.first(where: { $0.id == id })?.name ?? "Unknown location"
+        if let location = locations.first(where: { $0.id == id }) {
+            return locationPath(location, in: locations)
+        }
+        return "Unknown location"
     }
 
     private func loadContent() async {
@@ -2332,15 +2335,61 @@ private struct EditTrackCreditedNameEditor: View {
     private func save() { Task { do { try await library.updateTrackContributorCredit(credit, in: track.id, creditedName: creditedName.nilIfBlank, newRole: role); await onSaved(); dismiss() } catch { errorMessage = error.localizedDescription } } }
 }
 
+private func locationPath(_ location: PhysicalLocation, in locations: [PhysicalLocation]) -> String {
+    var names: [String] = []
+    var current: PhysicalLocation? = location
+    var visited = Set<PhysicalLocationID>()
+    while let value = current, visited.insert(value.id).inserted {
+        names.append(value.name)
+        current = value.parentID.flatMap { parentID in locations.first(where: { $0.id == parentID }) }
+    }
+    return names.reversed().joined(separator: " › ")
+}
+
+private func locationDepth(_ location: PhysicalLocation, in locations: [PhysicalLocation]) -> Int {
+    var depth = 0
+    var current = location
+    var visited = Set<PhysicalLocationID>()
+    while let parentID = current.parentID, visited.insert(current.id).inserted,
+          let parent = locations.first(where: { $0.id == parentID }) {
+        depth += 1
+        current = parent
+    }
+    return depth
+}
+
+private func isLocationDescendant(_ candidate: PhysicalLocation, of ancestorID: PhysicalLocationID, in locations: [PhysicalLocation]) -> Bool {
+    var current = candidate
+    var visited = Set<PhysicalLocationID>()
+    while let parentID = current.parentID, visited.insert(current.id).inserted {
+        if parentID == ancestorID { return true }
+        guard let parent = locations.first(where: { $0.id == parentID }) else { return false }
+        current = parent
+    }
+    return false
+}
+
 private struct LocationList: View {
     @ObservedObject var library: LibraryStore
     @State private var locationToRename: PhysicalLocation?
+    @State private var locationToMove: PhysicalLocation?
+    @State private var locationToDelete: PhysicalLocation?
+
+    private var orderedLocations: [PhysicalLocation] {
+        library.locations.sorted { left, right in
+            locationPath(left, in: library.locations).localizedCaseInsensitiveCompare(locationPath(right, in: library.locations)) == .orderedAscending
+        }
+    }
 
     var body: some View {
-        List(library.locations) { location in
-            Text(location.name)
+        List(orderedLocations) { location in
+            Text(locationPath(location, in: library.locations))
+                .padding(.leading, CGFloat(locationDepth(location, in: library.locations)) * 14)
                 .contextMenu {
+                    Button("Move…") { locationToMove = location }
                     Button("Rename") { locationToRename = location }
+                    Divider()
+                    Button("Delete", role: .destructive) { locationToDelete = location }
                 }
         }
         .overlay {
@@ -2350,6 +2399,21 @@ private struct LocationList: View {
         }
         .sheet(item: $locationToRename) { location in
             RenameLocationEditor(library: library, location: location)
+        }
+        .sheet(item: $locationToMove) { location in
+            MoveLocationEditor(library: library, location: location)
+        }
+        .alert("Delete location?", isPresented: Binding(get: { locationToDelete != nil }, set: { if !$0 { locationToDelete = nil } }), presenting: locationToDelete) { location in
+            Button("Delete", role: .destructive) {
+                Task {
+                    do { try await library.deleteLocation(location.id) }
+                    catch { library.presentError(error) }
+                    locationToDelete = nil
+                }
+            }
+            Button("Cancel", role: .cancel) { locationToDelete = nil }
+        } message: { location in
+            Text("This removes \(locationPath(location, in: library.locations)). Albums, box sets, and child locations must be moved first.")
         }
     }
 }
@@ -2392,7 +2456,7 @@ private struct AlbumEditor: View {
                     if selectedBoxSetID == nil {
                         Picker("Location", selection: $selectedLocationID) {
                             Text("Location unknown").tag(PhysicalLocationID?.none)
-                            ForEach(library.locations) { location in Text(location.name).tag(Optional(location.id)) }
+                            ForEach(library.locations.sorted { locationPath($0, in: library.locations) < locationPath($1, in: library.locations) }) { location in Text(locationPath(location, in: library.locations)).tag(Optional(location.id)) }
                         }
                     }
                 }
@@ -2445,7 +2509,7 @@ private struct LocationEditor: View {
             TextField("Location name", text: $name)
             Picker("Inside", selection: $parentID) {
                 Text("Top level").tag(PhysicalLocationID?.none)
-                ForEach(library.locations) { location in Text(location.name).tag(Optional(location.id)) }
+                ForEach(library.locations.sorted { locationPath($0, in: library.locations) < locationPath($1, in: library.locations) }) { location in Text(locationPath(location, in: library.locations)).tag(Optional(location.id)) }
             }
         }
         .padding()
@@ -2501,6 +2565,55 @@ private struct RenameLocationEditor: View {
     }
 }
 
+private struct MoveLocationEditor: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var library: LibraryStore
+    let location: PhysicalLocation
+    @State private var parentID: PhysicalLocationID?
+    @State private var errorMessage: String?
+
+    init(library: LibraryStore, location: PhysicalLocation) {
+        self.library = library
+        self.location = location
+        _parentID = State(initialValue: location.parentID)
+    }
+
+    private var possibleParents: [PhysicalLocation] {
+        library.locations
+            .filter { $0.id != location.id && !isLocationDescendant($0, of: location.id, in: library.locations) }
+            .sorted { locationPath($0, in: library.locations) < locationPath($1, in: library.locations) }
+    }
+
+    var body: some View {
+        Form {
+            Text("Move \(location.name) and all of its children.")
+                .font(.headline)
+            Picker("Inside", selection: $parentID) {
+                Text("Top level").tag(PhysicalLocationID?.none)
+                ForEach(possibleParents) { parent in
+                    Text(locationPath(parent, in: library.locations)).tag(Optional(parent.id))
+                }
+            }
+        }
+        .padding()
+        .frame(width: 460)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+            ToolbarItem(placement: .confirmationAction) { Button("Move") { move() }.keyboardShortcut(.defaultAction) }
+        }
+        .alert("Unable to move location", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
+            Button("OK", role: .cancel) { errorMessage = nil }
+        } message: { Text(errorMessage ?? "") }
+    }
+
+    private func move() {
+        Task {
+            do { try await library.moveLocation(location.id, under: parentID); dismiss() }
+            catch { errorMessage = error.localizedDescription }
+        }
+    }
+}
+
 private struct BoxSetEditor: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var library: LibraryStore
@@ -2515,7 +2628,7 @@ private struct BoxSetEditor: View {
             TextField("Edition label", text: $editionLabel)
             Picker("Location", selection: $locationID) {
                 Text("Choose a location").tag(PhysicalLocationID?.none)
-                ForEach(library.locations) { location in Text(location.name).tag(Optional(location.id)) }
+                ForEach(library.locations.sorted { locationPath($0, in: library.locations) < locationPath($1, in: library.locations) }) { location in Text(locationPath(location, in: library.locations)).tag(Optional(location.id)) }
             }
         }
         .padding()
@@ -2594,7 +2707,7 @@ private struct EditAlbumEditor: View {
                     if hasCD {
                         Picker("Location", selection: $locationID) {
                             Text("Choose a location").tag(PhysicalLocationID?.none)
-                            ForEach(library.locations) { location in Text(location.name).tag(Optional(location.id)) }
+                            ForEach(library.locations.sorted { locationPath($0, in: library.locations) < locationPath($1, in: library.locations) }) { location in Text(locationPath(location, in: library.locations)).tag(Optional(location.id)) }
                         }
                         Toggle("Physical location is unknown", isOn: $locationUnknown)
                             .onChange(of: locationUnknown) { _, unknown in if unknown { locationID = nil } }
@@ -2765,7 +2878,7 @@ private struct RemoveBoxMemberEditor: View {
             Text("Choose where to place \(member.album.displayTitle) after it is removed from this box.")
             Picker("Location", selection: $locationID) {
                 Text("Choose a location").tag(PhysicalLocationID?.none)
-                ForEach(library.locations) { location in Text(location.name).tag(Optional(location.id)) }
+                ForEach(library.locations.sorted { locationPath($0, in: library.locations) < locationPath($1, in: library.locations) }) { location in Text(locationPath(location, in: library.locations)).tag(Optional(location.id)) }
             }
             Toggle("Physical location is unknown", isOn: $locationUnknown)
                 .onChange(of: locationUnknown) { _, unknown in if unknown { locationID = nil } }

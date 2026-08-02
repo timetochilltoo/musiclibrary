@@ -50,6 +50,7 @@ public actor MusicDatabase {
 
     public func migrate() throws {
         try SchemaMigrator.migrate(connection)
+        try rebuildCatalogueSearchIndex()
     }
 
     public func schemaVersion() throws -> Int {
@@ -964,6 +965,11 @@ public actor MusicDatabase {
         let valid = try draft.validated()
         let id = PhysicalLocationID()
         try transaction {
+            if let parentID = valid.parentID {
+                guard try Self.exists("SELECT 1 FROM physical_location WHERE id = ? LIMIT 1;", value: parentID.description, on: connection) else {
+                    throw DatabaseError.notFound("Parent physical location")
+                }
+            }
             let statement = try Self.prepare("""
                 INSERT INTO physical_location (id, parent_id, name, sort_order, notes)
                 VALUES (?, ?, ?, ?, ?);
@@ -1005,6 +1011,66 @@ public actor MusicDatabase {
             defer { sqlite3_finalize(statement) }
             try Self.bind(draft.name, at: 1, to: statement)
             try Self.bind(id.description, at: 2, to: statement)
+            try Self.stepDone(statement, connection: connection)
+            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Physical location") }
+            try incrementRevision()
+        }
+    }
+
+    public func moveLocation(_ id: PhysicalLocationID, under parentID: PhysicalLocationID?) throws {
+        try transaction {
+            guard try Self.exists("SELECT 1 FROM physical_location WHERE id = ? LIMIT 1;", value: id.description, on: connection) else {
+                throw DatabaseError.notFound("Physical location")
+            }
+            if let parentID {
+                guard parentID != id else { throw DatabaseError.invalidOperation("A location cannot be moved inside itself.") }
+                guard try Self.exists("SELECT 1 FROM physical_location WHERE id = ? LIMIT 1;", value: parentID.description, on: connection) else {
+                    throw DatabaseError.notFound("Parent physical location")
+                }
+                let descendants = try Self.prepare("""
+                    WITH RECURSIVE descendants(id) AS (
+                        SELECT id FROM physical_location WHERE parent_id = ?
+                        UNION ALL
+                        SELECT child.id
+                        FROM physical_location child
+                        JOIN descendants parent ON child.parent_id = parent.id
+                    )
+                    SELECT 1 FROM descendants WHERE id = ? LIMIT 1;
+                    """, on: connection)
+                defer { sqlite3_finalize(descendants) }
+                try Self.bind(id.description, at: 1, to: descendants)
+                try Self.bind(parentID.description, at: 2, to: descendants)
+                if sqlite3_step(descendants) == SQLITE_ROW {
+                    throw DatabaseError.invalidOperation("A location cannot be moved inside one of its descendants.")
+                }
+            }
+            let statement = try Self.prepare("UPDATE physical_location SET parent_id = ? WHERE id = ?;", on: connection)
+            defer { sqlite3_finalize(statement) }
+            try Self.bind(parentID?.description, at: 1, to: statement)
+            try Self.bind(id.description, at: 2, to: statement)
+            try Self.stepDone(statement, connection: connection)
+            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Physical location") }
+            try incrementRevision()
+        }
+    }
+
+    public func deleteLocation(_ id: PhysicalLocationID) throws {
+        try transaction {
+            guard try Self.exists("SELECT 1 FROM physical_location WHERE id = ? LIMIT 1;", value: id.description, on: connection) else {
+                throw DatabaseError.notFound("Physical location")
+            }
+            guard !(try Self.exists("SELECT 1 FROM physical_location WHERE parent_id = ? LIMIT 1;", value: id.description, on: connection)) else {
+                throw DatabaseError.invalidOperation("Move or remove child locations before deleting this location.")
+            }
+            guard !(try Self.exists("SELECT 1 FROM album WHERE physical_location_id = ? LIMIT 1;", value: id.description, on: connection)) else {
+                throw DatabaseError.invalidOperation("Move albums using this location before deleting it.")
+            }
+            guard !(try Self.exists("SELECT 1 FROM box_set WHERE physical_location_id = ? LIMIT 1;", value: id.description, on: connection)) else {
+                throw DatabaseError.invalidOperation("Move box sets using this location before deleting it.")
+            }
+            let statement = try Self.prepare("DELETE FROM physical_location WHERE id = ?;", on: connection)
+            defer { sqlite3_finalize(statement) }
+            try Self.bind(id.description, at: 1, to: statement)
             try Self.stepDone(statement, connection: connection)
             guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Physical location") }
             try incrementRevision()
@@ -1124,7 +1190,7 @@ public actor MusicDatabase {
     public func albums(matching term: String? = nil) throws -> [Album] {
         let query: String
         if let term, !term.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            query = Self.albumSelect + " WHERE deleted_at IS NULL AND (title LIKE ? COLLATE NOCASE OR edition_label LIKE ? COLLATE NOCASE OR catalogue_number LIKE ? COLLATE NOCASE OR barcode LIKE ? COLLATE NOCASE OR EXISTS (SELECT 1 FROM album_alias WHERE album_alias.album_id = album.id AND album_alias.name LIKE ? COLLATE NOCASE) OR EXISTS (SELECT 1 FROM disc JOIN track ON track.disc_id = disc.id WHERE disc.album_id = album.id AND track.title LIKE ? COLLATE NOCASE) OR EXISTS (SELECT 1 FROM album_contributor JOIN contributor ON contributor.id = album_contributor.contributor_id WHERE album_contributor.album_id = album.id AND contributor.name LIKE ? COLLATE NOCASE) OR EXISTS (SELECT 1 FROM disc JOIN track ON track.disc_id = disc.id JOIN track_contributor ON track_contributor.track_id = track.id JOIN contributor ON contributor.id = track_contributor.contributor_id WHERE disc.album_id = album.id AND contributor.name LIKE ? COLLATE NOCASE) OR EXISTS (SELECT 1 FROM box_set_album JOIN box_set ON box_set.id = box_set_album.box_set_id WHERE box_set_album.album_id = album.id AND box_set.title LIKE ? COLLATE NOCASE) OR EXISTS (SELECT 1 FROM physical_location WHERE physical_location.id = album.physical_location_id AND physical_location.name LIKE ? COLLATE NOCASE) OR EXISTS (SELECT 1 FROM box_set_album JOIN box_set ON box_set.id = box_set_album.box_set_id JOIN physical_location ON physical_location.id = box_set.physical_location_id WHERE box_set_album.album_id = album.id AND physical_location.name LIKE ? COLLATE NOCASE)) ORDER BY title COLLATE NOCASE, edition_label COLLATE NOCASE;"
+            query = Self.albumSelect + " WHERE deleted_at IS NULL AND (title LIKE ? COLLATE NOCASE OR edition_label LIKE ? COLLATE NOCASE OR catalogue_number LIKE ? COLLATE NOCASE OR barcode LIKE ? COLLATE NOCASE OR EXISTS (SELECT 1 FROM album_alias WHERE album_alias.album_id = album.id AND album_alias.name LIKE ? COLLATE NOCASE) OR EXISTS (SELECT 1 FROM disc JOIN track ON track.disc_id = disc.id WHERE disc.album_id = album.id AND track.title LIKE ? COLLATE NOCASE) OR EXISTS (SELECT 1 FROM album_contributor JOIN contributor ON contributor.id = album_contributor.contributor_id WHERE album_contributor.album_id = album.id AND contributor.name LIKE ? COLLATE NOCASE) OR EXISTS (SELECT 1 FROM disc JOIN track ON track.disc_id = disc.id JOIN track_contributor ON track_contributor.track_id = track.id JOIN contributor ON contributor.id = track_contributor.contributor_id WHERE disc.album_id = album.id AND contributor.name LIKE ? COLLATE NOCASE) OR EXISTS (SELECT 1 FROM box_set_album JOIN box_set ON box_set.id = box_set_album.box_set_id WHERE box_set_album.album_id = album.id AND box_set.title LIKE ? COLLATE NOCASE) OR EXISTS (SELECT 1 FROM physical_location WHERE physical_location.id = album.physical_location_id AND physical_location.name LIKE ? COLLATE NOCASE) OR EXISTS (SELECT 1 FROM box_set_album JOIN box_set ON box_set.id = box_set_album.box_set_id JOIN physical_location ON physical_location.id = box_set.physical_location_id WHERE box_set_album.album_id = album.id AND physical_location.name LIKE ? COLLATE NOCASE) OR EXISTS (SELECT 1 FROM catalogue_search WHERE catalogue_search.owner_type = 'album' AND catalogue_search.owner_id = album.id AND catalogue_search MATCH ?)) ORDER BY title COLLATE NOCASE, edition_label COLLATE NOCASE;"
         } else {
             query = Self.albumSelect + " WHERE deleted_at IS NULL ORDER BY title COLLATE NOCASE, edition_label COLLATE NOCASE;"
         }
@@ -1133,6 +1199,7 @@ public actor MusicDatabase {
         if let term, !term.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             let pattern = "%\(term)%"
             for index in 1...11 { try Self.bind(pattern, at: Int32(index), to: statement) }
+            try Self.bind(Self.ftsQuery(for: term), at: 12, to: statement)
         }
         var rows: [Album] = []
         while sqlite3_step(statement) == SQLITE_ROW { rows.append(try Self.album(from: statement)) }
@@ -1721,6 +1788,29 @@ public actor MusicDatabase {
         try Self.bind(String(revision), at: 3, to: statement)
         try Self.bind(Self.milliseconds(Date()), at: 4, to: statement)
         try Self.stepDone(statement, connection: connection)
+        try rebuildCatalogueSearchIndex()
+    }
+
+    private func rebuildCatalogueSearchIndex() throws {
+        try Self.execute("DELETE FROM catalogue_search;", on: connection)
+        let statements = [
+            "INSERT INTO catalogue_search (owner_type, owner_id, content) SELECT 'album', id, trim(coalesce(title, '') || ' ' || coalesce(edition_label, '') || ' ' || coalesce(catalogue_number, '') || ' ' || coalesce(barcode, '')) FROM album WHERE deleted_at IS NULL;",
+            "INSERT INTO catalogue_search (owner_type, owner_id, content) SELECT 'album', album_id, name FROM album_alias JOIN album ON album.id = album_alias.album_id WHERE album.deleted_at IS NULL;",
+            "INSERT INTO catalogue_search (owner_type, owner_id, content) SELECT 'album', disc.album_id, track.title FROM track JOIN disc ON disc.id = track.disc_id JOIN album ON album.id = disc.album_id WHERE album.deleted_at IS NULL;",
+            "INSERT INTO catalogue_search (owner_type, owner_id, content) SELECT 'album', album_contributor.album_id, trim(coalesce(contributor.name, '') || ' ' || coalesce(contributor.sort_name, '') || ' ' || coalesce(album_contributor.credited_name, '')) FROM album_contributor JOIN contributor ON contributor.id = album_contributor.contributor_id JOIN album ON album.id = album_contributor.album_id WHERE album.deleted_at IS NULL;",
+            "INSERT INTO catalogue_search (owner_type, owner_id, content) SELECT 'album', disc.album_id, trim(coalesce(contributor.name, '') || ' ' || coalesce(contributor.sort_name, '') || ' ' || coalesce(track_contributor.credited_name, '')) FROM track_contributor JOIN track ON track.id = track_contributor.track_id JOIN disc ON disc.id = track.disc_id JOIN contributor ON contributor.id = track_contributor.contributor_id JOIN album ON album.id = disc.album_id WHERE album.deleted_at IS NULL;",
+            "INSERT INTO catalogue_search (owner_type, owner_id, content) SELECT 'album', box_set_album.album_id, trim(coalesce(box_set.title, '') || ' ' || coalesce(box_set.edition_label, '')) FROM box_set_album JOIN box_set ON box_set.id = box_set_album.box_set_id JOIN album ON album.id = box_set_album.album_id WHERE album.deleted_at IS NULL;",
+            "WITH RECURSIVE location_paths(id, path) AS (SELECT id, name FROM physical_location WHERE parent_id IS NULL UNION ALL SELECT child.id, location_paths.path || ' ' || child.name FROM physical_location child JOIN location_paths ON child.parent_id = location_paths.id) INSERT INTO catalogue_search (owner_type, owner_id, content) SELECT 'album', album.id, location_paths.path FROM album JOIN location_paths ON location_paths.id = album.physical_location_id WHERE album.deleted_at IS NULL;",
+            "WITH RECURSIVE location_paths(id, path) AS (SELECT id, name FROM physical_location WHERE parent_id IS NULL UNION ALL SELECT child.id, location_paths.path || ' ' || child.name FROM physical_location child JOIN location_paths ON child.parent_id = location_paths.id) INSERT INTO catalogue_search (owner_type, owner_id, content) SELECT 'album', box_set_album.album_id, location_paths.path FROM box_set_album JOIN box_set ON box_set.id = box_set_album.box_set_id JOIN location_paths ON location_paths.id = box_set.physical_location_id JOIN album ON album.id = box_set_album.album_id WHERE album.deleted_at IS NULL;"
+        ]
+        for sql in statements { try Self.execute(sql, on: connection) }
+    }
+
+    private static func ftsQuery(for term: String) -> String {
+        term.split(whereSeparator: { $0.isWhitespace }).map { token in
+            let escaped = token.replacingOccurrences(of: "\"", with: "\"\"")
+            return "\"\(escaped)\"*"
+        }.joined(separator: " AND ")
     }
 
     private func incrementImportProgress(batchID: ImportBatchID, candidates: Int64, errors: Int64) throws {

@@ -820,6 +820,18 @@ public final class LibraryStore: ObservableObject {
         try await reload()
     }
 
+    public func moveLocation(_ id: PhysicalLocationID, under parentID: PhysicalLocationID?) async throws {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        try await database.moveLocation(id, under: parentID)
+        try await reload()
+    }
+
+    public func deleteLocation(_ id: PhysicalLocationID) async throws {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        try await database.deleteLocation(id)
+        try await reload()
+    }
+
     public func addBoxSet(_ draft: NewBoxSet) async throws {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
         _ = try await database.createBoxSet(draft)

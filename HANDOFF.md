@@ -1,6 +1,6 @@
 # Music Library — Project Handoff
 
-Last updated: 2 August 2026
+Last updated: 3 August 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
@@ -165,8 +165,8 @@ Implemented and tested:
 - Derived digital availability state model: `none`, `complete`, `partial`, `offline`, and `broken`.
 - SQLite migrations 1 through 7 with foreign keys, catalogue revision state, album, aliases, locations, box sets, discs, tracks, contributors, storage roots, digital assets, playlists, import batches/candidates/release proposals, and relink proposals.
 - SQLite WAL mode and foreign-key enforcement on database open.
-- Persist/create/query albums; search title, edition label, and catalogue number.
-- Persist/create/list/rename physical locations.
+- Persist/create/query albums; search title, edition label, catalogue number, barcode, aliases, tracks, contributors, box names, and physical-location paths through the transactionally rebuilt FTS5 catalogue index, with the existing LIKE fallback retained for compatibility.
+- Persist/create/list/rename/move/delete physical locations. Parent validation, self/descendant cycle protection, and deletion guards prevent orphaned albums, box sets, and child locations.
 - Persist/create/list box sets.
 - Add an existing album to a box set, clearing its direct location and ensuring CD availability.
 - Create a new album directly in a box set atomically; failure to find the box rolls back album creation.
@@ -199,7 +199,7 @@ Implemented:
 - Three-column SwiftUI navigation shell.
 - Album browsing and local search.
 - Add Album form: title, edition label, release year, country/region, catalogue number, disc count, CD toggle, direct location, and optional box set.
-- Location list, create-location form with optional parent selection, and rename context menu.
+- Hierarchical location list with full paths, indentation, create/rename/move/delete actions, parent-cycle protection, and visible deletion explanations when child locations, albums, or box sets still reference a node.
 - Box-set list and create-box-set form.
 - Basic album detail view showing edition fields, CD status, and direct location or box/unknown state.
 - Library Changes list/detail with live scan progress, cancellation, retry, clear completed-scan outcome, per-file error review, candidate paths/types, embedded tag values, grouped release proposals, confidence/provenance, explicit review controls, and an explicit create-catalogue-records confirmation.
@@ -276,11 +276,11 @@ Views must call store use cases; they must not compose SQL or open databases dir
 
 ### Search
 
-Current search is a simple `LIKE ... COLLATE NOCASE` query over album title, edition label, and catalogue number. The FTS table exists in schema 1 but is not populated or used. Do not claim full alias/contributor/diacritic-tolerant search is implemented until a migration/repository/update strategy and tests exist.
+Catalogue search now uses the existing FTS5 table as a local index over album titles, edition labels, catalogue numbers, barcodes, aliases, track titles, album/track contributor names, box-set names, and direct/inherited physical-location paths. The index is rebuilt transactionally during migration and after each successful catalogue revision; a normalized phrase-prefix query is combined with the legacy `LIKE ... COLLATE NOCASE` predicates for compatibility. Search remains local/offline and preserves original display text. The current rebuild strategy favors correctness; a future large-library optimization can replace full rebuilds with incremental triggers.
 
 ### Locations
 
-Parent links are stored. The UI permits choosing a parent when creating a location, but currently renders locations as a flat list and only supports rename (not move/delete). Cycle prevention, path rendering, moving, and deletion guards are future work.
+Locations are stored as parent links and rendered as a hierarchy with full paths. The Mac UI supports create, rename, move, and delete. A move validates that the target exists and rejects self/descendant cycles. Deletion is guarded when the node has children or is referenced by an album or box set; the user must move those records first. Album and box editors display the full hierarchy path so similarly named shelves remain distinguishable.
 
 ### Box sets
 
@@ -391,6 +391,7 @@ The macOS Import Inbox view was refactored into small row/summary helpers and no
 **Mac lyrics editor layout (2 August 2026):** `LyricsEditor` no longer uses a `Form` for the editable lyrics content, avoiding the form label-column clipping seen in the modal. It now uses a scrollable `VStack`/`GroupBox` layout, a large bordered multiline `TextEditor` for manual plain/LRC text, bounded scrollable previews for saved lyrics, and a larger resizable sheet frame (minimum 760 × 700). Storage remains manual SQLite text with no provider/network or tag write-back behavior changed. `swift test` passes all 72 tests.
 **Release proposal artwork layout (2 August 2026):** Mac Library Changes now loads each proposal's imported folder artwork from the existing proposal preview and presents it in a fixed left column. The middle column shows album title, artist, provenance, confidence/file summary, and creation status. The right column keeps Search MusicBrainz… plus the state-appropriate review, approve, dismiss, and create actions aligned at the trailing edge; proposed rows retain the expected Search, Approve, and Dismiss action set. This changes presentation only and does not alter proposal persistence or approval semantics. `swift test` and `swift build` pass all 72 tests.
 **Explicit combined rescan and metadata action (2 August 2026):** Library Changes keeps the fast **Retry Scan** reconciliation action and the separate **Read Metadata for New Files** action, and now also offers **Rescan and Read Metadata for New Files**. The combined action starts a new audit batch, selects it immediately, waits for that batch to reach a completed state, and then invokes the existing new-file-only metadata pass exactly once. It never reads metadata during an ordinary rescan, never analyzes a failed/cancelled scan, and remains a no-op for a completed scan with no unregistered paths. This is intentionally explicit rather than changing the meaning of the existing Rescan button. `swift test` and `swift build` pass all 72 tests.
+**Library management enhancements (3 August 2026):** Catalogue search now populates and uses the existing FTS5 index. It covers album/edition text, catalogue numbers and barcodes, aliases, track titles, contributor names, box-set titles, and direct/inherited location paths; writes rebuild it transactionally and retain the prior LIKE fallback. Physical locations now render as a hierarchy and support safe move/delete operations. Moves reject self/descendant cycles, while deletes explain and block remaining child, album, or box-set references. The location picker uses the full hierarchy path throughout the Mac editors. Added persistence coverage for safe moves and guarded deletion. `swift test` passes all 73 tests and `swift build` passes.
 **Import robustness correction (28 July 2026):** an approved release proposal could fail with SQLite `UNIQUE constraint failed: track.disc_id, track.number` when multiple audio files carried the same embedded track number (or number zero). The entire proposal was already transactional, so no partial catalogue album was committed; however, the raw error prevented the intended album from appearing. `MusicDatabase.confirmImportReleaseProposal` now preserves positive unique embedded positions and assigns the next free catalogue position for duplicate/invalid values. The focused persistence test imports duplicated `1` tags plus a `0` tag and verifies one album with tracks 1, 2, and 3. `swift test` passes (58 tests), and the rebuilt app was installed/relaunched from `/Applications/Music Library.app`. Source audio files and the Application Support catalogue database were not modified by the update.
 
 ### Goal

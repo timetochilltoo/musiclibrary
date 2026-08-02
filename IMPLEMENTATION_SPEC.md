@@ -1,6 +1,6 @@
 # Music Library — Implementation Specification
 
-Date: 22 July 2026
+Date: 3 August 2026
 Companion document: [BUILD_PLAN.md](BUILD_PLAN.md)
 
 Operational continuation guide: [HANDOFF.md](HANDOFF.md)
@@ -18,11 +18,11 @@ Completed and verified:
 - Domain identifiers, album/edition model, physical locations, box sets, contributor roles, and derived digital-availability logic.
 - SQLite schema migrations 1 through 10, foreign keys, catalogue revision tracking, and core repositories.
 - Persistent Mac catalogue stored in the user's Application Support directory.
-- Catalogue UI: browse/search albums; browse contributors; add albums; create/rename locations; create box sets; show basic album details.
+- Catalogue UI: browse/search albums; browse contributors; add albums; create/rename/move/delete hierarchical locations; create box sets; show basic album details.
 - Atomic album creation inside a box set, including inherited physical-location behaviour.
 - Album editing plus box-member browse, confirmed move, removal with a standalone placement, and reorder workflows.
 - Schema migration 2 adds `physical_location_unknown`, removing ambiguity between a boxed album and a standalone CD whose location is unknown.
-- Fifty-six automated tests across five test suites, last verified with a rebuilt `swift test` on 26 July 2026.
+- Seventy-three automated tests across six test suites, last verified with a rebuilt `swift test` and `swift build` on 3 August 2026.
 - Catalogue-content foundation complete: ordered discs/tracks, aliases, contributor roles at album and track level, selected album artwork with local-path provenance, and safe track/alias removal. Album detail supports manual creation of each of these relationships and user-selected front artwork without modifying source files.
 - Storage-root foundation complete: migration 3, persisted root records, security-scoped bookmark creation/resolution, availability checks, and Settings management. Offline and authorization-required roots are retained rather than removed.
 - Import Inbox foundation complete: migration 4, cancellable system-content-type scanning of available authorized roots, persistent batches/candidates/errors, recovery of interrupted scans, and Inbox cancellation/retry UI. Scans never create albums, tracks, or digital assets.
@@ -50,7 +50,8 @@ Completed and verified:
 - Reviewable external metadata selection complete: a MusicBrainz result can be saved against an import proposal, then title, artist, and disc-count differences can be accepted independently. Applying selections updates only the pending import proposal with provenance; later catalogue creation remains separately approved.
 - Manual lookup reliability complete: identical title/artist requests reuse a session-only in-memory MusicBrainz response cache, while temporary HTTP 429/5xx and URL-loading failures use up to two bounded retries. No retry is scheduled unless the user already initiated the lookup.
 - Extended MusicBrainz field review complete: country/region and catalogue number are independently selectable, persisted in schema 9, and transferred into the resulting album only through the existing explicit proposal approval and creation workflow.
-- Broad catalogue search complete: album search now matches title, edition, catalogue number, barcode, aliases, track titles, album/track contributors, box-set titles, direct physical locations, and inherited box locations.
+- Broad catalogue search complete: album search now matches title, edition, catalogue number, barcode, aliases, track titles, album/track contributors, box-set titles, direct physical locations, and inherited box locations. The existing FTS5 table is populated transactionally on migration and after successful revisions, using normalized phrase-prefix terms; the legacy LIKE predicates remain as a compatibility fallback.
+- Physical-location management complete: the Mac renders parent-linked locations as full paths, supports moving nodes with self/descendant cycle prevention, and guards deletion when children, albums, or box sets still reference a node. Editors and pickers display the same full hierarchy paths.
 - Recently Deleted recovery complete for albums, playlists, and empty box sets: Albums can be moved to Recently Deleted from their context menu, and Settings lists deleted albums, playlists, and empty box sets with restore actions. Playlist recovery retains its ordered items. A box set must be empty before deletion, preventing invalid inherited physical placement. Recovery never changes media files.
 - JSON export UI complete: Settings opens a standard macOS Save dialog to export the current catalogue's portable JSON representation. Export does not copy audio or alter catalogue data.
 - CSV export complete: Settings can export album-level catalogue data as quoted CSV for spreadsheet use, including edition, release, country, catalogue, and availability fields.
@@ -337,7 +338,7 @@ Implement these with UUID primary keys and appropriate foreign keys:
 - `edit_event(id, entity_type, entity_id, field_name, old_value, new_value, source, occurred_at)`.
 - `catalogue_state(singleton_id, schema_version, catalogue_revision, last_published_revision, last_published_at)`.
 
-Use an FTS5 index for album titles, aliases, edition labels, track titles, contributor names, catalogue numbers, barcodes, box names, and location path text. Rebuild or update the index transactionally.
+Use an FTS5 index for album titles, aliases, edition labels, track titles, contributor names, catalogue numbers, barcodes, box names, and location path text. The current implementation rebuilds this index transactionally after migration and each successful catalogue revision, which favors correctness and straightforward recovery. If catalogue size later makes full rebuilds expensive, replace it with incremental triggers or a batched update without changing the indexed fields or query semantics.
 
 ## 6. Domain invariants
 
@@ -503,9 +504,9 @@ Partial batch failure must be visible and resumable. Do not report success for t
 
 ## 12. Physical locations and box sets
 
-Represent location paths through parent links rather than a single uncontrolled string. UI selection uses a tree with create/rename/move operations.
+Represent location paths through parent links rather than a single uncontrolled string. UI selection uses a tree with create/rename/move/delete operations, displays the complete path, and filters move targets to exclude the current node and all descendants.
 
-Moving a location node changes the displayed path of all descendants without updating every album. Prevent deletion of a location referenced by an album or box until the user moves those records.
+Moving a location node changes the displayed path of all descendants without updating every album. Prevent deletion of a location with children or referenced by an album or box until the user moves those records. Reject self-parent and descendant-parent moves at the persistence layer, not only in the UI.
 
 Box operations are transactional:
 
@@ -635,6 +636,7 @@ Each item must link to a repair action. Avoid a dashboard that reports problems 
 
 - Search is case-insensitive and diacritic-tolerant where practical, while displaying original text.
 - Tokenize aliases and contributor credited names.
+- The FTS5 index is rebuilt transactionally during migration and after successful catalogue revisions; query terms are normalized phrase-prefix tokens joined with AND, while the legacy LIKE predicates remain as a compatibility fallback.
 - Exact barcode and catalogue-number matches rank first.
 - Album title + edition label results show edition, year, country, CD/digital state, box name, and location so similar pressings are distinguishable.
 - Soft-deleted records are excluded unless searching Recently Deleted.
