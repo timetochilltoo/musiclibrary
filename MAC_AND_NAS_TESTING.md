@@ -21,6 +21,14 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 
 ## 3. Phase 3 — Mac player and playlists
 
+## 3A. Library Changes rescan choices
+
+1. Open **Library Changes** and select a completed batch for a registered folder.
+2. Press **Retry Scan**. Confirm a fresh batch is selected immediately and its status/counts update without selecting the folder again. Confirm that already-catalogued files remain in **Scan diagnostics**, not in a new metadata proposal.
+3. If the scan reports **New audio files**, press **Read Metadata for New Files**. Confirm proposals appear only after this explicit action; the catalogue and source files remain unchanged until the normal approve/create workflow.
+4. Repeat with **Rescan and Read Metadata for New Files**. Confirm the app selects the new batch, waits while it scans, and then automatically performs the metadata pass once the scan completes. Confirm the resulting proposals are the same new-file-only proposals that the two separate actions would produce.
+5. Repeat the combined action on a folder with no new files. Confirm it completes without creating duplicate proposals. If the scan is cancelled or fails, confirm metadata is not read automatically and the user can retry explicitly.
+
 ### A. Basic playback
 
 1. In **Settings**, add the test music folder under **Music Folders** and allow the macOS folder-access prompt.

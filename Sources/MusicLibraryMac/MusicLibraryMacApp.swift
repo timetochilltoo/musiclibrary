@@ -61,6 +61,7 @@ private struct LibraryShellView: View {
     @State private var selectedContributorID: ContributorID?
     @State private var selectedBoxSetID: BoxSetID?
     @State private var selectedImportBatchID: ImportBatchID?
+    @State private var importBatchToAnalyzeAfterScan: ImportBatchID?
     @State private var selectedPlaylistID: PlaylistID?
     @State private var searchText = ""
     @State private var albumSourceFilter: AlbumSourceFilter = .all
@@ -274,7 +275,18 @@ private struct LibraryShellView: View {
         } else if section == .boxSets, let selectedBoxSetID, let box = library.boxSets.first(where: { $0.id == selectedBoxSetID }) {
             BoxSetDetail(library: library, boxSet: box)
         } else if section == .importInbox, let selectedImportBatchID, let batch = library.importBatches.first(where: { $0.id == selectedImportBatchID }) {
-            ImportBatchDetail(library: library, batch: batch, onRescanStarted: { self.selectedImportBatchID = $0 })
+            ImportBatchDetail(
+                library: library,
+                batch: batch,
+                onRescanStarted: { self.selectedImportBatchID = $0 },
+                onCombinedRescanRequested: { self.importBatchToAnalyzeAfterScan = $0 },
+                analyzeMetadataAfterScan: importBatchToAnalyzeAfterScan == batch.id,
+                onCombinedAnalysisFinished: {
+                    if self.importBatchToAnalyzeAfterScan == batch.id {
+                        self.importBatchToAnalyzeAfterScan = nil
+                    }
+                }
+            )
         } else if section == .playlists, let selectedPlaylistID, let playlist = library.playlists.first(where: { $0.id == selectedPlaylistID }) {
             PlaylistDetail(library: library, playback: playback, playlist: playlist)
         } else if let selectedAlbumID, let album = library.albums.first(where: { $0.id == selectedAlbumID }) {
@@ -863,6 +875,9 @@ private struct ImportBatchDetail: View {
     @ObservedObject var library: LibraryStore
     let batch: ImportBatch
     let onRescanStarted: (ImportBatchID) -> Void
+    let onCombinedRescanRequested: (ImportBatchID) -> Void
+    let analyzeMetadataAfterScan: Bool
+    let onCombinedAnalysisFinished: () -> Void
     @State private var candidates: [ImportCandidate] = []
     @State private var unregisteredCandidates: [ImportCandidate] = []
     @State private var proposals: [ImportReleaseProposal] = []
@@ -905,6 +920,25 @@ private struct ImportBatchDetail: View {
                         catch { library.presentError(error) }
                     }
                 } }
+                if batch.status != .scanning {
+                    Button("Rescan and Read Metadata for New Files", systemImage: "arrow.clockwise.circle") {
+                        Task {
+                            do {
+                                let newBatchID = try await library.retryImportScan(batch.id)
+                                // Set the intent before selecting the new batch. The
+                                // new detail view can then wait for scan completion
+                                // and perform the explicit metadata pass exactly once.
+                                onCombinedRescanRequested(newBatchID)
+                                onRescanStarted(newBatchID)
+                            } catch {
+                                library.presentError(error)
+                            }
+                        }
+                    }
+                    Text("Runs a fresh scan first, then reads embedded metadata only for files not already in the catalogue.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 if batch.status != .scanning && !unregisteredCandidates.isEmpty { Button("Read Metadata for New Files", systemImage: "text.magnifyingglass") {
                     Task {
                         do {
@@ -1025,7 +1059,10 @@ private struct ImportBatchDetail: View {
             }
         }
         .navigationTitle("Import Batch")
-        .task(id: batchRefreshToken) { await load() }
+        .task(id: batchRefreshToken) {
+            await load()
+            await analyzeNewFilesIfRequested()
+        }
         .confirmationDialog("Create catalogue records?", isPresented: Binding(get: { proposalToConfirm != nil }, set: { if !$0 { proposalToConfirm = nil } }), titleVisibility: .visible) {
             if let proposal = proposalToConfirm {
                 Button("Create Album, Tracks, and Assets") {
@@ -1125,6 +1162,25 @@ private struct ImportBatchDetail: View {
 
     private var batchRefreshToken: String {
         "\(batch.id.description)|\(batch.status.rawValue)|\(batch.processedCount)|\(batch.candidateCount)|\(batch.errorCount)|\(batch.completedAt?.timeIntervalSince1970 ?? 0)"
+    }
+
+    private func analyzeNewFilesIfRequested() async {
+        guard analyzeMetadataAfterScan else { return }
+        guard batch.status != .scanning else { return }
+        guard batch.status == .completed else {
+            // Do not attempt metadata extraction after a failed or cancelled
+            // scan. Clear the one-shot intent so the user can retry explicitly.
+            onCombinedAnalysisFinished()
+            return
+        }
+
+        do {
+            try await library.analyzeImportBatch(batch.id)
+            await load()
+        } catch {
+            library.presentError(error)
+        }
+        onCombinedAnalysisFinished()
     }
 
     @ViewBuilder
