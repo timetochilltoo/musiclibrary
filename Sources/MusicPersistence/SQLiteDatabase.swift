@@ -1637,6 +1637,44 @@ public actor MusicDatabase {
         return .init(id: id, ownerType: "album", ownerID: albumID.description, role: role, localPath: localPath, source: source, isSelected: role == .front)
     }
 
+    /// Updates an existing album-artwork record after its file has been copied
+    /// into managed storage. The artwork identity and selection state remain
+    /// unchanged; only the stored path and provenance source are replaced.
+    public func migrateAlbumArtwork(_ artworkID: UUID, to localPath: String, source: String = "managed-migrated") throws -> Artwork {
+        let trimmedPath = localPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedPath.isEmpty else { throw DatabaseError.invalidOperation("Artwork path cannot be blank.") }
+
+        var ownerID: String?
+        var role: ArtworkRole?
+        var isSelected = false
+        try transaction {
+            let select = try Self.prepare("SELECT owner_id, role, is_selected FROM artwork WHERE id = ? AND owner_type = 'album';", on: connection)
+            defer { sqlite3_finalize(select) }
+            try Self.bind(artworkID.uuidString.lowercased(), at: 1, to: select)
+            guard sqlite3_step(select) == SQLITE_ROW,
+                  let rawOwnerID = Self.text(at: 0, from: select),
+                  let rawRole = Self.text(at: 1, from: select),
+                  let parsedRole = ArtworkRole(rawValue: rawRole) else {
+                throw DatabaseError.notFound("Album artwork")
+            }
+            ownerID = rawOwnerID
+            role = parsedRole
+            isSelected = Self.int(at: 2, from: select) == 1
+
+            let update = try Self.prepare("UPDATE artwork SET local_path = ?, source = ? WHERE id = ? AND owner_type = 'album';", on: connection)
+            defer { sqlite3_finalize(update) }
+            try Self.bind(trimmedPath, at: 1, to: update)
+            try Self.bind(source, at: 2, to: update)
+            try Self.bind(artworkID.uuidString.lowercased(), at: 3, to: update)
+            try Self.stepDone(update, connection: connection)
+            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Album artwork") }
+            try incrementRevision()
+        }
+
+        guard let ownerID, let role else { throw DatabaseError.invalidIdentifier("Album artwork owner") }
+        return .init(id: artworkID, ownerType: "album", ownerID: ownerID, role: role, localPath: trimmedPath, source: source, isSelected: isSelected)
+    }
+
     public func albumArtwork(albumID: AlbumID) throws -> [Artwork] {
         let statement = try Self.prepare("SELECT id, role, local_path, source, is_selected FROM artwork WHERE owner_type = 'album' AND owner_id = ? ORDER BY is_selected DESC, role;", on: connection)
         defer { sqlite3_finalize(statement) }; try Self.bind(albumID.description, at: 1, to: statement)

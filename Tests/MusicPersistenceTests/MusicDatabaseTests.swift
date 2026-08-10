@@ -332,6 +332,25 @@ struct MusicDatabaseTests {
         #expect(try await database.albumAliases(albumID: album.id).isEmpty)
     }
 
+    @Test("Legacy album artwork can be migrated without changing its selection")
+    func migratesLegacyArtwork() async throws {
+        let database = try MusicDatabase(url: temporaryDatabaseURL())
+        try await database.migrate()
+        let album = try await database.createAlbum(.init(title: "Artwork migration"))
+        let legacy = try await database.addAlbumArtwork(albumID: album.id, localPath: "/legacy/cover.jpg", source: "folder-artwork")
+
+        let migrated = try await database.migrateAlbumArtwork(legacy.id, to: "/managed/cover.jpg")
+
+        #expect(migrated.id == legacy.id)
+        #expect(migrated.localPath == "/managed/cover.jpg")
+        #expect(migrated.source == "managed-migrated")
+        #expect(migrated.isSelected)
+        let loaded = try #require(await database.albumArtwork(albumID: album.id).first(where: { $0.id == legacy.id }))
+        #expect(loaded.localPath == "/managed/cover.jpg")
+        #expect(loaded.source == "managed-migrated")
+        #expect(try await database.currentRevision() == 3)
+    }
+
     @Test("Storage roots preserve bookmarks and offline state without deletion")
     func storageRoots() async throws {
         let database = try MusicDatabase(url: temporaryDatabaseURL())

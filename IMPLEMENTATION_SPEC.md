@@ -1,6 +1,6 @@
 # Music Library — Implementation Specification
 
-Date: 3 August 2026
+Date: 10 August 2026
 Companion document: [BUILD_PLAN.md](BUILD_PLAN.md)
 
 Operational continuation guide: [HANDOFF.md](HANDOFF.md)
@@ -22,8 +22,8 @@ Completed and verified:
 - Atomic album creation inside a box set, including inherited physical-location behaviour.
 - Album editing plus box-member browse, confirmed move, removal with a standalone placement, and reorder workflows.
 - Schema migration 2 adds `physical_location_unknown`, removing ambiguity between a boxed album and a standalone CD whose location is unknown.
-- Seventy-three automated tests across six test suites, last verified with a rebuilt `swift test` and `swift build` on 3 August 2026.
-- Catalogue-content foundation complete: ordered discs/tracks, aliases, contributor roles at album and track level, selected album artwork with local-path provenance, and safe track/alias removal. Album detail supports manual creation of each of these relationships and user-selected front artwork without modifying source files.
+- Seventy-four automated tests across six test suites, last verified with a rebuilt `swift test` and `swift build` on 10 August 2026.
+- Catalogue-content foundation complete: ordered discs/tracks, aliases, contributor roles at album and track level, selected album artwork with local-path provenance, and safe track/alias removal. Album detail supports manual creation of each of these relationships and user-selected front artwork without modifying source files. Legacy path-only album artwork can be explicitly copied into managed storage from Album Detail; the source remains untouched and the catalogue row changes only after a successful copy.
 - Storage-root foundation complete: migration 3, persisted root records, security-scoped bookmark creation/resolution, availability checks, and Settings management. Offline and authorization-required roots are retained rather than removed.
 - Import Inbox foundation complete: migration 4, cancellable system-content-type scanning of available authorized roots, persistent batches/candidates/errors, recovery of interrupted scans, and Inbox cancellation/retry UI. Scans never create albums, tracks, or digital assets.
 - Metadata proposal/review foundation complete: migration 5, local AVFoundation common-tag/duration extraction, provenance-labelled grouping, and explicit approve-for-later/dismiss states. No review action creates a catalogue record, changes an audio file, or contacts an external service.
@@ -110,7 +110,7 @@ These decisions are requirements unless the user explicitly changes them:
 25. Curated catalogue ratings use one shared 1–5 star scale for albums and tracks. Album-rating UI is delivered first; track ratings use the same scale when added. Ratings are Mac-authored catalogue data and are published read-only to companions, distinct from device-local favourites and play history.
 26. Published snapshots are for read-only companion distribution and companion rollback only; they are not the primary backup of the live Mac catalogue. The Mac must later provide explicit, verified, dated master SQLite backups to the NAS and restore from those backups. Create a backup before risky operations (especially future tag write-back), and once daily only when the catalogue has changed. Retain 7 daily and 12 monthly master backups. A restore verifies checksum and SQLite integrity, preserves the current master as a recovery copy, then replaces/reopens the master. Published-snapshot import may be considered only as a separate emergency reconstruction feature.
 27. External metadata lookup is manually triggered in version 1; importing/scanning never contacts a network provider automatically. Every external result is presented as a preview/proposal, and no proposed value changes the catalogue until the user explicitly accepts it.
-28. User-selected artwork is copied into managed catalogue storage rather than referenced only by its original path. Managed artwork is included in master backups and later companion publication. Existing legacy local-path records require a later migration before portable artwork support is complete.
+28. User-selected artwork is copied into managed catalogue storage rather than referenced only by its original path. Managed artwork is included in master backups and later companion publication. Existing legacy local-path records may be migrated explicitly: verify the readable source, copy into the managed directory, update the same artwork row transactionally, and remove the newly copied file if the database update fails. Never modify or delete the original source, and leave the row unchanged when the source is unavailable.
 29. Internet metadata lookup uses textual catalogue/tag identifiers only when the user explicitly initiates it. Scanning never makes automatic network requests. Source audio files are never uploaded by default. Future acoustic fingerprint lookup is disabled by default and must require a clearly labelled user action and approval before a derived fingerprint is sent to a provider.
 
 ## 2. Terminology
@@ -339,6 +339,27 @@ Implement these with UUID primary keys and appropriate foreign keys:
 - `catalogue_state(singleton_id, schema_version, catalogue_revision, last_published_revision, last_published_at)`.
 
 Use an FTS5 index for album titles, aliases, edition labels, track titles, contributor names, catalogue numbers, barcodes, box names, and location path text. The current implementation rebuilds this index transactionally after migration and each successful catalogue revision, which favors correctness and straightforward recovery. If catalogue size later makes full rebuilds expensive, replace it with incremental triggers or a batched update without changing the indexed fields or query semantics.
+
+### Managed artwork migration
+
+Artwork selected from a file picker is copied into the application-managed
+`Application Support/MusicLibrary/Artwork` directory. Older catalogue rows may
+still contain a path into a user music folder. Album Detail exposes an explicit
+per-artwork migration action for those rows only; a path already inside managed
+storage is treated as portable and is not copied again.
+
+The migration is deliberately copy-first and catalogue-only:
+
+1. Resolve and trim the stored legacy path, and require that the source is still
+   present and readable.
+2. Copy the source into managed storage using the artwork store's unique-name
+   policy. Do not rename, move, rewrite, or delete the source.
+3. In one SQLite transaction, update the existing artwork row's `local_path`
+   and provenance `source`, preserving its ID, role, and `is_selected` state,
+   and increment the catalogue revision once.
+4. If the transaction fails, remove only the newly copied managed file and leave
+   the original artwork row unchanged. A missing source produces a user-visible
+   error and no database or filesystem mutation.
 
 ## 6. Domain invariants
 

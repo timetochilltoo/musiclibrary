@@ -1876,6 +1876,7 @@ private struct AlbumDetail: View {
     @State private var albumCreditToEdit: ContributorCredit?
     @State private var trackCreditToEdit: TrackCreditSelection?
     @State private var showsArtworkPicker = false
+    @State private var artworkToMigrate: Artwork?
     @State private var discPendingDeletion: Disc?
     @State private var showsTagWritePreview = false
 
@@ -1988,8 +1989,24 @@ private struct AlbumDetail: View {
                     Text("No front artwork selected").foregroundStyle(.secondary)
                 }
                 ForEach(artwork) { image in
-                    Text("\(image.isSelected ? "Selected " : "")\(image.role.rawValue): \(image.localPath.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "No local file")")
-                        .font(.caption).foregroundStyle(.secondary)
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("\(image.isSelected ? "Selected " : "")\(image.role.rawValue): \(image.localPath.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "No local file")")
+                                .font(.caption)
+                            Text(image.source.isEmpty ? "No provenance recorded" : image.source)
+                                .font(.caption2).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if image.localPath != nil {
+                            if library.isManagedArtwork(image) {
+                                Label("Managed", systemImage: "checkmark.circle.fill")
+                                    .font(.caption2).foregroundStyle(.secondary)
+                            } else {
+                                Button("Make Portable", systemImage: "archivebox") { artworkToMigrate = image }
+                                    .font(.caption)
+                            }
+                        }
+                    }
                 }
                 Button("Choose Artwork…", systemImage: "photo.badge.plus") { showsArtworkPicker = true }
             }
@@ -2026,6 +2043,21 @@ private struct AlbumDetail: View {
             Button("Remove Track", role: .destructive) { Task { do { try await library.deleteTrack(track.id); await loadContent(); trackPendingDeletion = nil } catch { library.presentError(error) } } }
         } message: { track in
             Text("This removes \(track.title) and its catalogue-only asset references. Matching playlist entries are removed. Source audio files are not changed.")
+        }
+        .confirmationDialog("Copy artwork into managed storage?", isPresented: Binding(get: { artworkToMigrate != nil }, set: { if !$0 { artworkToMigrate = nil } }), titleVisibility: .visible, presenting: artworkToMigrate) { image in
+            Button("Copy Artwork") {
+                Task {
+                    do {
+                        try await library.migrateArtworkToManagedStorage(image)
+                        artworkToMigrate = nil
+                        await loadContent()
+                    } catch {
+                        library.presentError(error)
+                    }
+                }
+            }
+        } message: { image in
+            Text("A managed copy of \(image.localPath.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "this artwork") will be stored with the catalogue. The original file will not be modified or deleted.")
         }
         .fileImporter(isPresented: $showsArtworkPicker, allowedContentTypes: [.image]) { result in
             if case let .success(url) = result {

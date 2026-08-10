@@ -206,6 +206,41 @@ public final class LibraryStore: ObservableObject {
         try await reload()
     }
 
+    /// Returns whether the artwork path is already inside the managed artwork
+    /// directory. This is intentionally synchronous so Album Detail can hide
+    /// the migration action for records that are already portable.
+    public func isManagedArtwork(_ artwork: Artwork) -> Bool {
+        guard let path = artwork.localPath, let managedArtworkStore else { return false }
+        return managedArtworkStore.contains(URL(fileURLWithPath: path))
+    }
+
+    /// Copies a legacy artwork path into managed storage, then updates the
+    /// catalogue row. The source file is never modified or deleted. If the
+    /// catalogue update fails, the newly copied managed file is removed so the
+    /// database and filesystem do not drift apart.
+    public func migrateArtworkToManagedStorage(_ artwork: Artwork) async throws {
+        guard let database, let managedArtworkStore else { throw DatabaseError.notFound("Managed artwork storage") }
+        guard let rawPath = artwork.localPath?.trimmingCharacters(in: .whitespacesAndNewlines), !rawPath.isEmpty else {
+            throw DatabaseError.invalidOperation("This artwork has no local file to migrate.")
+        }
+        let sourceURL = URL(fileURLWithPath: rawPath)
+        guard FileManager.default.fileExists(atPath: sourceURL.path) else {
+            throw DatabaseError.invalidOperation("The legacy artwork file is no longer available.")
+        }
+        guard !managedArtworkStore.contains(sourceURL) else { return }
+
+        let accessed = sourceURL.startAccessingSecurityScopedResource()
+        defer { if accessed { sourceURL.stopAccessingSecurityScopedResource() } }
+        let managedURL = try managedArtworkStore.importArtwork(from: sourceURL)
+        do {
+            _ = try await database.migrateAlbumArtwork(artwork.id, to: managedURL.path, source: "managed-migrated")
+        } catch {
+            try? FileManager.default.removeItem(at: managedURL)
+            throw error
+        }
+        try await reload()
+    }
+
     public func addStorageRoot(url: URL) async throws {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
         let bookmarkData = try makeSecurityScopedBookmark(for: url)

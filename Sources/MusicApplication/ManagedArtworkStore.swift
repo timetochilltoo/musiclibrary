@@ -7,6 +7,18 @@ public struct ManagedArtworkStore: Sendable {
         self.directory = directory
     }
 
+    /// Returns whether a file URL is inside this store's directory.
+    ///
+    /// Both paths are standardized and symlink-resolved so a legacy record
+    /// cannot be mistaken for managed artwork merely because it uses a
+    /// different spelling of the same path. The directory-boundary check also
+    /// avoids treating a sibling such as `Artwork-old` as managed storage.
+    public func contains(_ fileURL: URL) -> Bool {
+        let root = directory.standardizedFileURL.resolvingSymlinksInPath().path
+        let candidate = fileURL.standardizedFileURL.resolvingSymlinksInPath().path
+        return candidate == root || candidate.hasPrefix(root + "/")
+    }
+
     public func importArtwork(from sourceURL: URL) throws -> URL {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let extensionName = sourceURL.pathExtension.nilIfBlank ?? "image"

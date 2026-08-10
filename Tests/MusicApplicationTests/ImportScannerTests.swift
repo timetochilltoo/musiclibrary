@@ -246,6 +246,9 @@ struct ImportScannerTests {
         #expect(destination.deletingLastPathComponent().lastPathComponent == "Artwork")
         #expect(destination != source)
         #expect(try Data(contentsOf: destination) == Data([1, 2, 3]))
+        let store = ManagedArtworkStore(directory: directory.appending(path: "Artwork"))
+        #expect(store.contains(destination))
+        #expect(!store.contains(source))
     }
 
     @Test("Master archive writes a checksummed verified SQLite backup")
