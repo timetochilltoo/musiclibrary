@@ -336,6 +336,10 @@ struct MusicDatabaseTests {
         let alias = try await database.addAlbumAlias(albumID: album.id, name: "Alternate", kind: .alternate)
         try await database.deleteAlbumAlias(alias.id)
         #expect(try await database.albumAliases(albumID: album.id).isEmpty)
+        let activity = try await database.recentCatalogueActivity(limit: 100)
+        #expect(activity.contains { $0.entityType == "album_alias" && $0.entityID == alias.id.uuidString.lowercased() && $0.fieldName == "name" && $0.newValue == "Alternate" })
+        #expect(activity.contains { $0.entityType == "album_alias" && $0.entityID == alias.id.uuidString.lowercased() && $0.fieldName == "kind" && $0.newValue == AlbumAliasKind.alternate.rawValue })
+        #expect(activity.contains { $0.entityType == "album_alias" && $0.entityID == alias.id.uuidString.lowercased() && $0.fieldName == "name" && $0.oldValue == "Alternate" && $0.newValue == nil })
     }
 
     @Test("Legacy album artwork can be migrated without changing its selection")
@@ -652,6 +656,14 @@ struct MusicDatabaseTests {
         try await database.deletePlaylist(playlist.id)
         try await database.permanentlyDeletePlaylist(playlist.id)
         #expect(try await database.deletedPlaylists().isEmpty)
+        let activity = try await database.recentCatalogueActivity(limit: 100)
+        #expect(activity.contains { $0.entityType == "playlist" && $0.entityID == playlist.id.description && $0.fieldName == "name" && $0.newValue == "Favourites" })
+        #expect(activity.contains { $0.entityType == "playlist" && $0.entityID == playlist.id.description && $0.fieldName == "name" && $0.oldValue == "Favourites" && $0.newValue == "Road trip" })
+        #expect(activity.contains { $0.entityType == "playlist" && $0.entityID == playlist.id.description && $0.fieldName == "status" && $0.oldValue == "active" && $0.newValue == "deleted" })
+        #expect(activity.contains { $0.entityType == "playlist" && $0.entityID == playlist.id.description && $0.fieldName == "status" && $0.oldValue == "deleted" && $0.newValue == "active" })
+        #expect(activity.contains { $0.entityType == "playlist_item" && $0.fieldName == "track_id" && $0.newValue == first.id.description })
+        #expect(activity.contains { $0.entityType == "playlist_item" && $0.fieldName == "position" && $0.oldValue == "2" && $0.newValue == "1" })
+        #expect(activity.contains { $0.entityType == "playlist_item" && $0.fieldName == "track_id" && $0.newValue == nil })
     }
 
     @Test("Published catalogue contains ordered read-only disc and track rows")

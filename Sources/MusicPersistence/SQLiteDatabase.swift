@@ -836,7 +836,14 @@ public actor MusicDatabase {
     public func createPlaylist(name: String) throws -> Playlist {
         guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw ValidationError.requiredField("Playlist name") }
         let id = PlaylistID(); let now = Self.milliseconds(Date())
-        try transaction { let statement = try Self.prepare("INSERT INTO playlist (id, name, created_at, updated_at) VALUES (?, ?, ?, ?);", on: connection); defer { sqlite3_finalize(statement) }; try Self.bind(id.description, at: 1, to: statement); try Self.bind(name, at: 2, to: statement); try Self.bind(now, at: 3, to: statement); try Self.bind(now, at: 4, to: statement); try Self.stepDone(statement, connection: connection); try incrementRevision() }
+        try transaction {
+            let statement = try Self.prepare("INSERT INTO playlist (id, name, created_at, updated_at) VALUES (?, ?, ?, ?);", on: connection)
+            defer { sqlite3_finalize(statement) }
+            try Self.bind(id.description, at: 1, to: statement); try Self.bind(name, at: 2, to: statement); try Self.bind(now, at: 3, to: statement); try Self.bind(now, at: 4, to: statement)
+            try Self.stepDone(statement, connection: connection)
+            let changes = [Self.revisionChange(entityType: "playlist", entityID: id.description, fieldName: "name", oldValue: nil, newValue: name)].compactMap { $0 }
+            try incrementRevision(changes: changes)
+        }
         return .init(id: id, name: name)
     }
 
@@ -856,6 +863,14 @@ public actor MusicDatabase {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw ValidationError.requiredField("Playlist name") }
         try transaction {
+            var oldName: String?
+            do {
+                let existing = try Self.prepare("SELECT name FROM playlist WHERE id = ? AND deleted_at IS NULL;", on: connection)
+                defer { sqlite3_finalize(existing) }
+                try Self.bind(id.description, at: 1, to: existing)
+                guard sqlite3_step(existing) == SQLITE_ROW else { throw DatabaseError.notFound("Playlist") }
+                oldName = Self.text(at: 0, from: existing)
+            }
             let statement = try Self.prepare("UPDATE playlist SET name = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL;", on: connection)
             defer { sqlite3_finalize(statement) }
             try Self.bind(trimmed, at: 1, to: statement)
@@ -863,7 +878,8 @@ public actor MusicDatabase {
             try Self.bind(id.description, at: 3, to: statement)
             try Self.stepDone(statement, connection: connection)
             guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Playlist") }
-            try incrementRevision()
+            let changes = [Self.revisionChange(entityType: "playlist", entityID: id.description, fieldName: "name", oldValue: oldName, newValue: trimmed)].compactMap { $0 }
+            try incrementRevision(changes: changes)
         }
     }
 
@@ -877,7 +893,8 @@ public actor MusicDatabase {
             try Self.bind(id.description, at: 3, to: statement)
             try Self.stepDone(statement, connection: connection)
             guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Playlist") }
-            try incrementRevision()
+            let changes = [Self.revisionChange(entityType: "playlist", entityID: id.description, fieldName: "status", oldValue: "active", newValue: "deleted")].compactMap { $0 }
+            try incrementRevision(changes: changes)
         }
     }
 
@@ -888,7 +905,8 @@ public actor MusicDatabase {
             try Self.bind(Self.milliseconds(Date()), at: 1, to: statement); try Self.bind(id.description, at: 2, to: statement)
             try Self.stepDone(statement, connection: connection)
             guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Deleted playlist") }
-            try incrementRevision()
+            let changes = [Self.revisionChange(entityType: "playlist", entityID: id.description, fieldName: "status", oldValue: "deleted", newValue: "active")].compactMap { $0 }
+            try incrementRevision(changes: changes)
         }
     }
 
@@ -898,42 +916,66 @@ public actor MusicDatabase {
             defer { sqlite3_finalize(statement) }
             try Self.bind(id.description, at: 1, to: statement); try Self.stepDone(statement, connection: connection)
             guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Deleted playlist") }
-            try incrementRevision()
+            let changes = [Self.revisionChange(entityType: "playlist", entityID: id.description, fieldName: "status", oldValue: "deleted", newValue: "permanently deleted")].compactMap { $0 }
+            try incrementRevision(changes: changes)
         }
     }
 
     public func addTrack(_ trackID: TrackID, to playlistID: PlaylistID) throws {
-        try transaction { guard try Self.exists("SELECT 1 FROM playlist WHERE id = ? AND deleted_at IS NULL;", value: playlistID.description, on: connection) else { throw DatabaseError.notFound("Playlist") }; guard try Self.exists("SELECT 1 FROM track WHERE id = ?;", value: trackID.description, on: connection) else { throw DatabaseError.notFound("Track") }; let position = try Self.nextNumber("SELECT COALESCE(MAX(position), 0) + 1 FROM playlist_item WHERE playlist_id = ?;", ownerID: playlistID.description, on: connection); let statement = try Self.prepare("INSERT INTO playlist_item (id, playlist_id, track_id, position) VALUES (?, ?, ?, ?);", on: connection); defer { sqlite3_finalize(statement) }; try Self.bind(UUID().uuidString.lowercased(), at: 1, to: statement); try Self.bind(playlistID.description, at: 2, to: statement); try Self.bind(trackID.description, at: 3, to: statement); try Self.bind(Int64(position), at: 4, to: statement); try Self.stepDone(statement, connection: connection); try incrementRevision() }
+        let itemID = UUID()
+        try transaction {
+            guard try Self.exists("SELECT 1 FROM playlist WHERE id = ? AND deleted_at IS NULL;", value: playlistID.description, on: connection) else { throw DatabaseError.notFound("Playlist") }
+            guard try Self.exists("SELECT 1 FROM track WHERE id = ?;", value: trackID.description, on: connection) else { throw DatabaseError.notFound("Track") }
+            let position = try Self.nextNumber("SELECT COALESCE(MAX(position), 0) + 1 FROM playlist_item WHERE playlist_id = ?;", ownerID: playlistID.description, on: connection)
+            let statement = try Self.prepare("INSERT INTO playlist_item (id, playlist_id, track_id, position) VALUES (?, ?, ?, ?);", on: connection)
+            defer { sqlite3_finalize(statement) }
+            try Self.bind(itemID.uuidString.lowercased(), at: 1, to: statement); try Self.bind(playlistID.description, at: 2, to: statement); try Self.bind(trackID.description, at: 3, to: statement); try Self.bind(Int64(position), at: 4, to: statement)
+            try Self.stepDone(statement, connection: connection)
+            let changes = [
+                Self.revisionChange(entityType: "playlist_item", entityID: itemID.uuidString.lowercased(), fieldName: "track_id", oldValue: nil, newValue: trackID.description),
+                Self.revisionChange(entityType: "playlist_item", entityID: itemID.uuidString.lowercased(), fieldName: "position", oldValue: nil, newValue: String(position))
+            ].compactMap { $0 }
+            try incrementRevision(changes: changes)
+        }
     }
 
     public func removePlaylistItem(_ id: UUID) throws {
         try transaction {
-            let source = try Self.prepare("SELECT playlist_id FROM playlist_item WHERE id = ?;", on: connection)
+            let source = try Self.prepare("SELECT playlist_id, track_id, position FROM playlist_item WHERE id = ?;", on: connection)
             defer { sqlite3_finalize(source) }
             try Self.bind(id.uuidString.lowercased(), at: 1, to: source)
             guard sqlite3_step(source) == SQLITE_ROW, let rawPlaylist = Self.text(at: 0, from: source), let playlistUUID = UUID(uuidString: rawPlaylist) else { throw DatabaseError.notFound("Playlist item") }
+            let oldTrackID = Self.text(at: 1, from: source)
+            let oldPosition = Self.int(at: 2, from: source).map(String.init)
             let statement = try Self.prepare("DELETE FROM playlist_item WHERE id = ?;", on: connection)
             defer { sqlite3_finalize(statement) }
             try Self.bind(id.uuidString.lowercased(), at: 1, to: statement)
             try Self.stepDone(statement, connection: connection)
             try renumberPlaylistItems(.init(rawValue: playlistUUID), orderedItemIDs: try playlistItemIDs(.init(rawValue: playlistUUID)))
-            try incrementRevision()
+            let changes = [
+                Self.revisionChange(entityType: "playlist_item", entityID: id.uuidString.lowercased(), fieldName: "track_id", oldValue: oldTrackID, newValue: nil),
+                Self.revisionChange(entityType: "playlist_item", entityID: id.uuidString.lowercased(), fieldName: "position", oldValue: oldPosition, newValue: nil)
+            ].compactMap { $0 }
+            try incrementRevision(changes: changes)
         }
     }
 
     public func movePlaylistItem(_ id: UUID, to position: Int) throws {
         try transaction {
-            let source = try Self.prepare("SELECT playlist_id FROM playlist_item WHERE id = ?;", on: connection)
+            let source = try Self.prepare("SELECT playlist_id, position FROM playlist_item WHERE id = ?;", on: connection)
             defer { sqlite3_finalize(source) }
             try Self.bind(id.uuidString.lowercased(), at: 1, to: source)
             guard sqlite3_step(source) == SQLITE_ROW, let rawPlaylist = Self.text(at: 0, from: source), let playlistUUID = UUID(uuidString: rawPlaylist) else { throw DatabaseError.notFound("Playlist item") }
+            let oldPosition = Self.int(at: 1, from: source) ?? 0
             let playlistID = PlaylistID(rawValue: playlistUUID)
             var ids = try playlistItemIDs(playlistID)
             guard let currentIndex = ids.firstIndex(of: id) else { throw DatabaseError.notFound("Playlist item") }
             ids.remove(at: currentIndex)
-            ids.insert(id, at: min(max(0, position - 1), ids.count))
+            let newPosition = min(max(0, position - 1), ids.count) + 1
+            ids.insert(id, at: newPosition - 1)
             try renumberPlaylistItems(playlistID, orderedItemIDs: ids)
-            try incrementRevision()
+            let changes = [Self.revisionChange(entityType: "playlist_item", entityID: id.uuidString.lowercased(), fieldName: "position", oldValue: String(oldPosition), newValue: String(newPosition))].compactMap { $0 }
+            try incrementRevision(changes: changes)
         }
     }
 
@@ -1775,7 +1817,14 @@ public actor MusicDatabase {
         let id = UUID()
         try transaction {
             let statement = try Self.prepare("INSERT INTO album_alias (id, album_id, name, locale, kind) VALUES (?, ?, ?, ?, ?);", on: connection)
-            defer { sqlite3_finalize(statement) }; try Self.bind(id.uuidString.lowercased(), at: 1, to: statement); try Self.bind(albumID.description, at: 2, to: statement); try Self.bind(name, at: 3, to: statement); try Self.bind(locale, at: 4, to: statement); try Self.bind(kind.rawValue, at: 5, to: statement); try Self.stepDone(statement, connection: connection); try incrementRevision()
+            defer { sqlite3_finalize(statement) }; try Self.bind(id.uuidString.lowercased(), at: 1, to: statement); try Self.bind(albumID.description, at: 2, to: statement); try Self.bind(name, at: 3, to: statement); try Self.bind(locale, at: 4, to: statement); try Self.bind(kind.rawValue, at: 5, to: statement); try Self.stepDone(statement, connection: connection)
+            let changes = [
+                Self.revisionChange(entityType: "album_alias", entityID: id.uuidString.lowercased(), fieldName: "album_id", oldValue: nil, newValue: albumID.description),
+                Self.revisionChange(entityType: "album_alias", entityID: id.uuidString.lowercased(), fieldName: "name", oldValue: nil, newValue: name),
+                Self.revisionChange(entityType: "album_alias", entityID: id.uuidString.lowercased(), fieldName: "locale", oldValue: nil, newValue: locale),
+                Self.revisionChange(entityType: "album_alias", entityID: id.uuidString.lowercased(), fieldName: "kind", oldValue: nil, newValue: kind.rawValue)
+            ].compactMap { $0 }
+            try incrementRevision(changes: changes)
         }
         return .init(id: id, albumID: albumID, name: name, locale: locale, kind: kind)
     }
@@ -1793,10 +1842,30 @@ public actor MusicDatabase {
 
     public func deleteAlbumAlias(_ aliasID: UUID) throws {
         try transaction {
+            var albumID: String?
+            var name: String?
+            var locale: String?
+            var kind: String?
+            do {
+                let existing = try Self.prepare("SELECT album_id, name, locale, kind FROM album_alias WHERE id = ?;", on: connection)
+                defer { sqlite3_finalize(existing) }
+                try Self.bind(aliasID.uuidString.lowercased(), at: 1, to: existing)
+                guard sqlite3_step(existing) == SQLITE_ROW else { throw DatabaseError.notFound("Album alias") }
+                albumID = Self.text(at: 0, from: existing)
+                name = Self.text(at: 1, from: existing)
+                locale = Self.text(at: 2, from: existing)
+                kind = Self.text(at: 3, from: existing)
+            }
             let statement = try Self.prepare("DELETE FROM album_alias WHERE id = ?;", on: connection)
             defer { sqlite3_finalize(statement) }; try Self.bind(aliasID.uuidString.lowercased(), at: 1, to: statement); try Self.stepDone(statement, connection: connection)
             guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Album alias") }
-            try incrementRevision()
+            let changes = [
+                Self.revisionChange(entityType: "album_alias", entityID: aliasID.uuidString.lowercased(), fieldName: "album_id", oldValue: albumID, newValue: nil),
+                Self.revisionChange(entityType: "album_alias", entityID: aliasID.uuidString.lowercased(), fieldName: "name", oldValue: name, newValue: nil),
+                Self.revisionChange(entityType: "album_alias", entityID: aliasID.uuidString.lowercased(), fieldName: "locale", oldValue: locale, newValue: nil),
+                Self.revisionChange(entityType: "album_alias", entityID: aliasID.uuidString.lowercased(), fieldName: "kind", oldValue: kind, newValue: nil)
+            ].compactMap { $0 }
+            try incrementRevision(changes: changes)
         }
     }
 
