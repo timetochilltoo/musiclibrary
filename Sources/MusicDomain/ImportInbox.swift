@@ -191,12 +191,38 @@ public struct MissingAssetReview: Identifiable, Equatable, Sendable {
 public struct CatalogueActivity: Identifiable, Equatable, Sendable {
     public let id: UUID
     public let revision: Int64
+    public let entityType: String
+    public let entityID: String
+    public let fieldName: String
+    public let oldValue: String?
+    public let newValue: String?
+    public let source: String
     public let occurredAt: Date
 
-    public init(id: UUID, revision: Int64, occurredAt: Date) {
+    public init(
+        id: UUID,
+        revision: Int64,
+        entityType: String = "catalogue",
+        entityID: String = "1",
+        fieldName: String = "catalogue_revision",
+        oldValue: String? = nil,
+        newValue: String? = nil,
+        source: String = "mac",
+        occurredAt: Date
+    ) {
         self.id = id
         self.revision = revision
+        self.entityType = entityType
+        self.entityID = entityID
+        self.fieldName = fieldName
+        self.oldValue = oldValue
+        self.newValue = newValue
+        self.source = source
         self.occurredAt = occurredAt
+    }
+
+    public var isRevisionMarker: Bool {
+        entityType == "catalogue" && fieldName == "catalogue_revision"
     }
 }
 

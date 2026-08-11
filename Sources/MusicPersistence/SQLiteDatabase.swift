@@ -36,6 +36,15 @@ public actor MusicDatabase {
     private let connectionHandle: SQLiteHandle
     private var connection: OpaquePointer { connectionHandle.pointer }
 
+    private struct RevisionChange {
+        let entityType: String
+        let entityID: String
+        let fieldName: String
+        let oldValue: String?
+        let newValue: String?
+        let source: String
+    }
+
     public init(url: URL) throws {
         var handle: OpaquePointer?
         let flags = SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX
@@ -63,13 +72,30 @@ public actor MusicDatabase {
 
     public func recentCatalogueActivity(limit: Int = 30) throws -> [CatalogueActivity] {
         guard (1...100).contains(limit) else { throw DatabaseError.invalidOperation("Activity history limit must be between 1 and 100.") }
-        let statement = try Self.prepare("SELECT id, new_value, occurred_at FROM edit_event WHERE entity_type = 'catalogue' AND field_name = 'catalogue_revision' ORDER BY occurred_at DESC, rowid DESC LIMIT ?;", on: connection)
+        // Field rows use the same millisecond timestamp as their revision marker.
+        // Keeping the existing schema lets the read-only snapshot format remain
+        // compatible while still giving the Mac audit surface useful revision context.
+        let markerStatement = try Self.prepare("SELECT occurred_at, new_value FROM edit_event WHERE entity_type = 'catalogue' AND field_name = 'catalogue_revision';", on: connection)
+        defer { sqlite3_finalize(markerStatement) }
+        var revisionsByTimestamp: [Int64: Int64] = [:]
+        while sqlite3_step(markerStatement) == SQLITE_ROW {
+            guard let occurredAt = Self.int(at: 0, from: markerStatement), let rawRevision = Self.text(at: 1, from: markerStatement), let revision = Int64(rawRevision) else { continue }
+            revisionsByTimestamp[occurredAt] = max(revisionsByTimestamp[occurredAt] ?? 0, revision)
+        }
+
+        let statement = try Self.prepare("SELECT id, entity_type, entity_id, field_name, old_value, new_value, source, occurred_at FROM edit_event ORDER BY occurred_at DESC, rowid DESC LIMIT ?;", on: connection)
         defer { sqlite3_finalize(statement) }
         try Self.bind(Int64(limit), at: 1, to: statement)
         var activity: [CatalogueActivity] = []
         while sqlite3_step(statement) == SQLITE_ROW {
-            guard let rawID = Self.text(at: 0, from: statement), let id = UUID(uuidString: rawID), let revision = Self.text(at: 1, from: statement), let revisionValue = Int64(revision), let occurredAt = Self.int(at: 2, from: statement) else { continue }
-            activity.append(.init(id: id, revision: revisionValue, occurredAt: Self.date(fromMilliseconds: occurredAt)))
+            guard let rawID = Self.text(at: 0, from: statement), let id = UUID(uuidString: rawID), let entityType = Self.text(at: 1, from: statement), let entityID = Self.text(at: 2, from: statement), let fieldName = Self.text(at: 3, from: statement), let occurredAt = Self.int(at: 7, from: statement) else { continue }
+            let oldValue = Self.text(at: 4, from: statement)
+            let newValue = Self.text(at: 5, from: statement)
+            let isRevisionMarker = entityType == "catalogue" && fieldName == "catalogue_revision"
+            let revisionValue = isRevisionMarker
+                ? (newValue.flatMap(Int64.init) ?? 0)
+                : (revisionsByTimestamp[occurredAt] ?? 0)
+            activity.append(.init(id: id, revision: revisionValue, entityType: entityType, entityID: entityID, fieldName: fieldName, oldValue: oldValue, newValue: newValue, source: Self.text(at: 6, from: statement) ?? "", occurredAt: Self.date(fromMilliseconds: occurredAt)))
         }
         return activity
     }
@@ -1150,9 +1176,29 @@ public actor MusicDatabase {
     public func updateAlbum(_ id: AlbumID, with draft: NewAlbum) throws -> Album {
         let valid = try draft.validated()
         try transaction {
+            guard let existing = try album(id: id) else { throw DatabaseError.notFound("Album") }
             if try boxPlacement(for: id) != nil, (valid.physicalLocationID != nil || valid.isPhysicalLocationUnknown || !valid.hasCD) {
                 throw DatabaseError.invalidOperation("A boxed album inherits its physical placement. Remove it from the box before changing CD location or availability.")
             }
+            let changes = [
+                Self.revisionChange(entityType: "album", entityID: id.description, fieldName: "title", oldValue: existing.title, newValue: valid.title),
+                Self.revisionChange(entityType: "album", entityID: id.description, fieldName: "edition_label", oldValue: existing.editionLabel, newValue: valid.editionLabel),
+                Self.revisionChange(entityType: "album", entityID: id.description, fieldName: "release_year", oldValue: existing.releaseYear.map(String.init), newValue: valid.releaseYear.map(String.init)),
+                Self.revisionChange(entityType: "album", entityID: id.description, fieldName: "country_code", oldValue: existing.countryCode, newValue: valid.countryCode),
+                Self.revisionChange(entityType: "album", entityID: id.description, fieldName: "label_name", oldValue: existing.labelName, newValue: valid.labelName),
+                Self.revisionChange(entityType: "album", entityID: id.description, fieldName: "catalogue_number", oldValue: existing.catalogueNumber, newValue: valid.catalogueNumber),
+                Self.revisionChange(entityType: "album", entityID: id.description, fieldName: "barcode", oldValue: existing.barcode, newValue: valid.barcode),
+                Self.revisionChange(entityType: "album", entityID: id.description, fieldName: "remaster_year", oldValue: existing.remasterYear.map(String.init), newValue: valid.remasterYear.map(String.init)),
+                Self.revisionChange(entityType: "album", entityID: id.description, fieldName: "media_format", oldValue: existing.mediaFormat, newValue: valid.mediaFormat),
+                Self.revisionChange(entityType: "album", entityID: id.description, fieldName: "disc_count", oldValue: String(existing.discCount), newValue: String(valid.discCount)),
+                Self.revisionChange(entityType: "album", entityID: id.description, fieldName: "has_cd", oldValue: Self.boolValue(existing.hasCD), newValue: Self.boolValue(valid.hasCD)),
+                Self.revisionChange(entityType: "album", entityID: id.description, fieldName: "physical_location_id", oldValue: existing.physicalLocationID?.description, newValue: valid.physicalLocationID?.description),
+                Self.revisionChange(entityType: "album", entityID: id.description, fieldName: "physical_location_unknown", oldValue: Self.boolValue(existing.isPhysicalLocationUnknown), newValue: Self.boolValue(valid.isPhysicalLocationUnknown)),
+                Self.revisionChange(entityType: "album", entityID: id.description, fieldName: "physical_note", oldValue: existing.physicalNote, newValue: valid.physicalNote),
+                Self.revisionChange(entityType: "album", entityID: id.description, fieldName: "notes", oldValue: existing.notes, newValue: valid.notes),
+                Self.revisionChange(entityType: "album", entityID: id.description, fieldName: "rating", oldValue: existing.rating.map(String.init), newValue: valid.rating.map(String.init)),
+                Self.revisionChange(entityType: "album", entityID: id.description, fieldName: "is_favourite", oldValue: Self.boolValue(existing.isFavourite), newValue: Self.boolValue(valid.isFavourite))
+            ].compactMap { $0 }
             let statement = try Self.prepare("""
                 UPDATE album SET title = ?, edition_label = ?, release_year = ?, country_code = ?, label_name = ?,
                     catalogue_number = ?, barcode = ?, remaster_year = ?, media_format = ?, disc_count = ?, has_cd = ?,
@@ -1181,7 +1227,7 @@ public actor MusicDatabase {
             try Self.bind(id.description, at: 19, to: statement)
             try Self.stepDone(statement, connection: connection)
             guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Album") }
-            try incrementRevision()
+            try incrementRevision(changes: changes)
         }
         guard let updated = try album(id: id) else { throw DatabaseError.notFound("Album") }
         return updated
@@ -1407,17 +1453,40 @@ public actor MusicDatabase {
         let valid = try draft.validated()
         var result: Track?
         try transaction {
-            let existing = try Self.prepare("SELECT disc_id, number FROM track WHERE id = ?;", on: connection)
+            let existing = try Self.prepare("SELECT disc_id, number, title, display_position, duration_ms, work_name, movement_number, movement_name, is_instrumental, rating FROM track WHERE id = ?;", on: connection)
             defer { sqlite3_finalize(existing) }
             try Self.bind(trackID.description, at: 1, to: existing)
             guard sqlite3_step(existing) == SQLITE_ROW,
                   let rawDiscID = Self.text(at: 0, from: existing),
                   let discUUID = UUID(uuidString: rawDiscID) else { throw DatabaseError.notFound("Track") }
+            let existingTrack = Track(
+                id: trackID,
+                discID: .init(rawValue: discUUID),
+                number: Int(Self.int(at: 1, from: existing) ?? 0),
+                title: Self.text(at: 2, from: existing) ?? "",
+                displayPosition: Self.text(at: 3, from: existing),
+                durationMilliseconds: Self.int(at: 4, from: existing).map(Int.init),
+                workName: Self.text(at: 5, from: existing),
+                movementNumber: Self.int(at: 6, from: existing).map(Int.init),
+                movementName: Self.text(at: 7, from: existing),
+                isInstrumental: Self.int(at: 8, from: existing).map { $0 == 1 },
+                rating: Self.int(at: 9, from: existing).map(Int.init)
+            )
+            let changes = [
+                Self.revisionChange(entityType: "track", entityID: trackID.description, fieldName: "title", oldValue: existingTrack.title, newValue: valid.title),
+                Self.revisionChange(entityType: "track", entityID: trackID.description, fieldName: "display_position", oldValue: existingTrack.displayPosition, newValue: valid.displayPosition),
+                Self.revisionChange(entityType: "track", entityID: trackID.description, fieldName: "duration_ms", oldValue: existingTrack.durationMilliseconds.map(String.init), newValue: valid.durationMilliseconds.map(String.init)),
+                Self.revisionChange(entityType: "track", entityID: trackID.description, fieldName: "work_name", oldValue: existingTrack.workName, newValue: valid.workName),
+                Self.revisionChange(entityType: "track", entityID: trackID.description, fieldName: "movement_number", oldValue: existingTrack.movementNumber.map(String.init), newValue: valid.movementNumber.map(String.init)),
+                Self.revisionChange(entityType: "track", entityID: trackID.description, fieldName: "movement_name", oldValue: existingTrack.movementName, newValue: valid.movementName),
+                Self.revisionChange(entityType: "track", entityID: trackID.description, fieldName: "is_instrumental", oldValue: Self.boolValue(existingTrack.isInstrumental), newValue: Self.boolValue(valid.isInstrumental)),
+                Self.revisionChange(entityType: "track", entityID: trackID.description, fieldName: "rating", oldValue: existingTrack.rating.map(String.init), newValue: valid.rating.map(String.init))
+            ].compactMap { $0 }
             let statement = try Self.prepare("UPDATE track SET title = ?, display_position = ?, duration_ms = ?, work_name = ?, movement_number = ?, movement_name = ?, is_instrumental = ?, rating = ? WHERE id = ?;", on: connection)
             defer { sqlite3_finalize(statement) }
             try Self.bind(valid.title, at: 1, to: statement); try Self.bind(valid.displayPosition, at: 2, to: statement); try Self.bind(valid.durationMilliseconds.map(Int64.init), at: 3, to: statement); try Self.bind(valid.workName, at: 4, to: statement); try Self.bind(valid.movementNumber.map(Int64.init), at: 5, to: statement); try Self.bind(valid.movementName, at: 6, to: statement); try Self.bind(valid.isInstrumental.map { Int64($0 ? 1 : 0) }, at: 7, to: statement); try Self.bind(valid.rating.map(Int64.init), at: 8, to: statement); try Self.bind(trackID.description, at: 9, to: statement); try Self.stepDone(statement, connection: connection)
-            result = .init(id: trackID, discID: .init(rawValue: discUUID), number: Int(Self.int(at: 1, from: existing) ?? 0), title: valid.title, displayPosition: valid.displayPosition, durationMilliseconds: valid.durationMilliseconds, workName: valid.workName, movementNumber: valid.movementNumber, movementName: valid.movementName, isInstrumental: valid.isInstrumental, rating: valid.rating)
-            try incrementRevision()
+            result = .init(id: trackID, discID: existingTrack.discID, number: existingTrack.number, title: valid.title, displayPosition: valid.displayPosition, durationMilliseconds: valid.durationMilliseconds, workName: valid.workName, movementNumber: valid.movementNumber, movementName: valid.movementName, isInstrumental: valid.isInstrumental, rating: valid.rating)
+            try incrementRevision(changes: changes)
         }
         guard let result else { throw DatabaseError.notFound("Track") }
         return result
@@ -1632,7 +1701,14 @@ public actor MusicDatabase {
                 defer { sqlite3_finalize(deselect) }; try Self.bind(albumID.description, at: 1, to: deselect); try Self.stepDone(deselect, connection: connection)
             }
             let statement = try Self.prepare("INSERT INTO artwork (id, owner_type, owner_id, role, local_path, source, is_selected) VALUES (?, 'album', ?, ?, ?, ?, ?);", on: connection)
-            defer { sqlite3_finalize(statement) }; try Self.bind(id.uuidString.lowercased(), at: 1, to: statement); try Self.bind(albumID.description, at: 2, to: statement); try Self.bind(role.rawValue, at: 3, to: statement); try Self.bind(localPath, at: 4, to: statement); try Self.bind(source, at: 5, to: statement); try Self.bind(role == .front ? 1 : 0, at: 6, to: statement); try Self.stepDone(statement, connection: connection); try incrementRevision()
+            defer { sqlite3_finalize(statement) }; try Self.bind(id.uuidString.lowercased(), at: 1, to: statement); try Self.bind(albumID.description, at: 2, to: statement); try Self.bind(role.rawValue, at: 3, to: statement); try Self.bind(localPath, at: 4, to: statement); try Self.bind(source, at: 5, to: statement); try Self.bind(role == .front ? 1 : 0, at: 6, to: statement); try Self.stepDone(statement, connection: connection)
+            let changes = [
+                Self.revisionChange(entityType: "artwork", entityID: id.uuidString.lowercased(), fieldName: "local_path", oldValue: nil, newValue: localPath),
+                Self.revisionChange(entityType: "artwork", entityID: id.uuidString.lowercased(), fieldName: "source", oldValue: nil, newValue: source),
+                Self.revisionChange(entityType: "artwork", entityID: id.uuidString.lowercased(), fieldName: "role", oldValue: nil, newValue: role.rawValue),
+                Self.revisionChange(entityType: "artwork", entityID: id.uuidString.lowercased(), fieldName: "is_selected", oldValue: nil, newValue: role == .front ? "true" : "false")
+            ].compactMap { $0 }
+            try incrementRevision(changes: changes)
         }
         return .init(id: id, ownerType: "album", ownerID: albumID.description, role: role, localPath: localPath, source: source, isSelected: role == .front)
     }
@@ -1647,8 +1723,10 @@ public actor MusicDatabase {
         var ownerID: String?
         var role: ArtworkRole?
         var isSelected = false
+        var oldPath: String?
+        var oldSource: String?
         try transaction {
-            let select = try Self.prepare("SELECT owner_id, role, is_selected FROM artwork WHERE id = ? AND owner_type = 'album';", on: connection)
+            let select = try Self.prepare("SELECT owner_id, role, is_selected, local_path, source FROM artwork WHERE id = ? AND owner_type = 'album';", on: connection)
             defer { sqlite3_finalize(select) }
             try Self.bind(artworkID.uuidString.lowercased(), at: 1, to: select)
             guard sqlite3_step(select) == SQLITE_ROW,
@@ -1660,6 +1738,8 @@ public actor MusicDatabase {
             ownerID = rawOwnerID
             role = parsedRole
             isSelected = Self.int(at: 2, from: select) == 1
+            oldPath = Self.text(at: 3, from: select)
+            oldSource = Self.text(at: 4, from: select)
 
             let update = try Self.prepare("UPDATE artwork SET local_path = ?, source = ? WHERE id = ? AND owner_type = 'album';", on: connection)
             defer { sqlite3_finalize(update) }
@@ -1668,7 +1748,11 @@ public actor MusicDatabase {
             try Self.bind(artworkID.uuidString.lowercased(), at: 3, to: update)
             try Self.stepDone(update, connection: connection)
             guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Album artwork") }
-            try incrementRevision()
+            let changes = [
+                Self.revisionChange(entityType: "artwork", entityID: artworkID.uuidString.lowercased(), fieldName: "local_path", oldValue: oldPath, newValue: trimmedPath),
+                Self.revisionChange(entityType: "artwork", entityID: artworkID.uuidString.lowercased(), fieldName: "source", oldValue: oldSource, newValue: source)
+            ].compactMap { $0 }
+            try incrementRevision(changes: changes)
         }
 
         guard let ownerID, let role else { throw DatabaseError.invalidIdentifier("Album artwork owner") }
@@ -1816,17 +1900,55 @@ public actor MusicDatabase {
         }
     }
 
-    private func incrementRevision() throws {
+    private func incrementRevision(changes: [RevisionChange] = []) throws {
         try Self.execute("UPDATE catalogue_state SET catalogue_revision = catalogue_revision + 1 WHERE singleton_id = 1;", on: connection)
         let revision = try currentRevision()
+        // Field-level rows intentionally reuse the marker timestamp so older
+        // schema readers can continue to associate them with their revision.
+        // Make that timestamp strictly increasing to avoid ambiguity when
+        // several edits land in the same wall-clock millisecond.
+        let latestEvent = try Self.prepare("SELECT COALESCE(MAX(occurred_at), 0) FROM edit_event;", on: connection)
+        defer { sqlite3_finalize(latestEvent) }
+        guard sqlite3_step(latestEvent) == SQLITE_ROW else { throw DatabaseError.invalidOperation("Unable to read latest catalogue activity timestamp") }
+        let latestOccurredAt = Self.int(at: 0, from: latestEvent) ?? 0
+        let occurredAt = max(Self.milliseconds(Date()), latestOccurredAt + 1)
         let statement = try Self.prepare("INSERT INTO edit_event (id, entity_type, entity_id, field_name, old_value, new_value, source, occurred_at) VALUES (?, 'catalogue', '1', 'catalogue_revision', ?, ?, 'mac', ?);", on: connection)
         defer { sqlite3_finalize(statement) }
         try Self.bind(UUID().uuidString.lowercased(), at: 1, to: statement)
         try Self.bind(String(revision - 1), at: 2, to: statement)
         try Self.bind(String(revision), at: 3, to: statement)
-        try Self.bind(Self.milliseconds(Date()), at: 4, to: statement)
+        try Self.bind(occurredAt, at: 4, to: statement)
         try Self.stepDone(statement, connection: connection)
+
+        guard !changes.isEmpty else {
+            try rebuildCatalogueSearchIndex()
+            return
+        }
+        let changeStatement = try Self.prepare("INSERT INTO edit_event (id, entity_type, entity_id, field_name, old_value, new_value, source, occurred_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?);", on: connection)
+        defer { sqlite3_finalize(changeStatement) }
+        for change in changes {
+            sqlite3_reset(changeStatement)
+            sqlite3_clear_bindings(changeStatement)
+            try Self.bind(UUID().uuidString.lowercased(), at: 1, to: changeStatement)
+            try Self.bind(change.entityType, at: 2, to: changeStatement)
+            try Self.bind(change.entityID, at: 3, to: changeStatement)
+            try Self.bind(change.fieldName, at: 4, to: changeStatement)
+            try Self.bind(change.oldValue, at: 5, to: changeStatement)
+            try Self.bind(change.newValue, at: 6, to: changeStatement)
+            try Self.bind(change.source, at: 7, to: changeStatement)
+            try Self.bind(occurredAt, at: 8, to: changeStatement)
+            try Self.stepDone(changeStatement, connection: connection)
+        }
         try rebuildCatalogueSearchIndex()
+    }
+
+    private static func revisionChange(entityType: String, entityID: String, fieldName: String, oldValue: String?, newValue: String?, source: String = "mac") -> RevisionChange? {
+        guard oldValue != newValue else { return nil }
+        return .init(entityType: entityType, entityID: entityID, fieldName: fieldName, oldValue: oldValue, newValue: newValue, source: source)
+    }
+
+    private static func boolValue(_ value: Bool?) -> String? {
+        value.map { $0 ? "true" : "false" }
     }
 
     private func rebuildCatalogueSearchIndex() throws {

@@ -1,6 +1,6 @@
 # Music Library — Implementation Specification
 
-Date: 10 August 2026
+Date: 11 August 2026
 Companion document: [BUILD_PLAN.md](BUILD_PLAN.md)
 
 Operational continuation guide: [HANDOFF.md](HANDOFF.md)
@@ -56,7 +56,7 @@ Completed and verified:
 - JSON export UI complete: Settings opens a standard macOS Save dialog to export the current catalogue's portable JSON representation. Export does not copy audio or alter catalogue data.
 - CSV export complete: Settings can export album-level catalogue data as quoted CSV for spreadsheet use, including edition, release, country, catalogue, and availability fields.
 - Album rating/favourite UI complete: add/edit forms expose the agreed shared 1–5 rating and favourite marker, album detail displays the saved values, and the published read-only album payload carries the rating.
-- Basic catalogue activity history complete: every successful revision increment records a transactional Mac-originated event, and Settings shows recent revision/time rows. This is an audit indicator, not yet a field-by-field change diff or undo system.
+- Field-level catalogue activity history complete: every successful revision increment records a transactional Mac-originated revision marker. Album edits, track edits, and artwork add/migrate operations also record one `edit_event` row per changed field with old/new values. Settings shows the latest marker and field diffs. The existing schema version 16 and snapshot contract are unchanged; marker and field rows share a strictly increasing millisecond timestamp so rapid edits remain associated with the correct revision. This is audit history only, not undo/replay.
 - Import attention routing complete: Settings lists failed, cancelled, or error-containing import batches and routes **Review Import** directly to the selected Import Inbox batch. It does not retry or alter a scan automatically.
 - Folder-scope foundation complete: every registered music folder is explicitly **This Mac only** or **NAS / iPad music**. The Mac Album list filters All Music, NAS / iPad Music, or This Mac Only; an album with assets under both roots appears in both source views. Published snapshots include only NAS / iPad albums and assets, so a local-only recording is never offered to the companion. Settings exposes an explicit per-folder scope picker and Rescan action. The Library Changes list intentionally shows only the most recent scan for each registered folder while retaining earlier batches internally for audit/debugging.
 - Safe rescan reconciliation complete: after an explicit completed scan of an available registered folder, schema 16 compares the discovered root-relative paths with existing asset references for that root and records a review list of missing files. A user must explicitly confirm each result before its catalogue asset is marked `missing`. Confirmation retains the track and all catalogue history and never deletes, moves, or modifies source media. An offline or unavailable root is never reconciled and is therefore never interpreted as deleted.
@@ -339,6 +339,8 @@ Implement these with UUID primary keys and appropriate foreign keys:
 - `catalogue_state(singleton_id, schema_version, catalogue_revision, last_published_revision, last_published_at)`.
 
 Use an FTS5 index for album titles, aliases, edition labels, track titles, contributor names, catalogue numbers, barcodes, box names, and location path text. The current implementation rebuilds this index transactionally after migration and each successful catalogue revision, which favors correctness and straightforward recovery. If catalogue size later makes full rebuilds expensive, replace it with incremental triggers or a batched update without changing the indexed fields or query semantics.
+
+`edit_event` is also the Mac audit stream. A `catalogue/catalogue_revision` row is the marker for each committed revision; related album, track, and artwork rows use the same `occurred_at` value and store field-level old/new text. `MusicDatabase` makes marker timestamps strictly increasing to avoid ambiguity when consecutive writes occur within one wall-clock millisecond. The read-only snapshot remains unchanged because this history is local audit data rather than published catalogue content.
 
 ### Managed artwork migration
 

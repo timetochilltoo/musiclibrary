@@ -134,6 +134,9 @@ struct MusicDatabaseTests {
         #expect(updated.id == album.id)
         #expect(updated.displayTitle == "Corrected — Japan version")
         #expect(try await database.currentRevision() == 2)
+        let activity = try await database.recentCatalogueActivity(limit: 20)
+        #expect(activity.contains { $0.entityType == "album" && $0.fieldName == "title" && $0.oldValue == "Original" && $0.newValue == "Corrected" && $0.revision == 2 })
+        #expect(activity.contains { $0.entityType == "album" && $0.fieldName == "edition_label" && $0.oldValue == "1980 pressing" && $0.newValue == "Japan version" && $0.revision == 2 })
     }
 
     @Test("Catalogue search finds albums through aliases, tracks, contributors, boxes, and locations")
@@ -198,6 +201,9 @@ struct MusicDatabaseTests {
         #expect(correctedContributor.id == contributor.id)
         #expect(try await database.trackContributors(trackID: track.id).first?.contributor.name == "Corrected artist")
         #expect(try await database.currentRevision() == 7)
+        let activity = try await database.recentCatalogueActivity(limit: 30)
+        #expect(activity.contains { $0.entityType == "track" && $0.entityID == track.id.description && $0.fieldName == "title" && $0.oldValue == "日本語の曲名" && $0.newValue == "Corrected title" && $0.revision == 6 })
+        #expect(activity.contains { $0.entityType == "track" && $0.fieldName == "rating" && $0.oldValue == nil && $0.newValue == "5" && $0.revision == 6 })
     }
 
     @Test("Contributor credits can be removed without deleting their catalogue person")
@@ -349,6 +355,9 @@ struct MusicDatabaseTests {
         #expect(loaded.localPath == "/managed/cover.jpg")
         #expect(loaded.source == "managed-migrated")
         #expect(try await database.currentRevision() == 3)
+        let activity = try await database.recentCatalogueActivity(limit: 30)
+        #expect(activity.contains { $0.entityType == "artwork" && $0.entityID == legacy.id.uuidString.lowercased() && $0.fieldName == "local_path" && $0.oldValue == "/legacy/cover.jpg" && $0.newValue == "/managed/cover.jpg" && $0.revision == 3 })
+        #expect(activity.contains { $0.entityType == "artwork" && $0.fieldName == "source" && $0.oldValue == "folder-artwork" && $0.newValue == "managed-migrated" && $0.revision == 3 })
     }
 
     @Test("Storage roots preserve bookmarks and offline state without deletion")

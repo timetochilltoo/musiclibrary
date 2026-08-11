@@ -588,12 +588,25 @@ private struct StorageRootList: View {
             }
             if !library.recentCatalogueActivity.isEmpty {
                 Section("Recent Catalogue Activity") {
-                    Text("Each row records one committed catalogue revision. Detailed field-by-field history is not recorded yet.")
+                    Text("Each row records a committed catalogue revision. Edited fields show the previous and new value; older operations may show only the revision marker.")
                         .font(.caption).foregroundStyle(.secondary)
                     ForEach(library.recentCatalogueActivity) { activity in
-                        HStack {
-                            Text("Revision \(activity.revision)")
-                            Spacer()
+                        HStack(alignment: .top) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                if activity.isRevisionMarker {
+                                    Text("Revision \(activity.revision)")
+                                } else {
+                                    Text("\(activity.entityType.capitalized) · \(activity.fieldName.replacingOccurrences(of: "_", with: " "))")
+                                    Text("\(activity.oldValue ?? "—") → \(activity.newValue ?? "—")")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(2)
+                                    Text("Revision \(activity.revision)")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
                             Text(activity.occurredAt.formatted(date: .abbreviated, time: .shortened))
                                 .font(.caption).foregroundStyle(.secondary)
                         }
