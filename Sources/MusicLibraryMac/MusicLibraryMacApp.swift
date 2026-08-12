@@ -269,15 +269,33 @@ private struct LibraryShellView: View {
             .overlay { if library.isReady && library.boxSets.isEmpty { ContentUnavailableView("No box sets", systemImage: "shippingbox", description: Text("Create a box set to group its member albums at one location.")) } }
         case .importInbox:
             List(latestImportBatchesByRoot, selection: $selectedImportBatchID) { batch in
-                VStack(alignment: .leading) {
-                    Text(batch.sourceDescription ?? "Music folder").lineLimit(1)
-                    Text("\(batch.candidateCount) audio files · \(batch.errorCount) errors · \(batch.status.rawValue)").font(.caption).foregroundStyle(.secondary)
-                }.tag(batch.id)
+                HStack(spacing: 10) {
+                    Image(systemName: importBatchSymbol(batch))
+                        .font(.title3)
+                        .foregroundStyle(importBatchColor(batch))
+                        .frame(width: 28)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(batch.sourceDescription ?? "Music folder").font(.headline).lineLimit(1)
+                        Text("\(batch.candidateCount) audio files · \(batch.errorCount) errors · \(batch.status.rawValue.capitalized)")
+                            .font(.caption).foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                }
+                .padding(.vertical, 5)
+                .tag(batch.id)
             }
             .overlay { if library.isReady && latestImportBatchesByRoot.isEmpty { ContentUnavailableView("No library changes", systemImage: "tray", description: Text("Rescan a registered music folder when you want to review new or changed albums.")) } }
         case .playlists:
             List(library.playlists, selection: $selectedPlaylistID) { playlist in
-                Text(playlist.name)
+                HStack(spacing: 10) {
+                    Image(systemName: "music.note.list")
+                        .font(.title3)
+                        .foregroundStyle(.tint)
+                        .frame(width: 30, height: 30)
+                        .background(.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 7))
+                    Text(playlist.name).font(.headline).lineLimit(1)
+                }
+                    .padding(.vertical, 5)
                     .tag(playlist.id)
                     .contextMenu {
                         Button("Rename") { playlistToRename = playlist }
@@ -295,17 +313,14 @@ private struct LibraryShellView: View {
             }
             .overlay { if library.isReady && library.playlists.isEmpty { ContentUnavailableView("No playlists", systemImage: "music.note.list", description: Text("Create a playlist, then add tracks from an album.")) } }
         case .settings:
-            StorageRootList(
-                library: library,
-                onShowAlbum: { albumID in
-                    selectedAlbumID = albumID
-                    section = .albums
-                },
-                onShowImportBatch: { batchID in
-                    selectedImportBatchID = batchID
-                    section = .importInbox
-                }
-            )
+            List {
+                Label("Overview", systemImage: "rectangle.grid.2x2")
+                Label("Publishing and Backup", systemImage: "externaldrive.badge.timemachine")
+                Label("Music Folders", systemImage: "externaldrive.connected.to.line.below")
+                Label("Library Health", systemImage: "checkmark.shield")
+                Label("Recovery and Activity", systemImage: "clock.arrow.circlepath")
+            }
+            .foregroundStyle(.secondary)
         default:
             ContentUnavailableView(section?.title ?? "Music Library", systemImage: section?.symbol ?? "music.note")
         }
@@ -362,8 +377,35 @@ private struct LibraryShellView: View {
         }
     }
 
+    private func importBatchSymbol(_ batch: ImportBatch) -> String {
+        if batch.status == .scanning { return "arrow.triangle.2.circlepath" }
+        if batch.status == .failed || batch.errorCount > 0 { return "exclamationmark.triangle.fill" }
+        if batch.status == .cancelled { return "xmark.circle.fill" }
+        return "checkmark.circle.fill"
+    }
+
+    private func importBatchColor(_ batch: ImportBatch) -> Color {
+        if batch.status == .scanning { return .blue }
+        if batch.status == .failed || batch.errorCount > 0 { return .orange }
+        if batch.status == .cancelled { return .secondary }
+        return .green
+    }
+
     @ViewBuilder private var detail: some View {
-        if section == .contributors, let selectedContributorID, let contributor = library.contributors.first(where: { $0.id == selectedContributorID }) {
+        if section == .settings {
+            StorageRootList(
+                library: library,
+                onShowAlbum: { albumID in
+                    selectedAlbumID = albumID
+                    section = .albums
+                },
+                onShowImportBatch: { batchID in
+                    selectedImportBatchID = batchID
+                    section = .importInbox
+                }
+            )
+            .navigationTitle("Settings")
+        } else if section == .contributors, let selectedContributorID, let contributor = library.contributors.first(where: { $0.id == selectedContributorID }) {
             ContributorDetail(library: library, contributor: contributor, onShowAlbum: { albumID in selectedAlbumID = albumID; section = .albums })
         } else if section == .boxSets, let selectedBoxSetID, let box = library.boxSets.first(where: { $0.id == selectedBoxSetID }) {
             BoxSetDetail(library: library, boxSet: box)
@@ -384,6 +426,14 @@ private struct LibraryShellView: View {
             PlaylistDetail(library: library, playback: playback, playlist: playlist)
         } else if let selectedAlbumID, let album = library.albums.first(where: { $0.id == selectedAlbumID }) {
             AlbumDetail(library: library, playback: playback, album: album, locations: library.locations, onEdit: { albumToEdit = album })
+        } else if section == .importInbox {
+            ContentUnavailableView("Select a music folder", systemImage: "tray", description: Text("Choose a registered folder to review its latest scan and proposed changes."))
+        } else if section == .playlists {
+            ContentUnavailableView("Select a playlist", systemImage: "music.note.list", description: Text("Choose a playlist to play or organize its tracks."))
+        } else if section == .contributors {
+            ContentUnavailableView("Select a contributor", systemImage: "person.crop.circle", description: Text("Contributor credits and albums will appear here."))
+        } else if section == .boxSets {
+            ContentUnavailableView("Select a box set", systemImage: "shippingbox", description: Text("Box-set members and placement will appear here."))
         } else {
             ContentUnavailableView("Select an album", systemImage: "opticaldisc", description: Text("Album details will appear here."))
         }
@@ -770,8 +820,44 @@ private struct CandidateMetadataSummary: View {
 private struct CandidateRow: View {
     let candidate: ImportCandidate
     var body: some View {
-        if let payload = candidate.payload { VStack(alignment: .leading) { Text(payload.relativePath); CandidateMetadataSummary(candidate: candidate, fallback: payload.contentTypeIdentifier) } }
-        else { Text(candidate.errorMessage ?? "Unreadable item").foregroundStyle(.secondary) }
+        if let payload = candidate.payload {
+            VStack(alignment: .leading, spacing: 5) {
+                Label(payload.relativePath, systemImage: "waveform")
+                    .lineLimit(2)
+                DisclosureGroup("Technical details") {
+                    CandidateMetadataSummary(candidate: candidate, fallback: payload.contentTypeIdentifier)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, 4)
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+            .padding(.vertical, 4)
+        } else {
+            Label(candidate.errorMessage ?? "Unreadable item", systemImage: "exclamationmark.triangle")
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+private struct ScanMetric: View {
+    let symbol: String
+    let title: String
+    let value: String
+    let tint: Color
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: symbol)
+                .font(.title3)
+                .foregroundStyle(tint)
+                .frame(width: 24)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title).font(.caption).foregroundStyle(.secondary)
+                Text(value).font(.headline.monospacedDigit()).lineLimit(1)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -803,7 +889,34 @@ private struct StorageRootList: View {
 
     var body: some View {
         List {
-            Section("Snapshot publishing") {
+            Section {
+                HStack(spacing: 12) {
+                    SettingsStatusCard(
+                        symbol: "square.stack.3d.up",
+                        title: "Catalogue",
+                        value: "Revision \(library.catalogueRevision)",
+                        detail: library.isSnapshotPublishPending ? "Unpublished changes" : "Up to date",
+                        tint: library.isSnapshotPublishPending ? .orange : .green
+                    )
+                    SettingsStatusCard(
+                        symbol: "externaldrive",
+                        title: "Music Folders",
+                        value: String(library.storageRoots.count),
+                        detail: "\(library.storageRoots.filter { $0.status == .available }.count) available",
+                        tint: library.storageRoots.contains { $0.status != .available } ? .orange : .blue
+                    )
+                    SettingsStatusCard(
+                        symbol: library.libraryHealthIssues.isEmpty ? "checkmark.shield.fill" : "exclamationmark.shield.fill",
+                        title: "Library Health",
+                        value: library.libraryHealthIssues.isEmpty ? "Healthy" : "\(library.libraryHealthIssues.count) items",
+                        detail: library.libraryHealthIssues.isEmpty ? "No repairs detected" : "Review below",
+                        tint: library.libraryHealthIssues.isEmpty ? .green : .orange
+                    )
+                }
+                .padding(.vertical, 8)
+            }
+
+            Section {
                 Text(library.snapshotPublishStatus).foregroundStyle(.secondary)
                 if let path = library.snapshotDestinationPath { Text(path).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
                 Text("Catalogue revision \(library.catalogueRevision) · last published \(library.lastPublishedRevision.map(String.init) ?? "never")\(library.isSnapshotPublishPending ? " · pending" : "")").font(.caption).foregroundStyle(.secondary)
@@ -825,13 +938,17 @@ private struct StorageRootList: View {
                     }
                 }.disabled(library.snapshotDestinationPath == nil)
                 Button("Restore Master Backup…", role: .destructive) { showsMasterRestorePicker = true }
+            } header: {
+                Label("Publishing and Backup", systemImage: "externaldrive.badge.timemachine")
             }
-            Section("Export") {
+            Section {
                 Text("Export a portable JSON view of the current catalogue. Source media files are never copied.").font(.caption).foregroundStyle(.secondary)
                 Button("Export Catalogue JSON…", systemImage: "square.and.arrow.up") { exportCatalogue() }
                 Button("Export Catalogue CSV…", systemImage: "tablecells") { exportCatalogueCSV() }
+            } header: {
+                Label("Export", systemImage: "square.and.arrow.up")
             }
-            Section("Music Folders") {
+            Section {
                 Button("Recheck Library Health", systemImage: "arrow.clockwise") {
                     Task {
                         do { try await library.recheckLibraryHealth() }
@@ -893,6 +1010,8 @@ private struct StorageRootList: View {
                         }
                     }
                 }
+            } header: {
+                Label("Music Folders", systemImage: "externaldrive.connected.to.line.below")
             }
             if !library.deletedAlbums.isEmpty {
                 Section("Recently Deleted") {
@@ -929,7 +1048,7 @@ private struct StorageRootList: View {
                     }
                 }
             }
-            Section("Library Health") {
+            Section {
                 if library.libraryHealthIssues.isEmpty {
                     Label("No catalogue repair items are currently detected.", systemImage: "checkmark.circle.fill")
                         .foregroundStyle(.green)
@@ -943,6 +1062,8 @@ private struct StorageRootList: View {
                         }
                     }
                 }
+            } header: {
+                Label("Library Health", systemImage: "checkmark.shield")
             }
             if !importBatchesNeedingAttention.isEmpty {
                 Section("Import Inbox Attention") {
@@ -1118,6 +1239,33 @@ private struct StorageRootList: View {
     }
 }
 
+private struct SettingsStatusCard: View {
+    let symbol: String
+    let title: String
+    let value: String
+    let detail: String
+    let tint: Color
+
+    var body: some View {
+        HStack(spacing: 11) {
+            Image(systemName: symbol)
+                .font(.title2)
+                .foregroundStyle(tint)
+                .frame(width: 42, height: 42)
+                .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.caption).foregroundStyle(.secondary)
+                Text(value).font(.headline).lineLimit(1)
+                Text(detail).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.quaternary.opacity(0.65), in: RoundedRectangle(cornerRadius: 12))
+    }
+}
+
 private struct StorageRootRenameEditor: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var library: LibraryStore
@@ -1221,22 +1369,58 @@ private struct PlaylistDetail: View {
     let playlist: Playlist
     @State private var items: [PlaylistItem] = []
     var body: some View {
-        List(items) { item in
-            HStack {
-                Text("\(item.position). \(item.title)")
-                Spacer()
-                Button("Play", systemImage: "play.fill") { play(item) }
-                    .labelStyle(.iconOnly)
-                Button("Move Earlier", systemImage: "arrow.up") { move(item, to: item.position - 1) }
-                    .labelStyle(.iconOnly).disabled(item.position == 1)
-                Button("Move Later", systemImage: "arrow.down") { move(item, to: item.position + 1) }
-                    .labelStyle(.iconOnly).disabled(item.position == items.count)
-                Button("Remove", systemImage: "trash", role: .destructive) { remove(item) }
-                    .labelStyle(.iconOnly)
+        ScrollView {
+            LazyVStack(spacing: 0) {
+                HStack(spacing: 18) {
+                    Image(systemName: "music.note.list")
+                        .font(.system(size: 42))
+                        .foregroundStyle(.tint)
+                        .frame(width: 92, height: 92)
+                        .background(.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(playlist.name).font(.largeTitle.bold())
+                        Text("\(items.count) track\(items.count == 1 ? "" : "s")")
+                            .foregroundStyle(.secondary)
+                        Button("Play Playlist", systemImage: "play.fill") { play() }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(items.isEmpty)
+                    }
+                    Spacer()
+                }
+                .padding(24)
+                Divider()
+
+                ForEach(items) { item in
+                    HStack(spacing: 12) {
+                        Text(String(item.position))
+                            .font(.callout.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .frame(width: 30, alignment: .trailing)
+                        Button("Play \(item.title)", systemImage: "play.fill") { play(item) }
+                            .labelStyle(.iconOnly)
+                            .buttonStyle(.borderless)
+                            .help("Play this track and continue through the playlist")
+                        Text(item.title).font(.body.weight(.medium)).lineLimit(2)
+                        Spacer()
+                        Button("Move Earlier", systemImage: "arrow.up") { move(item, to: item.position - 1) }
+                            .labelStyle(.iconOnly).disabled(item.position == 1).help("Move earlier")
+                        Button("Move Later", systemImage: "arrow.down") { move(item, to: item.position + 1) }
+                            .labelStyle(.iconOnly).disabled(item.position == items.count).help("Move later")
+                        Button("Remove from Playlist", systemImage: "trash", role: .destructive) { remove(item) }
+                            .labelStyle(.iconOnly).help("Remove from playlist")
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 11)
+                    Divider().padding(.leading, 66)
+                }
             }
         }
         .navigationTitle(playlist.name)
-        .toolbar { Button("Play", systemImage: "play.fill") { play() }.disabled(items.isEmpty) }
+        .overlay {
+            if items.isEmpty {
+                ContentUnavailableView("Empty playlist", systemImage: "music.note.list", description: Text("Add tracks from an album, then play them here."))
+            }
+        }
         .task(id: playlist.id) { await load() }
     }
 
@@ -1311,10 +1495,13 @@ private struct ImportBatchDetail: View {
     var body: some View {
         List {
             Section("Scan") {
-                LabeledContent("Status", value: batch.status.rawValue.capitalized)
-                LabeledContent("Files processed", value: String(batch.processedCount))
-                LabeledContent("Audio candidates", value: String(batch.candidateCount))
-                LabeledContent("Errors", value: String(batch.errorCount))
+                HStack(spacing: 22) {
+                    ScanMetric(symbol: scanStatusSymbol, title: "Status", value: batch.status.rawValue.capitalized, tint: scanStatusColor)
+                    ScanMetric(symbol: "doc.on.doc", title: "Processed", value: String(batch.processedCount), tint: .secondary)
+                    ScanMetric(symbol: "waveform", title: "Audio", value: String(batch.candidateCount), tint: .blue)
+                    ScanMetric(symbol: batch.errorCount == 0 ? "checkmark.circle" : "exclamationmark.triangle", title: "Errors", value: String(batch.errorCount), tint: batch.errorCount == 0 ? .green : .orange)
+                }
+                .padding(.vertical, 8)
                 if let error = batch.errorSummary { Text(error).foregroundStyle(.secondary) }
                 if let progress = library.importScanProgress[batch.id] {
                     LabeledContent("Items checked", value: String(progress.examinedItemCount))
@@ -1325,17 +1512,18 @@ private struct ImportBatchDetail: View {
                     ProgressView()
                 }
                 if batch.status == .scanning { Button("Cancel Scan", role: .destructive) { Task { await library.cancelImportScan(batch.id) } } }
-                if batch.status != .scanning { Button("Retry Scan", systemImage: "arrow.clockwise") {
-                    Task {
-                        do {
-                            let newBatchID = try await library.retryImportScan(batch.id)
-                            onRescanStarted(newBatchID)
-                        }
-                        catch { library.presentError(error) }
-                    }
-                } }
                 if batch.status != .scanning {
-                    Button("Rescan and Read Metadata for New Files", systemImage: "arrow.clockwise.circle") {
+                    HStack {
+                        Button("Rescan", systemImage: "arrow.clockwise") {
+                            Task {
+                                do {
+                                    let newBatchID = try await library.retryImportScan(batch.id)
+                                    onRescanStarted(newBatchID)
+                                }
+                                catch { library.presentError(error) }
+                            }
+                        }
+                        Button("Rescan and Review New Files", systemImage: "text.magnifyingglass") {
                         Task {
                             do {
                                 let newBatchID = try await library.retryImportScan(batch.id)
@@ -1348,10 +1536,11 @@ private struct ImportBatchDetail: View {
                                 library.presentError(error)
                             }
                         }
+                        }
+                        .buttonStyle(.borderedProminent)
                     }
-                    Text("Runs a fresh scan first, then reads embedded metadata only for files not already in the catalogue.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Text("Review New Files performs the same safe rescan, then reads metadata only for paths not already represented in the catalogue.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 if batch.status != .scanning && !unregisteredCandidates.isEmpty { Button("Read Metadata for New Files", systemImage: "text.magnifyingglass") {
                     Task {
@@ -1404,19 +1593,16 @@ private struct ImportBatchDetail: View {
                 ForEach(proposals) { proposal in
                     HStack(alignment: .top, spacing: 14) {
                         proposalArtwork(for: proposal)
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack {
-                                Text(proposal.title).font(.headline)
-                                Spacer(minLength: 8)
-                                Text(proposal.status.rawValue.capitalized).font(.caption).foregroundStyle(.secondary)
-                            }
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(proposal.title).font(.headline).lineLimit(2)
                             Text(proposal.artist ?? "Unknown artist").font(.subheadline)
-                            Text("Source: \(proposal.provenance)").font(.caption).foregroundStyle(.secondary)
-                            Text(proposalSummary(proposal)).font(.caption2).foregroundStyle(.secondary)
-                            Text("Approval only marks this proposal for later catalogue creation.")
-                                .font(.caption2).foregroundStyle(.secondary)
-                            if let albumID = proposal.createdAlbumID {
-                                Text("Created catalogue album: \(albumID.description)")
+                            HStack(spacing: 8) {
+                                Label(proposal.provenance, systemImage: "tag")
+                                Text(proposalSummary(proposal))
+                            }
+                            .font(.caption).foregroundStyle(.secondary)
+                            if proposal.createdAlbumID != nil {
+                                Label("Catalogue edition created", systemImage: "checkmark.circle.fill")
                                     .font(.caption).foregroundStyle(.green)
                             }
                         }
@@ -1455,9 +1641,17 @@ private struct ImportBatchDetail: View {
                                 Button("Attach to Existing Edition…", systemImage: "link.badge.plus") { proposalToAttach = proposal }
                             }
                         }
-                        .frame(minWidth: 230, alignment: .trailing)
+                        .frame(minWidth: 210, alignment: .trailing)
                     }
-                    .padding(.vertical, 8)
+                    .padding(12)
+                    .background(.quaternary.opacity(0.65), in: RoundedRectangle(cornerRadius: 12))
+                    .overlay(alignment: .topTrailing) {
+                        Text(proposal.status.rawValue.capitalized)
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+                            .padding(8)
+                    }
+                    .padding(.vertical, 4)
                 }
             }
             if !unregisteredCandidates.isEmpty {
@@ -1549,6 +1743,24 @@ private struct ImportBatchDetail: View {
             ExistingAlbumAttachmentView(library: library, proposal: proposal, onAttached: { await load() })
         }
         .sheet(item: $selectionToReview) { selection in ExternalMetadataComparisonView(library: library, selection: selection, proposal: proposals.first(where: { $0.id == selection.importProposalID }), onApplied: { await load() }) }
+    }
+
+    private var scanStatusSymbol: String {
+        switch batch.status {
+        case .scanning: "arrow.triangle.2.circlepath"
+        case .completed: "checkmark.circle.fill"
+        case .failed: "exclamationmark.triangle.fill"
+        case .cancelled: "xmark.circle.fill"
+        }
+    }
+
+    private var scanStatusColor: Color {
+        switch batch.status {
+        case .scanning: .blue
+        case .completed: .green
+        case .failed: .red
+        case .cancelled: .secondary
+        }
     }
 
     private func load() async {
