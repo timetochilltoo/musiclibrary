@@ -297,6 +297,20 @@ struct ImportScannerTests {
         try await MasterBackupArchive.verify(manifest, in: archiveDirectory)
     }
 
+    @Test("Master backup verification rejects traversal and non-canonical manifest names")
+    func rejectsUnsafeMasterBackupManifest() async throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let manifest = MasterBackupManifest(revision: 1, createdAt: .now, fileName: "../outside.sqlite", sha256: "unused")
+        do {
+            try await MasterBackupArchive.verify(manifest, in: directory)
+            #expect(Bool(false), "unsafe manifest unexpectedly verified")
+        } catch let error as DatabaseError {
+            #expect(error == .invalidOperation("Master backup manifest contains an unsafe file name."))
+        }
+    }
+
     @Test("Master backup retention keeps the newest backup from each recent day")
     func retainsDailyMasterBackups() throws {
         let directory = temporaryDirectory()
@@ -335,6 +349,20 @@ struct ImportScannerTests {
         for revision in 1...5 { _ = try SnapshotPublisher.publish(json: "{\"format\":\"music-library-json\",\"revision\":\(revision)}", revision: Int64(revision), to: directory) }
         let files = try FileManager.default.contentsOfDirectory(atPath: directory.path).filter { $0.hasPrefix("catalogue-") && $0.hasSuffix(".json") }
         #expect(files.sorted() == ["catalogue-2.json", "catalogue-3.json", "catalogue-4.json", "catalogue-5.json"])
+    }
+
+    @Test("Snapshot publishing refuses conflicting content for an existing revision")
+    func rejectsConflictingSnapshotRevision() throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        _ = try SnapshotPublisher.publish(json: "one", revision: 7, to: directory)
+        do {
+            _ = try SnapshotPublisher.publish(json: "two", revision: 7, to: directory)
+            #expect(Bool(false), "conflicting revision unexpectedly published")
+        } catch let error as SnapshotPublishError {
+            #expect(error == .conflictingRevision(7))
+        }
+        #expect(try String(contentsOf: directory.appending(path: "catalogue-7.json"), encoding: .utf8) == "one")
     }
 
     @Test("Publication scheduling ignores initial and read-only observations but coalesces mutations")

@@ -665,7 +665,7 @@ public final class LibraryStore: ObservableObject {
         let archive = manifestURL.deletingLastPathComponent()
         let manifest = try JSONDecoder().decode(MasterBackupManifest.self, from: Data(contentsOf: manifestURL))
         try await MasterBackupArchive.verify(manifest, in: archive)
-        let backupURL = archive.appending(path: manifest.fileName)
+        let backupURL = try MasterBackupArchive.validatedBackupURL(for: manifest, in: archive)
         let recoveryDirectory = catalogueURL.deletingLastPathComponent().appending(path: "Recovery", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: recoveryDirectory, withIntermediateDirectories: true)
         let recoveryURL = recoveryDirectory.appending(path: "MusicLibrary-before-restore-\(Int64(Date.now.timeIntervalSince1970)).sqlite")

@@ -126,7 +126,7 @@ public extension SnapshotClient {
         guard FileManager.default.fileExists(atPath: manifestURL.path) else { return nil }
         let manifest = try JSONDecoder().decode(ReadOnlySnapshotManifest.self, from: Data(contentsOf: manifestURL))
         guard manifest.format == "music-library-snapshot-json-v1" else { throw SnapshotClientError.incompatibleFormat }
-        guard !manifest.fileName.contains("/"), !manifest.fileName.contains("..") else { throw SnapshotClientError.unsafeFileName }
+        guard SnapshotClient.isSafeSnapshotFileName(manifest.fileName) else { throw SnapshotClientError.unsafeFileName }
         let data = try Data(contentsOf: cacheDirectory.appending(path: manifest.fileName))
         let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
         guard hash == manifest.sha256 else { throw SnapshotClientError.checksumMismatch }

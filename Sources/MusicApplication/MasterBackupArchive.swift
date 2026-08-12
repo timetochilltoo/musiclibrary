@@ -19,6 +19,24 @@ public struct MasterBackupManifest: Codable, Equatable, Sendable {
 }
 
 public enum MasterBackupArchive {
+    /// Resolve a manifest's payload only after validating the name and keeping
+    /// it inside the selected backup directory. Manifests are stored outside
+    /// the database and must not be allowed to turn restore/retention into a
+    /// path traversal primitive.
+    public static func validatedBackupURL(for manifest: MasterBackupManifest, in directory: URL) throws -> URL {
+        guard manifest.format == "music-library-master-backup-v1" else {
+            throw DatabaseError.invalidOperation("Unsupported master backup format.")
+        }
+        guard manifest.fileName.range(of: #"^MusicLibrary-master-r[0-9]+-[0-9]+\.sqlite$"#, options: .regularExpression) != nil else {
+            throw DatabaseError.invalidOperation("Master backup manifest contains an unsafe file name.")
+        }
+        let candidate = directory.appending(path: manifest.fileName)
+        guard let relative = RegisteredPathSecurity.relativePath(of: candidate, within: directory), relative == manifest.fileName else {
+            throw DatabaseError.invalidOperation("Master backup manifest contains an unsafe file name.")
+        }
+        return candidate
+    }
+
     public static func create(database: MusicDatabase, in directory: URL, now: Date = .now) async throws -> MasterBackupManifest {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let revision = try await database.currentRevision()
@@ -38,8 +56,7 @@ public enum MasterBackupArchive {
     }
 
     public static func verify(_ manifest: MasterBackupManifest, in directory: URL) async throws {
-        guard manifest.format == "music-library-master-backup-v1" else { throw DatabaseError.invalidOperation("Unsupported master backup format.") }
-        let fileURL = directory.appending(path: manifest.fileName)
+        let fileURL = try validatedBackupURL(for: manifest, in: directory)
         let data = try Data(contentsOf: fileURL)
         let checksum = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
         guard checksum == manifest.sha256 else { throw DatabaseError.invalidOperation("Master backup checksum failed.") }
@@ -52,6 +69,7 @@ public enum MasterBackupArchive {
         let manifests = files.filter { $0.lastPathComponent.hasPrefix("MusicLibrary-master-") && $0.lastPathComponent.hasSuffix(".manifest.json") }
             .compactMap { url -> (URL, MasterBackupManifest)? in
                 guard let manifest = try? JSONDecoder().decode(MasterBackupManifest.self, from: Data(contentsOf: url)) else { return nil }
+                guard (try? validatedBackupURL(for: manifest, in: directory)) != nil else { return nil }
                 return (url, manifest)
             }
             .sorted { $0.1.createdAt > $1.1.createdAt }
@@ -67,7 +85,9 @@ public enum MasterBackupArchive {
             if months.count < monthly, months.insert(monthKey).inserted { keep.insert(manifest.fileName) }
         }
         for (manifestURL, manifest) in manifests where !keep.contains(manifest.fileName) {
-            try? FileManager.default.removeItem(at: directory.appending(path: manifest.fileName))
+            if let backupURL = try? validatedBackupURL(for: manifest, in: directory) {
+                try? FileManager.default.removeItem(at: backupURL)
+            }
             try? FileManager.default.removeItem(at: manifestURL)
         }
     }

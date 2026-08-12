@@ -43,6 +43,19 @@ func snapshotValidation() throws {
     let payload = Data("{}".utf8); try payload.write(to: source.appending(path: "catalogue-1.json")); let good = SHA256.hash(data: payload).map { String(format: "%02x", $0) }.joined(); let manifest = ReadOnlySnapshotManifest(format: "music-library-snapshot-json-v1", revision: 1, fileName: "catalogue-1.json", sha256: good); try JSONEncoder().encode(manifest).write(to: source.appending(path: "manifest.json")); let client = SnapshotClient(cacheDirectory: cache); #expect(try client.update(from: source)); #expect(try client.localManifestModificationDate() != nil); try JSONEncoder().encode(ReadOnlySnapshotManifest(format: manifest.format, revision: 2, fileName: "catalogue-1.json", sha256: "bad")).write(to: source.appending(path: "manifest.json")); #expect(throws: SnapshotClientError.checksumMismatch) { try client.update(from: source) }; #expect(FileManager.default.fileExists(atPath: cache.appending(path: "catalogue-1.json").path))
 }
 
+@Test("Snapshot client rejects non-canonical payload names before touching its cache")
+func rejectsUnsafeSnapshotFileName() throws {
+    let source = FileManager.default.temporaryDirectory.appending(path: "unsafe-snapshot-source-\(UUID().uuidString)")
+    let cache = FileManager.default.temporaryDirectory.appending(path: "unsafe-snapshot-cache-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: source); try? FileManager.default.removeItem(at: cache) }
+    try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+    let manifest = ReadOnlySnapshotManifest(format: "music-library-snapshot-json-v1", revision: 1, fileName: "../outside.json", sha256: "unused")
+    try JSONEncoder().encode(manifest).write(to: source.appending(path: "manifest.json"))
+    let client = SnapshotClient(cacheDirectory: cache)
+    #expect(throws: SnapshotClientError.unsafeFileName) { try client.update(from: source) }
+    #expect(!FileManager.default.fileExists(atPath: cache.appending(path: "manifest.json").path))
+}
+
 @Test("SMB mappings are device-local and replace only the matching published root")
 func smbMappings() throws {
     let file = FileManager.default.temporaryDirectory.appending(path: "mappings-\(UUID().uuidString).json"); defer { try? FileManager.default.removeItem(at: file) }; let store = SMBRootMappingStore(url: file); try store.set(.init(publishedRootID: "root-a", localURL: URL(fileURLWithPath: "/Volumes/Music"))); try store.set(.init(publishedRootID: "root-a", localURL: URL(fileURLWithPath: "/Volumes/NewMusic"))); #expect(try store.mappings().map(\.localURL.path) == ["/Volumes/NewMusic"])
