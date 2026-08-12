@@ -761,16 +761,20 @@ public final class LibraryStore: ObservableObject {
 
     private func refreshAvailableAssetStatuses() async throws {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
-        for candidate in try await database.assetFingerprintCandidates() {
-            guard let root = storageRoots.first(where: { $0.id == candidate.rootID }) else { continue }
+        let candidates = try await database.assetFingerprintCandidates()
+        let candidatesByRoot = Dictionary(grouping: candidates, by: \.rootID)
+        for root in storageRoots {
+            guard let rootCandidates = candidatesByRoot[root.id], !rootCandidates.isEmpty else { continue }
             let state = resolveSecurityScopedBookmark(root)
             guard state.status == .available, let rootURL = state.url else { continue }
             let accessed = rootURL.startAccessingSecurityScopedResource()
             defer { if accessed { rootURL.stopAccessingSecurityScopedResource() } }
             guard accessed else { continue }
-            let url = rootURL.appending(path: candidate.relativePath)
-            let availability: DigitalAssetAvailability = FileManager.default.fileExists(atPath: url.path) ? .available : .missing
-            try await database.updateAssetAvailability(candidate.id, to: availability)
+            for candidate in rootCandidates {
+                let url = rootURL.appending(path: candidate.relativePath)
+                let availability: DigitalAssetAvailability = FileManager.default.fileExists(atPath: url.path) ? .available : .missing
+                try await database.updateAssetAvailability(candidate.id, to: availability)
+            }
         }
     }
 

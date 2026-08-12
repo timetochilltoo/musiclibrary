@@ -26,6 +26,9 @@ These changes preserve the fixed product invariants: the Mac remains the only ca
 
 **Hardening progress (12 August 2026):** the registered-root/CUE containment, backup/snapshot safety, DSF/WAV validation, playback repeated-work cleanup, chunked background fingerprinting, startup retry, scheduled publication/backup isolation, and bounded network request slices are complete and independently tested. The remaining gate is final error-path/performance review and exit verification; the visual redesign remains blocked until those checks pass.
 
+**Audit hardening — bounded metadata and artwork requests (12 August 2026):** explicit MusicBrainz searches, release-detail requests, and cover-art downloads now share a 30-second `URLRequest` timeout. The request policy is applied both in the metadata provider and in Mac artwork actions, so a disconnected NAS/VPN or captive network cannot leave a user-triggered lookup waiting indefinitely. Audio files are still never uploaded by these actions, and no catalogue or source-file semantics changed. Regression coverage verifies the shared timeout policy; the full Swift suite passes 83 tests.
+**Audit hardening — grouped Library Health root access (12 August 2026):** the available-asset health pass now groups candidates by registered storage-root ID, resolves each bookmark once, and holds that root's security-scoped access for the whole group. It still checks every stored relative path and writes the same availability result, but avoids reopening the same NAS/local root once per track. The full Swift suite passes 83 tests; no catalogue or source-file semantics changed.
+
 ## 1. Recommendation
 
 Build this as a **local-first macOS music catalog and lossless player**, with iPad support designed in from the start. Treat Android, network sync, AI cover recognition, and AI music generation as later modules.
