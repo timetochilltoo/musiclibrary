@@ -45,9 +45,11 @@ public final class LibraryStore: ObservableObject {
     @Published public private(set) var masterBackupStatus = "Master backup destination not configured"
 
     private var database: MusicDatabase?
-    private var hasStarted = false
+    private var startGate = LibraryStartGate()
     private var scanTasks: [ImportBatchID: Task<Void, Never>] = [:]
     private var snapshotPublishTask: Task<Void, Never>?
+    private var dailyMasterBackupTask: Task<Void, Never>?
+    private var scheduledDailyBackupRevision: Int64?
     private var managedArtworkStore: ManagedArtworkStore?
     private let snapshotDestinationBookmarkKey = "MusicLibrary.snapshotDestinationBookmark"
     private let lastPublishedRevisionKey = "MusicLibrary.lastPublishedRevision"
@@ -64,8 +66,7 @@ public final class LibraryStore: ObservableObject {
     }
 
     public func start() async {
-        guard !hasStarted else { return }
-        hasStarted = true
+        guard startGate.begin() else { return }
         do {
             let directory = try applicationSupportDirectory()
             let catalogueURL = directory.appending(path: "MusicLibrary.sqlite")
@@ -79,7 +80,9 @@ public final class LibraryStore: ObservableObject {
             try await reload()
             try await refreshStorageRootAccess()
             isReady = true
+            startGate.succeed()
         } catch {
+            startGate.fail()
             errorMessage = error.localizedDescription
         }
     }
@@ -637,7 +640,15 @@ public final class LibraryStore: ObservableObject {
     public func permanentlyDeleteAlbum(_ id: AlbumID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.permanentlyDeleteAlbum(id); try await reload() }
     public func exportCatalogue(to url: URL) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; let json = try await database.catalogueExportJSON(); try json.write(to: url, atomically: true, encoding: .utf8) }
     public func exportCatalogueCSV(to url: URL) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; let csv = try await database.catalogueExportCSV(); try csv.write(to: url, atomically: true, encoding: .utf8) }
-    public func publishSnapshot(to directory: URL) async throws -> SnapshotManifest { guard let database else { throw DatabaseError.notFound("Catalogue database") }; let value = try await database.publicationRevisionAndJSON(); return try SnapshotPublisher.publish(json: value.1, revision: value.0, to: directory) }
+    public func publishSnapshot(to directory: URL) async throws -> SnapshotManifest {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        let value = try await database.publicationRevisionAndJSON()
+        return try await Task.detached(priority: .utility) {
+            let accessed = directory.startAccessingSecurityScopedResource()
+            defer { if accessed { directory.stopAccessingSecurityScopedResource() } }
+            return try SnapshotPublisher.publish(json: value.1, revision: value.0, to: directory)
+        }.value
+    }
     public func setSnapshotDestination(_ url: URL) throws {
         let bookmark = try makeSecurityScopedBookmark(for: url)
         UserDefaults.standard.set(bookmark, forKey: snapshotDestinationBookmarkKey)
@@ -647,8 +658,6 @@ public final class LibraryStore: ObservableObject {
     }
     public func publishSnapshotNow() async throws {
         guard let destination = resolvedSnapshotDestination() else { throw DatabaseError.invalidOperation("Choose a snapshot destination first.") }
-        let accessed = destination.startAccessingSecurityScopedResource()
-        defer { if accessed { destination.stopAccessingSecurityScopedResource() } }
         let manifest = try await publishSnapshot(to: destination)
         lastPublishedRevision = manifest.revision
         publicationSchedule.markPublished(manifest.revision)
@@ -663,11 +672,14 @@ public final class LibraryStore: ObservableObject {
 
     public func createMasterBackupNow() async throws {
         guard let destination = resolvedSnapshotDestination(), let database else { throw DatabaseError.invalidOperation("Choose a snapshot destination first.") }
-        let accessed = destination.startAccessingSecurityScopedResource()
-        defer { if accessed { destination.stopAccessingSecurityScopedResource() } }
-        let archive = destination.appending(path: "MasterBackups", directoryHint: .isDirectory)
-        let manifest = try await MasterBackupArchive.create(database: database, in: archive)
-        try MasterBackupArchive.retain(in: archive)
+        let manifest = try await Task.detached(priority: .utility) {
+            let accessed = destination.startAccessingSecurityScopedResource()
+            defer { if accessed { destination.stopAccessingSecurityScopedResource() } }
+            let archive = destination.appending(path: "MasterBackups", directoryHint: .isDirectory)
+            let manifest = try await MasterBackupArchive.create(database: database, in: archive)
+            try MasterBackupArchive.retain(in: archive)
+            return manifest
+        }.value
         UserDefaults.standard.set(manifest.revision, forKey: lastMasterBackupRevisionKey)
         UserDefaults.standard.set(manifest.createdAt, forKey: lastMasterBackupAtKey)
         masterBackupStatus = "Backed up revision \(manifest.revision) at \(manifest.createdAt.formatted(date: .abbreviated, time: .shortened))"
@@ -939,9 +951,18 @@ public final class LibraryStore: ObservableObject {
         let lastBackup = UserDefaults.standard.object(forKey: lastMasterBackupAtKey) as? Date
         guard lastBackup == nil || !Calendar.current.isDateInToday(lastBackup!) else { return }
         guard lastBackup == nil || lastRevision != revision else { return }
-        Task { [weak self] in
-            do { try await self?.createMasterBackupNow() }
-            catch { self?.masterBackupStatus = "Automatic daily backup failed: \(error.localizedDescription)" }
+        guard scheduledDailyBackupRevision != revision else { return }
+        scheduledDailyBackupRevision = revision
+        dailyMasterBackupTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await self.createMasterBackupNow()
+            } catch {
+                self.masterBackupStatus = "Automatic daily backup failed: \(error.localizedDescription)"
+            }
+            if self.scheduledDailyBackupRevision == revision {
+                self.scheduledDailyBackupRevision = nil
+            }
         }
     }
 
