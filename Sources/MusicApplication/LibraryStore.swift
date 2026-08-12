@@ -198,6 +198,7 @@ public final class LibraryStore: ObservableObject {
         guard let database, let managedArtworkStore else { throw DatabaseError.notFound("Catalogue database") }
         let accessed = sourceURL.startAccessingSecurityScopedResource()
         defer { if accessed { sourceURL.stopAccessingSecurityScopedResource() } }
+        guard accessed else { throw DatabaseError.invalidOperation("Permission to access the selected artwork was not available.") }
         let managedURL = try managedArtworkStore.importArtwork(from: sourceURL)
         do {
             _ = try await database.addAlbumArtwork(albumID: albumID, localPath: managedURL.path, role: role, source: "managed-user-selected")
@@ -233,6 +234,7 @@ public final class LibraryStore: ObservableObject {
 
         let accessed = sourceURL.startAccessingSecurityScopedResource()
         defer { if accessed { sourceURL.stopAccessingSecurityScopedResource() } }
+        guard accessed else { throw DatabaseError.invalidOperation("Permission to access the legacy artwork was not available.") }
         let managedURL = try managedArtworkStore.importArtwork(from: sourceURL)
         do {
             _ = try await database.migrateAlbumArtwork(artwork.id, to: managedURL.path, source: "managed-migrated")
@@ -647,6 +649,7 @@ public final class LibraryStore: ObservableObject {
         return try await Task.detached(priority: .utility) {
             let accessed = directory.startAccessingSecurityScopedResource()
             defer { if accessed { directory.stopAccessingSecurityScopedResource() } }
+            guard accessed else { throw DatabaseError.invalidOperation("Permission to access the snapshot destination was not available.") }
             return try SnapshotPublisher.publish(json: value.1, revision: value.0, to: directory)
         }.value
     }
@@ -676,6 +679,7 @@ public final class LibraryStore: ObservableObject {
         let manifest = try await Task.detached(priority: .utility) {
             let accessed = destination.startAccessingSecurityScopedResource()
             defer { if accessed { destination.stopAccessingSecurityScopedResource() } }
+            guard accessed else { throw DatabaseError.invalidOperation("Permission to access the master-backup destination was not available.") }
             let archive = destination.appending(path: "MasterBackups", directoryHint: .isDirectory)
             let manifest = try await MasterBackupArchive.create(database: database, in: archive)
             try MasterBackupArchive.retain(in: archive)
@@ -690,6 +694,7 @@ public final class LibraryStore: ObservableObject {
         guard let catalogueURL else { throw DatabaseError.notFound("Catalogue database") }
         let accessed = manifestURL.startAccessingSecurityScopedResource()
         defer { if accessed { manifestURL.stopAccessingSecurityScopedResource() } }
+        guard accessed else { throw DatabaseError.invalidOperation("Permission to access the selected master backup was not available.") }
         let archive = manifestURL.deletingLastPathComponent()
         let manifest = try JSONDecoder().decode(MasterBackupManifest.self, from: Data(contentsOf: manifestURL))
         try await MasterBackupArchive.verify(manifest, in: archive)
@@ -999,6 +1004,7 @@ public final class LibraryStore: ObservableObject {
     private func makeSecurityScopedBookmark(for url: URL) throws -> Data {
         let accessed = url.startAccessingSecurityScopedResource()
         defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+        guard accessed else { throw DatabaseError.invalidOperation("Permission to access the selected folder was not available.") }
         return try url.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil)
     }
 
