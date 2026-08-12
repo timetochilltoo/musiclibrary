@@ -1,5 +1,4 @@
 import Combine
-import CryptoKit
 import Foundation
 import MusicDomain
 import MusicPersistence
@@ -725,10 +724,24 @@ public final class LibraryStore: ObservableObject {
         if !completed { snapshotPublishStatus = "Publish continues in the background." }
     }
     public func verifyFingerprints() async throws {
-        guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await refreshStorageRootAccess()
-        for candidate in try await database.assetFingerprintCandidates() {
-            guard let root = storageRoots.first(where: { $0.id == candidate.rootID }) else { continue }; let state = resolveSecurityScopedBookmark(root); guard state.status == .available, let url = state.url?.appending(path: candidate.relativePath), let data = try? Data(contentsOf: url) else { continue }
-            let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined(); try await database.recordAssetFingerprint(candidate.id, contentHash: hash, quickSignature: "\(data.count)-\(hash.prefix(16))")
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        try await refreshStorageRootAccess()
+        let jobs = try await database.assetFingerprintCandidates().compactMap { candidate -> AssetFingerprinting.Job? in
+            guard let root = storageRoots.first(where: { $0.id == candidate.rootID }) else { return nil }
+            let state = resolveSecurityScopedBookmark(root)
+            guard state.status == .available, let rootURL = state.url else { return nil }
+            return .init(id: candidate.id, rootURL: rootURL, url: rootURL.appending(path: candidate.relativePath))
+        }
+        let fingerprints = await Task.detached(priority: .utility) {
+            jobs.compactMap { job -> AssetFingerprinting.Result? in
+                guard !Task.isCancelled else { return nil }
+                let accessed = job.rootURL.startAccessingSecurityScopedResource()
+                defer { if accessed { job.rootURL.stopAccessingSecurityScopedResource() } }
+                return try? AssetFingerprinting.fingerprint(job)
+            }
+        }.value
+        for fingerprint in fingerprints {
+            try await database.recordAssetFingerprint(fingerprint.id, contentHash: fingerprint.contentHash, quickSignature: fingerprint.quickSignature)
         }
         try await reload()
     }
