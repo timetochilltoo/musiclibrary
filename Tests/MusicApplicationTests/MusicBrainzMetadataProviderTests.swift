@@ -3,6 +3,12 @@ import Testing
 @testable import MusicApplication
 
 struct MusicBrainzMetadataProviderTests {
+    @Test("Metadata and artwork requests use a bounded timeout")
+    func requestTimeoutIsBounded() {
+        let request = MusicNetworkRequestPolicy.request(url: URL(string: "https://example.com")!)
+        #expect(request.timeoutInterval == 30)
+    }
+
     @Test("MusicBrainz release previews decode without changing catalogue data")
     func decodesReleasePreviews() throws {
         let data = Data("""

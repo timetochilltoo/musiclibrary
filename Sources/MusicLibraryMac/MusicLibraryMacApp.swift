@@ -1377,7 +1377,8 @@ private struct ExternalMetadataLookupView: View {
         Task {
             defer { isDownloadingArtwork = false }
             do {
-                let (data, response) = try await URLSession.shared.data(from: artworkURL)
+                let request = MusicNetworkRequestPolicy.request(url: artworkURL)
+                let (data, response) = try await URLSession.shared.data(for: request)
                 guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode), let image = NSImage(data: data), let tiff = image.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiff), let jpeg = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.95]) else {
                     throw NSError(domain: "MusicLibrary", code: 1, userInfo: [NSLocalizedDescriptionKey: "MusicBrainz did not provide a usable front-cover image for this release."])
                 }

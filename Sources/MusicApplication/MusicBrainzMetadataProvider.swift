@@ -66,7 +66,7 @@ public struct MusicBrainzMetadataProvider: MetadataLookupProviding {
     public func releaseDetails(id: String) async throws -> ExternalReleasePreview {
         guard !id.isEmpty, let url = URL(string: "https://musicbrainz.org/ws/2/release/\(id)?inc=recordings+artist-credits+labels+release-groups&fmt=json") else { throw MetadataLookupError.invalidResponse }
         try await rateLimiter.waitForTurn()
-        var request = URLRequest(url: url)
+        var request = MusicNetworkRequestPolicy.request(url: url)
         request.setValue("MusicLibrary/0.1 (+https://github.com/timetochilltoo/musiclibrary)", forHTTPHeaderField: "User-Agent")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         let (data, response) = try await session.data(for: request)
@@ -78,7 +78,7 @@ public struct MusicBrainzMetadataProvider: MetadataLookupProviding {
         for attempt in 0..<3 {
             do {
                 try await rateLimiter.waitForTurn()
-                var request = URLRequest(url: url)
+                var request = MusicNetworkRequestPolicy.request(url: url)
                 request.setValue("MusicLibrary/0.1 (+https://github.com/timetochilltoo/musiclibrary)", forHTTPHeaderField: "User-Agent")
                 request.setValue("application/json", forHTTPHeaderField: "Accept")
                 let (data, response) = try await session.data(for: request)

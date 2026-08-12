@@ -511,7 +511,8 @@ public final class LibraryStore: ObservableObject {
             guard let managedArtworkStore, let artworkURL = URL(string: "https://coverartarchive.org/release/\(selection.externalID)/front") else {
                 throw DatabaseError.notFound("Managed artwork storage")
             }
-            let (data, response) = try await URLSession.shared.data(from: artworkURL)
+            let request = MusicNetworkRequestPolicy.request(url: artworkURL)
+            let (data, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode), !data.isEmpty else {
                 throw DatabaseError.invalidOperation("MusicBrainz did not provide a usable front-cover image for this release.")
             }
