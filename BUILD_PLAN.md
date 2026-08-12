@@ -1,6 +1,8 @@
 # Music Library — Product and Build Plan
 
-Date: 22 July 2026
+Original plan date: 22 July 2026
+
+Last roadmap review: 12 August 2026
 
 Detailed coding handoff: [IMPLEMENTATION_SPEC.md](IMPLEMENTATION_SPEC.md)
 
@@ -206,6 +208,53 @@ Create or find the box, assign its physical location once, add or scan its membe
 
 Store alternate, translated, original-language, and romanized titles as searchable aliases. Search covers album title, edition label, alias, track, contributor, barcode, catalogue number, box-set name, and physical location.
 
+### Mac visual design direction (reviewed 12 August 2026)
+
+The catalogue and player workflow is now solid enough to receive a deliberate visual pass. The next Mac UI direction is **artwork-first, icon-led, and progressively disclosed**: show the information needed for the current decision, keep advanced/raw details available behind an obvious control, and replace repeated explanatory paragraphs with artwork, badges, concise labels, and familiar controls. This is a presentation workstream; it does not change database ownership, scan semantics, explicit metadata approval, tag-write safety, or NAS publication rules.
+
+The direction is based on the platform patterns we reviewed: macOS expects resizable windows and customizable toolbars; Apple recommends sidebars for primary navigation, image-based collections for visual content, disclosure controls for advanced information, and familiar symbols with labels/tooltips for actions. Music's MiniPlayer demonstrates a persistent compact player with artwork, progress, lyrics, and queue access. Roon and MusicBrainz Picard provide useful reference patterns for artwork-rich album browsing, direct track play, candidate identification, and side-by-side metadata/cover comparison. References: [Apple Designing for macOS](https://developer.apple.com/design/human-interface-guidelines/designing-for-macos/), [Apple Sidebars](https://developer.apple.com/design/human-interface-guidelines/sidebars), [Apple Collections](https://developer.apple.com/design/human-interface-guidelines/collections), [Apple Disclosure Controls](https://developer.apple.com/design/human-interface-guidelines/disclosure-controls), [Apple Buttons](https://developer.apple.com/design/human-interface-guidelines/buttons), [Apple Music MiniPlayer](https://support.apple.com/guide/music/use-music-miniplayer-mus71d7dcfce/mac), [Roon albums](https://help.roonlabs.com/portal/en/kb/articles/albums), and [Picard's main screen](https://picard-docs.musicbrainz.org/en/latest/getting_started/screen_main.html).
+
+#### Information architecture
+
+- **Library:** Albums, Contributors, and Box Sets remain the primary browsing destinations.
+- **Review:** Library Changes is a review queue for new, missing, duplicate, and failed scan work. It shows the latest result per registered root; it is not a permanent list of every historical path scan. Root registration, source scope, rescan, and access permissions belong in Settings.
+- **Play:** Playlists remains a focused destination for saved ordered collections.
+- **Settings:** group Music Folders, snapshot/master-backup controls, Library Health, export, activity history, and advanced diagnostics into clearly separated sections. Keep destructive/recovery actions visually distinct.
+
+#### Albums home
+
+- Default to an artwork grid for visual recognition, with a list toggle for dense catalogue work and accessibility.
+- Keep a prominent search field and a compact source filter: **All Music**, **This Mac Only**, and **NAS / iPad Music**. The selected filter must be visible and survive navigation; an album with both kinds of assets appears in both scoped views.
+- Each card/list row shows artwork, album title, artist, edition label/year, CD and Digital badges, source badge(s), and a small health indicator when a file/artwork/review issue exists. Do not make the user open the detail view to understand why an album is unavailable.
+- Keep sorting and secondary filters in a toolbar/menu rather than consuming permanent screen space. Empty states should show one useful illustration/icon, the reason, and one next action.
+
+#### Album detail
+
+- Lead with a compact artwork header containing title, edition label, artist, release/edition badges, CD/Digital availability, physical location, and the primary Play action.
+- Use tabs or a segmented control for **Overview**, **Tracks**, **Files**, **Credits**, and **Notes & History**. Tracks is the default when the user entered from an album card; Overview is the default for a newly created record.
+- Keep the normal track list clean: title, number, duration, play, add-to-playlist, lyrics, and a compact health/format indicator. Put raw embedded tags, technical audio fields, provenance, file identity, and repair controls in Files or an expandable Details section.
+- Artwork roles (front/back/booklet/disc) stay accessible from the artwork header, with a clear selected-front state and an explicit managed/legacy status.
+
+#### Library Changes and MusicBrainz review
+
+- Render each release proposal as a compact horizontal card: artwork at the leading edge; title, artist, source/provenance, confidence, disc/file summary, and creation status in the middle; the three state-appropriate actions at the trailing edge. Keep **Search MusicBrainz…**, **Approve for Later**, and **Dismiss** visually ordered by importance.
+- Keep raw tag dumps and long paths collapsed under **Technical details**. The card must still expose enough title/artist/file information to distinguish candidates without opening a modal.
+- Make MusicBrainz Lookup a genuinely resizable review workspace. Keep candidate releases in a left pane and the selected candidate in a right pane. The right pane shows imported artwork beside MusicBrainz artwork, a concise field comparison, and a two-column track comparison with counts and clear mismatch highlighting. Download-cover-art remains a separate, explicit JPEG action.
+- Preserve the existing safety language: lookup is user-triggered, audio is never uploaded by default, the preview changes nothing, and only the selected fields/release are applied after explicit confirmation.
+
+#### Player
+
+- Keep a persistent MiniPlayer, led by artwork and title/artist/source rather than a wall of text. It contains play/pause, previous/next, progress, volume, queue, shuffle, repeat, lyrics, and stop using familiar symbols with labels or tooltips where the symbol is not self-evident.
+- Selected shuffle/repeat states must be visually unambiguous (tint/background plus accessible label), and the current source (This Mac/NAS) must be visible before playback starts.
+- The expanded Now Playing view may reveal codec, sample rate, bit depth, channels, output format, queue, lyrics, and file path. Keep those details out of the compact bar unless the user asks for them.
+
+#### Visual system and guardrails
+
+- Use SF Symbols or another native symbol set consistently; pair an icon with a short label for destructive, ambiguous, or high-impact actions and provide macOS tooltips/accessibility labels for icon-only controls.
+- Prefer one clear primary action per surface, restrained secondary actions, consistent status colors, and shared artwork placeholders/loading/error states. Keep loading states local to the artwork or candidate that is loading.
+- Do not hide safety-critical state behind color alone. Offline, missing, pending, proposed, approved, and destructive states need text or accessible labels in addition to tint.
+- Do not redesign by adding automatic network lookup, automatic metadata mutation, source-file writes, or client-side catalogue edits. Visual changes must leave the existing persistence and review invariants intact.
+
 ### Maintenance, safety, and portability
 
 - **Library Health:** show missing files, offline roots, partial digital albums, duplicate assets, missing artwork, suspicious track counts, candidates awaiting review, failed imports, and unpublished Mac changes.
@@ -225,6 +274,24 @@ iPad cannot use an arbitrary Mac/NAS path as though it were local. It selects it
 ## 5. Delivery roadmap
 
 The estimates below assume one developer using Codex, working part-time to steady full-time, and include tests and polish. They are planning ranges, not promises.
+
+### Visual implementation workstream (Mac-first, after the current logic baseline)
+
+This workstream runs across the existing phases; it is not a new persistence or synchronization phase. Each slice must be implemented without changing the catalogue contract, then checked on a real Mac window at narrow and wide sizes.
+
+1. **Visual foundation:** make the three-column shell, sidebar, toolbars, cards, empty states, status badges, artwork placeholders, loading/error states, and window sizing/resizing behavior consistent. Add the All/This Mac/NAS source filter to the Albums home and make the active scope obvious.
+2. **Artwork-led library:** add the Albums grid/list toggle, compact artwork cards, concise edition/source/health badges, sorting controls, and the artwork-first album detail header. Move raw tags and technical metadata behind Files/Details disclosure without removing the existing verification actions.
+3. **Review workspace:** reshape Library Changes proposal rows into artwork/title/provenance/action cards and make MusicBrainz Lookup a resizable candidate-and-comparison workspace with imported/remote artwork, field comparison, track comparison, and explicit cover download. Keep scan/review actions and approval semantics unchanged.
+4. **Playback presentation:** refine the persistent MiniPlayer and expanded Now Playing view around artwork, title/artist/source, familiar transport icons, visible selected shuffle/repeat states, queue, lyrics, and progressive technical details.
+5. **Polish and accessibility:** add tooltips, accessibility labels, keyboard focus/order, text equivalents for status colors, consistent destructive-action treatment, and snapshot/visual regression checks for the major Mac surfaces.
+
+#### Visual workstream exit criteria
+
+- A user can identify an album from artwork and concise badges without opening it, then switch between All Music, This Mac Only, and NAS / iPad Music without losing context.
+- A user can resize the MusicBrainz workspace, select candidates from the left pane, compare imported and remote artwork/tracks on the right, and understand which action is safe before accepting it.
+- A user can tell at a glance whether playback is local or NAS, whether shuffle/repeat is selected, and what is currently playing; the expanded view still exposes the full technical metadata and lyrics.
+- Narrow/wide window checks show no clipped fields, horizontal text walls, or artwork stuck on a previous candidate. Loading/error/empty states are local and understandable.
+- UI-only tests and `swift test` pass; no catalogue revision or source-file checksum changes occur from merely browsing, filtering, resizing, or opening a preview.
 
 ### Phase 0 — Product spike (3–5 days)
 
@@ -327,6 +394,15 @@ Exit: changing provider does not require changing catalogue or player code.
 - Reject an incorrect online match without altering the source files.
 - Fail a metadata/API request gracefully and allow retry.
 - Interrupt a snapshot download and verify that the read-only client retains its previous valid database.
+
+### Visual acceptance additions
+
+- Open Albums at a narrow and wide window size; switch grid/list and All/This Mac/NAS filters; verify artwork, edition labels, CD/Digital/source badges, health indicators, search, and empty states remain legible.
+- Open an album and confirm the artwork-led header, primary Play action, concise Tracks view, and Overview/Files/Credits/Notes & History disclosure keep raw tags and technical fields available without overwhelming the default view.
+- Open Library Changes and confirm each proposal presents artwork, title, artist, provenance/confidence, file/disc summary, and the state-appropriate actions in one row/card; verify long paths and raw tags are collapsed.
+- Open MusicBrainz Lookup, resize the window, select at least three candidates, and verify the imported and MusicBrainz artwork/track lists refresh for each selection. Confirm cover download remains explicit and preview-only until the user accepts it.
+- Start playback from a local album and a NAS album; verify the MiniPlayer source badge, artwork, transport controls, progress, queue, lyrics, and visually distinct shuffle/repeat states. Expand Now Playing to inspect technical fields.
+- Toggle appearance/contrast or use VoiceOver/accessibility inspection and verify icon controls expose labels, status colors have text equivalents, and destructive actions remain clearly identified.
 
 ## 7. Improvements to the original requirements
 

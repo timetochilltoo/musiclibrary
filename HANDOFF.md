@@ -1,6 +1,6 @@
 # Music Library — Project Handoff
 
-Last updated: 11 August 2026
+Last updated: 12 August 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
@@ -208,6 +208,8 @@ Implemented:
 - Playlist navigation provides playlist creation, membership detail, and add-track actions.
 - Error alerts and initial database-opening progress UI.
 
+**Visual design review (12 August 2026):** the next Mac presentation workstream is artwork-first, icon-led, and progressively disclosed. The approved direction keeps the existing three-column shell and catalogue/review safety semantics, while simplifying the visible surfaces: Albums gets an artwork grid/list toggle plus All Music / This Mac Only / NAS / iPad Music scope filters; album detail leads with artwork and concise badges, with raw tags/technical fields behind Files or Details disclosure; Library Changes uses artwork/title/provenance/action cards; MusicBrainz Lookup becomes a resizable candidate-and-comparison workspace with imported/remote artwork and track comparison; and the MiniPlayer becomes artwork-led with explicit source, shuffle/repeat selected states, queue, lyrics, and an expanded technical view. Use native symbols consistently, pair ambiguous/destructive symbols with labels/tooltips, and never rely on color alone for status. This is UI-only scope: it must not add automatic network lookup, source-file mutation, or client-side catalogue writes. The detailed workstream and visual acceptance checks are in [BUILD_PLAN.md](BUILD_PLAN.md).
+
 Runtime database location on the Mac:
 
 ```text
@@ -401,11 +403,15 @@ The macOS Import Inbox view was refactored into small row/summary helpers and no
 
 Automatic publication is already observable and bounded; do not regress it while working on the next capability.
 
+### 12 August 2026 visual review checkpoint
+
+The user requested an internet-informed UI review before more feature work. The review compared the current Mac surfaces with Apple macOS HIG patterns, Apple Music's MiniPlayer, Roon album/queue/identification flows, and MusicBrainz Picard's candidate and metadata comparison layout. The product direction is now fixed in `BUILD_PLAN.md`: artwork-first library browsing, compact source/edition/health badges, progressive disclosure for raw metadata, a resizable MusicBrainz comparison workspace, and an artwork-led persistent player. No source code, schema, catalogue data, or application-support database was changed in this documentation checkpoint.
+
 ### Next safe slice
 
-The local/NAS folder workflow, complete safe scanning workflow, explicit legacy-artwork migration, and field-level catalogue activity history are implemented. The next user-facing check is to edit an album, track, artwork, playlist, or alias and confirm Settings → Recent Catalogue Activity shows the expected `old → new` rows under one revision; older actions may still show only a revision marker. Do not begin automatic hash-based relinking or snapshot-to-master reconstruction without a new reviewed design; WAV/DSF/other non-FLAC tag write-back also remains deferred.
+The local/NAS folder workflow, complete safe scanning workflow, explicit legacy-artwork migration, and field-level catalogue activity history are implemented. The next coding slice is the first **Visual implementation workstream** vertical slice from `BUILD_PLAN.md`: establish the shared artwork/card/status/window foundation, then add the Albums scope filter and grid/list presentation without changing persistence semantics. After each UI slice, verify the real Mac window at narrow and wide sizes, run the visual acceptance checks plus `swift test`, and update this handoff. Do not begin automatic hash-based relinking or snapshot-to-master reconstruction without a new reviewed design; WAV/DSF/other non-FLAC tag write-back also remains deferred.
 
-## 12. Planned implementation order after the next slice
+## 13. Planned implementation order after the next slice
 
 Do not implement all of this at once. Complete and test one vertical slice per commit group.
 
@@ -420,7 +426,7 @@ Do not implement all of this at once. Complete and test one vertical slice per c
 
 The detailed acceptance criteria and algorithms for later phases are in `IMPLEMENTATION_SPEC.md`.
 
-## 13. Documentation maintenance policy
+## 14. Documentation maintenance policy
 
 After every completed slice, update all applicable documents in the same commit:
 
@@ -430,7 +436,7 @@ After every completed slice, update all applicable documents in the same commit:
 
 Do not merely write “implemented X.” State the files/modules affected, tests run, what still does not work, and the next safe starting point. This is what makes a context-recovery handoff useful.
 
-## 14. Session-resume prompt
+## 15. Session-resume prompt
 
 Use this prompt for a new coding agent:
 
@@ -448,7 +454,7 @@ HTTPS. Do not use gh, destructive Git commands, or modify the user's Application
 database without explicit permission.
 ```
 
-## 15. Open decisions requiring the user
+## 16. Open decisions requiring the user
 
 Do not silently choose these when their implementation becomes necessary:
 
