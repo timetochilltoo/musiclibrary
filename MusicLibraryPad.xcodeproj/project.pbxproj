@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0AC1C53083C8DCD4BE1B3404 /* CompanionPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 251EBF2FA9A99EA74D8D3F4F /* CompanionPreferences.swift */; };
 		3438F8DEB9A8360E8BBF7ACE /* SnapshotClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4920C53336EBCE7A88644BAB /* SnapshotClient.swift */; };
 		3B2F2325D2450A6007A68095 /* SnapshotSourceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B62A24938336427C3F1E85D /* SnapshotSourceStore.swift */; };
 		45641128E2AC8382386EE46F /* SMBRootMappings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5640DB9CD4A8206555966A5D /* SMBRootMappings.swift */; };
@@ -52,6 +53,7 @@
 
 /* Begin PBXFileReference section */
 		1067564D050237B95ADA60D4 /* MusicLibraryPadShell.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = MusicLibraryPadShell.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		251EBF2FA9A99EA74D8D3F4F /* CompanionPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionPreferences.swift; sourceTree = "<group>"; };
 		4920C53336EBCE7A88644BAB /* SnapshotClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotClient.swift; sourceTree = "<group>"; };
 		4B62A24938336427C3F1E85D /* SnapshotSourceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotSourceStore.swift; sourceTree = "<group>"; };
 		5640DB9CD4A8206555966A5D /* SMBRootMappings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SMBRootMappings.swift; sourceTree = "<group>"; };
@@ -95,6 +97,7 @@
 		4EB04DD56789382083A6EEFF /* MusicReadOnlyClient */ = {
 			isa = PBXGroup;
 			children = (
+				251EBF2FA9A99EA74D8D3F4F /* CompanionPreferences.swift */,
 				985F4F8C651162F82D6FBB40 /* ReadOnlyCatalogue.swift */,
 				5640DB9CD4A8206555966A5D /* SMBRootMappings.swift */,
 				4920C53336EBCE7A88644BAB /* SnapshotClient.swift */,
@@ -233,6 +236,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				0AC1C53083C8DCD4BE1B3404 /* CompanionPreferences.swift in Sources */,
 				D9F18D7D054B01D1752CB785 /* ReadOnlyCatalogue.swift in Sources */,
 				45641128E2AC8382386EE46F /* SMBRootMappings.swift in Sources */,
 				3438F8DEB9A8360E8BBF7ACE /* SnapshotClient.swift in Sources */,

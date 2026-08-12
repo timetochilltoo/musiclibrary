@@ -30,6 +30,8 @@ These changes preserve the fixed product invariants: the Mac remains the only ca
 **Audit hardening — grouped Library Health root access (12 August 2026):** the available-asset health pass now groups candidates by registered storage-root ID, resolves each bookmark once, and holds that root's security-scoped access for the whole group. It still checks every stored relative path and writes the same availability result, but avoids reopening the same NAS/local root once per track. The full Swift suite passes 83 tests; no catalogue or source-file semantics changed.
 **Audit hardening — fail-closed security-scoped operations (12 August 2026):** user-selected artwork, legacy artwork migration, snapshot publication, master-backup creation/restoration, and registered-folder bookmark creation now stop before filesystem or database work when macOS denies the security-scoped resource. Previously these paths could continue after a denied scope and report a later, less actionable filesystem error. The full Swift suite passes 83 tests; no catalogue, source audio, or backup data was changed by the test run.
 
+**Audit exit preparation — generated-project synchronization (12 August 2026):** regenerating with the repository's `project.yml` restored the existing `CompanionPreferences.swift` source reference in `MusicLibraryPad.xcodeproj`. `xcodebuild -project MusicLibraryPad.xcodeproj -list` now reports the expected three targets and three schemes. This is project bookkeeping only; no SwiftUI redesign or product behavior changed.
+
 ## 1. Recommendation
 
 Build this as a **local-first macOS music catalog and lossless player**, with iPad support designed in from the start. Treat Android, network sync, AI cover recognition, and AI music generation as later modules.
