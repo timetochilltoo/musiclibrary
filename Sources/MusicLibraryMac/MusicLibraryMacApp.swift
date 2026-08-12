@@ -27,7 +27,7 @@ private struct LibraryShellView: View {
         var id: Self { self }
         var title: String { switch self { case .all: "All Music"; case .nas: "NAS / iPad Music"; case .local: "This Mac Only" } }
     }
-    private enum Section: Hashable, CaseIterable, Identifiable {
+    private enum NavigationSection: Hashable, CaseIterable, Identifiable {
         case albums, contributors, locations, boxSets, importInbox, playlists, settings
         var id: Self { self }
         var title: String {
@@ -53,10 +53,28 @@ private struct LibraryShellView: View {
             }
         }
     }
+    private enum AlbumPresentation: String, CaseIterable, Identifiable {
+        case grid, list
+        var id: Self { self }
+        var symbol: String { self == .grid ? "square.grid.2x2" : "list.bullet" }
+        var title: String { self == .grid ? "Grid" : "List" }
+    }
+    private enum AlbumSort: String, CaseIterable, Identifiable {
+        case title, newest, recentlyAdded, rating
+        var id: Self { self }
+        var title: String {
+            switch self {
+            case .title: "Title"
+            case .newest: "Release Year"
+            case .recentlyAdded: "Recently Added"
+            case .rating: "Rating"
+            }
+        }
+    }
 
     @ObservedObject var library: LibraryStore
     @StateObject private var playback = PlaybackController()
-    @State private var section: Section? = .albums
+    @State private var section: NavigationSection? = .albums
     @State private var selectedAlbumID: AlbumID?
     @State private var selectedContributorID: ContributorID?
     @State private var selectedBoxSetID: BoxSetID?
@@ -65,6 +83,9 @@ private struct LibraryShellView: View {
     @State private var selectedPlaylistID: PlaylistID?
     @State private var searchText = ""
     @State private var albumSourceFilter: AlbumSourceFilter = .all
+    @State private var albumPresentation: AlbumPresentation = .grid
+    @State private var albumSort: AlbumSort = .title
+    @State private var showsFavouriteAlbumsOnly = false
     @State private var contributorSearchText = ""
     @State private var showsAlbumEditor = false
     @State private var showsLocationEditor = false
@@ -78,10 +99,25 @@ private struct LibraryShellView: View {
 
     var body: some View {
         NavigationSplitView {
-            List(Section.allCases, selection: $section) { item in
-                Label(item.title, systemImage: item.symbol).tag(item)
+            List(selection: $section) {
+                Section("Library") {
+                    sidebarRow(.albums)
+                    sidebarRow(.contributors)
+                    sidebarRow(.playlists)
+                }
+                Section("Organize") {
+                    sidebarRow(.locations)
+                    sidebarRow(.boxSets)
+                }
+                Section("Review") {
+                    sidebarRow(.importInbox)
+                }
+                Section {
+                    sidebarRow(.settings)
+                }
             }
             .navigationTitle("Music Library")
+            .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 260)
         } content: {
             content
                 .navigationTitle(section?.title ?? "Music Library")
@@ -89,6 +125,7 @@ private struct LibraryShellView: View {
         } detail: {
             detail
         }
+        .navigationSplitViewStyle(.balanced)
         .overlay {
             if !library.isReady && library.errorMessage == nil {
                 ProgressView("Opening catalogue…")
@@ -141,9 +178,30 @@ private struct LibraryShellView: View {
         }
         .safeAreaInset(edge: .bottom) {
             if playback.isPlaying || playback.currentTitle != "Nothing playing" {
-                HStack { Image(systemName: playback.isPlaying ? "speaker.wave.2.fill" : "pause.circle"); VStack(alignment: .leading) { Text(playback.currentTitle).lineLimit(1); if let audioFormatDescription = playback.audioFormatDescription { Text(audioFormatDescription).font(.caption).foregroundStyle(.secondary).lineLimit(1) } }; Spacer(); if let trackID = playback.currentTrackID { Button("Show extracted metadata", systemImage: "info.circle") { metadataSelection = .init(trackID: trackID, title: playback.currentTitle) }.labelStyle(.iconOnly) }; Button("Previous", systemImage: "backward.fill") { playback.previous() }.labelStyle(.iconOnly); Button(playback.isPlaying ? "Pause" : "Play", systemImage: playback.isPlaying ? "pause.fill" : "play.fill") { playback.toggle() }.labelStyle(.iconOnly); Button("Next", systemImage: "forward.fill") { playback.next() }.labelStyle(.iconOnly); Button(playback.queue.isShuffled ? "Turn Shuffle Off" : "Shuffle Queue", systemImage: "shuffle") { playback.toggleShuffle() }.labelStyle(.iconOnly).buttonStyle(.borderedProminent).tint(playback.queue.isShuffled ? .blue : .gray.opacity(0.2)); Button(repeatAccessibilityLabel, systemImage: repeatSystemImage) { cycleRepeatMode() }.labelStyle(.iconOnly).buttonStyle(.borderedProminent).tint(playback.queue.repeatMode == .off ? .gray.opacity(0.2) : .blue); Slider(value: Binding(get: { playback.volume }, set: { playback.setVolume(Float($0)) }), in: 0...1).frame(width: 90); Button("Stop") { playback.stop() } }
-                    .padding(10).background(.bar)
+                MiniPlayerBar(playback: playback) {
+                    if let trackID = playback.currentTrackID {
+                        metadataSelection = .init(trackID: trackID, title: playback.currentTitle)
+                    }
+                }
             }
+        }
+    }
+
+    @ViewBuilder private func sidebarRow(_ item: NavigationSection) -> some View {
+        Label(item.title, systemImage: item.symbol)
+            .tag(item)
+            .help(sidebarHelp(item))
+    }
+
+    private func sidebarHelp(_ item: NavigationSection) -> String {
+        switch item {
+        case .albums: "Browse and play the catalogue"
+        case .contributors: "Browse artists, composers, and performers"
+        case .playlists: "Create and play ordered track collections"
+        case .locations: "Manage physical CD storage locations"
+        case .boxSets: "Organize albums that belong to a box set"
+        case .importInbox: "Review rescans, new files, and import proposals"
+        case .settings: "Music folders, publishing, backups, and library health"
         }
     }
 
@@ -172,13 +230,19 @@ private struct LibraryShellView: View {
     @ViewBuilder private var content: some View {
         switch section {
         case .albums:
-            List(scopedAlbums, selection: $selectedAlbumID) { album in
-                AlbumRow(album: album).tag(album.id).contextMenu { Button("Move to Recently Deleted", role: .destructive) { Task { do { try await library.softDeleteAlbum(album.id); if selectedAlbumID == album.id { selectedAlbumID = nil } } catch { library.presentError(error) } } } }
-            }
+            AlbumBrowser(
+                albums: displayedAlbums,
+                selectedAlbumID: $selectedAlbumID,
+                usesGrid: albumPresentation == .grid,
+                artworkPaths: library.albumFrontArtworkPaths,
+                localAlbumIDs: library.localAlbumIDs,
+                publishedAlbumIDs: library.publishedAlbumIDs,
+                onDelete: deleteAlbum
+            )
             .searchable(text: $searchText, prompt: "Albums, editions, or catalogue numbers")
             .onChange(of: searchText) { _, value in Task { await library.search(value) } }
             .overlay {
-                if library.isReady && library.albums.isEmpty {
+                if library.isReady && displayedAlbums.isEmpty {
                     ContentUnavailableView("No matching albums", systemImage: "opticaldisc", description: Text("Change the music source filter or add an album."))
                 }
             }
@@ -261,6 +325,35 @@ private struct LibraryShellView: View {
         }
     }
 
+    private var displayedAlbums: [Album] {
+        let filtered = showsFavouriteAlbumsOnly ? scopedAlbums.filter(\.isFavourite) : scopedAlbums
+        return filtered.sorted { lhs, rhs in
+            switch albumSort {
+            case .title:
+                return lhs.displayTitle.localizedStandardCompare(rhs.displayTitle) == .orderedAscending
+            case .newest:
+                if lhs.releaseYear != rhs.releaseYear { return (lhs.releaseYear ?? Int.min) > (rhs.releaseYear ?? Int.min) }
+                return lhs.displayTitle.localizedStandardCompare(rhs.displayTitle) == .orderedAscending
+            case .recentlyAdded:
+                return lhs.createdAt > rhs.createdAt
+            case .rating:
+                if lhs.rating != rhs.rating { return (lhs.rating ?? 0) > (rhs.rating ?? 0) }
+                return lhs.displayTitle.localizedStandardCompare(rhs.displayTitle) == .orderedAscending
+            }
+        }
+    }
+
+    private func deleteAlbum(_ album: Album) {
+        Task {
+            do {
+                try await library.softDeleteAlbum(album.id)
+                if selectedAlbumID == album.id { selectedAlbumID = nil }
+            } catch {
+                library.presentError(error)
+            }
+        }
+    }
+
     private var latestImportBatchesByRoot: [ImportBatch] {
         var seen = Set<StorageRootID>()
         return library.importBatches.filter { batch in
@@ -298,11 +391,29 @@ private struct LibraryShellView: View {
 
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
         if section == .albums {
-            ToolbarItem(placement: .automatic) {
-                Picker("Show", selection: $albumSourceFilter) {
-                    ForEach(AlbumSourceFilter.allCases) { filter in Text(filter.title).tag(filter) }
+            ToolbarItemGroup(placement: .automatic) {
+                Picker("View", selection: $albumPresentation) {
+                    ForEach(AlbumPresentation.allCases) { presentation in
+                        Label(presentation.title, systemImage: presentation.symbol).tag(presentation)
+                    }
                 }
-                .pickerStyle(.menu)
+                .pickerStyle(.segmented)
+                .labelsHidden()
+
+                Menu {
+                    Picker("Source", selection: $albumSourceFilter) {
+                        ForEach(AlbumSourceFilter.allCases) { filter in Text(filter.title).tag(filter) }
+                    }
+                    Divider()
+                    Picker("Sort", selection: $albumSort) {
+                        ForEach(AlbumSort.allCases) { sort in Text(sort.title).tag(sort) }
+                    }
+                    Divider()
+                    Toggle("Favourites Only", isOn: $showsFavouriteAlbumsOnly)
+                } label: {
+                    Label("Filter and Sort", systemImage: activeAlbumFilter ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                }
+                .help("Filter and sort albums")
             }
         }
         ToolbarItem(placement: .primaryAction) {
@@ -317,6 +428,295 @@ private struct LibraryShellView: View {
                 }
             }
         }
+    }
+
+    private var activeAlbumFilter: Bool {
+        albumSourceFilter != .all || showsFavouriteAlbumsOnly || albumSort != .title
+    }
+}
+
+private struct AlbumBrowser: View {
+    let albums: [Album]
+    @Binding var selectedAlbumID: AlbumID?
+    let usesGrid: Bool
+    let artworkPaths: [AlbumID: String]
+    let localAlbumIDs: Set<AlbumID>
+    let publishedAlbumIDs: Set<AlbumID>
+    let onDelete: (Album) -> Void
+
+    var body: some View {
+        if usesGrid {
+            ScrollView {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150, maximum: 210), spacing: 18)], spacing: 22) {
+                    ForEach(albums) { album in
+                        AlbumCard(
+                            album: album,
+                            artworkPath: artworkPaths[album.id],
+                            isLocal: localAlbumIDs.contains(album.id),
+                            isPublished: publishedAlbumIDs.contains(album.id),
+                            isSelected: selectedAlbumID == album.id
+                        ) {
+                            selectedAlbumID = album.id
+                        }
+                        .contextMenu { deleteButton(for: album) }
+                    }
+                }
+                .padding(20)
+            }
+            .background(Color(nsColor: .controlBackgroundColor).opacity(0.35))
+        } else {
+            List(albums, selection: $selectedAlbumID) { album in
+                AlbumListRow(
+                    album: album,
+                    artworkPath: artworkPaths[album.id],
+                    isLocal: localAlbumIDs.contains(album.id),
+                    isPublished: publishedAlbumIDs.contains(album.id)
+                )
+                .tag(album.id)
+                .contextMenu { deleteButton(for: album) }
+            }
+        }
+    }
+
+    @ViewBuilder private func deleteButton(for album: Album) -> some View {
+        Button("Move to Recently Deleted", role: .destructive) { onDelete(album) }
+    }
+}
+
+private struct AlbumCard: View {
+    let album: Album
+    let artworkPath: String?
+    let isLocal: Bool
+    let isPublished: Bool
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 10) {
+                ZStack(alignment: .topTrailing) {
+                    AlbumArtworkImage(path: artworkPath)
+                        .aspectRatio(1, contentMode: .fill)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .shadow(color: .black.opacity(0.14), radius: 8, y: 4)
+                    if album.isFavourite {
+                        Image(systemName: "heart.fill")
+                            .foregroundStyle(.white)
+                            .padding(7)
+                            .background(.pink, in: Circle())
+                            .padding(8)
+                            .accessibilityLabel("Favourite")
+                    }
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(album.title)
+                        .font(.headline)
+                        .lineLimit(2)
+                    if let edition = album.editionLabel, !edition.isEmpty {
+                        Text(edition).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    HStack(spacing: 6) {
+                        if let releaseYear = album.releaseYear { Text(String(releaseYear)) }
+                        Spacer(minLength: 4)
+                        AlbumSourceBadges(hasCD: album.hasCD, isLocal: isLocal, isPublished: isPublished)
+                    }
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                }
+            }
+            .contentShape(Rectangle())
+            .padding(8)
+            .background(isSelected ? Color.accentColor.opacity(0.15) : .clear, in: RoundedRectangle(cornerRadius: 14))
+            .overlay {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 14).stroke(Color.accentColor, lineWidth: 2)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(album.displayTitle)
+        .accessibilityHint("Open album details")
+    }
+}
+
+private struct AlbumListRow: View {
+    let album: Album
+    let artworkPath: String?
+    let isLocal: Bool
+    let isPublished: Bool
+
+    var body: some View {
+        HStack(spacing: 12) {
+            AlbumArtworkImage(path: artworkPath)
+                .frame(width: 58, height: 58)
+                .clipShape(RoundedRectangle(cornerRadius: 7))
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text(album.title).font(.headline).lineLimit(1)
+                    if album.isFavourite { Image(systemName: "heart.fill").foregroundStyle(.pink) }
+                }
+                if let edition = album.editionLabel, !edition.isEmpty {
+                    Text(edition).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+                HStack(spacing: 8) {
+                    if let releaseYear = album.releaseYear { Text(String(releaseYear)) }
+                    AlbumSourceBadges(hasCD: album.hasCD, isLocal: isLocal, isPublished: isPublished)
+                }
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 3)
+    }
+}
+
+private struct AlbumArtworkImage: View {
+    let path: String?
+    @State private var image: NSImage?
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(nsImage: image).resizable().scaledToFill()
+            } else {
+                ZStack {
+                    LinearGradient(
+                        colors: [Color.accentColor.opacity(0.5), Color.purple.opacity(0.28)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    Image(systemName: "opticaldisc.fill")
+                        .font(.system(size: 42, weight: .light))
+                        .foregroundStyle(.white.opacity(0.82))
+                }
+            }
+        }
+        .clipped()
+        .task(id: path) {
+            image = nil
+            guard let path else { return }
+            let data = await Task.detached(priority: .utility) { try? Data(contentsOf: URL(fileURLWithPath: path)) }.value
+            if let data { image = NSImage(data: data) }
+        }
+    }
+}
+
+private struct AlbumSourceBadges: View {
+    let hasCD: Bool
+    let isLocal: Bool
+    let isPublished: Bool
+
+    var body: some View {
+        HStack(spacing: 4) {
+            if hasCD { badge("CD", symbol: "opticaldisc") }
+            if isLocal { badge("Mac", symbol: "laptopcomputer") }
+            if isPublished { badge("NAS", symbol: "externaldrive.connected.to.line.below") }
+        }
+    }
+
+    private func badge(_ title: String, symbol: String) -> some View {
+        Label(title, systemImage: symbol)
+            .labelStyle(.iconOnly)
+            .padding(4)
+            .background(.quaternary, in: RoundedRectangle(cornerRadius: 5))
+            .help(title)
+            .accessibilityLabel(title)
+    }
+}
+
+private struct MiniPlayerBar: View {
+    @ObservedObject var playback: PlaybackController
+    let showMetadata: () -> Void
+
+    var body: some View {
+        HStack(spacing: 16) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 8).fill(.quaternary)
+                Image(systemName: playback.isPlaying ? "waveform" : "music.note")
+                    .foregroundStyle(.secondary)
+            }
+            .frame(width: 46, height: 46)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(playback.currentTitle).font(.headline).lineLimit(1)
+                Text(playback.audioFormatDescription ?? "Ready to play")
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            .frame(minWidth: 180, maxWidth: 320, alignment: .leading)
+
+            Button("Previous", systemImage: "backward.fill") { playback.previous() }.playerIconStyle()
+            Button(playback.isPlaying ? "Pause" : "Play", systemImage: playback.isPlaying ? "pause.fill" : "play.fill") { playback.toggle() }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+            Button("Next", systemImage: "forward.fill") { playback.next() }.playerIconStyle()
+
+            VStack(spacing: 2) {
+                Slider(value: Binding(
+                    get: { playback.duration > 0 ? playback.currentTime / playback.duration : 0 },
+                    set: { playback.seek(to: $0) }
+                ), in: 0...1)
+                .disabled(playback.duration <= 0)
+                HStack {
+                    Text(time(playback.currentTime))
+                    Spacer()
+                    Text(time(playback.duration))
+                }
+                .font(.caption2).monospacedDigit().foregroundStyle(.secondary)
+            }
+            .frame(minWidth: 140, maxWidth: .infinity)
+
+            if playback.currentTrackID != nil {
+                Button("Show extracted metadata", systemImage: "info.circle", action: showMetadata).playerIconStyle()
+            }
+            Button(playback.queue.isShuffled ? "Turn Shuffle Off" : "Shuffle Queue", systemImage: "shuffle") { playback.toggleShuffle() }
+                .playerToggleStyle(active: playback.queue.isShuffled)
+            Button(repeatLabel, systemImage: playback.queue.repeatMode == .one ? "repeat.1" : "repeat") { cycleRepeatMode() }
+                .playerToggleStyle(active: playback.queue.repeatMode != .off)
+            Image(systemName: playback.volume == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                .foregroundStyle(.secondary)
+            Slider(value: Binding(get: { playback.volume }, set: { playback.setVolume(Float($0)) }), in: 0...1)
+                .frame(width: 80)
+            Button("Stop", systemImage: "stop.fill") { playback.stop() }.playerIconStyle()
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+        .background(.bar)
+        .overlay(alignment: .top) { Divider() }
+    }
+
+    private var repeatLabel: String {
+        switch playback.queue.repeatMode {
+        case .off: "Repeat Off"
+        case .all: "Repeat All"
+        case .one: "Repeat One"
+        }
+    }
+
+    private func cycleRepeatMode() {
+        switch playback.queue.repeatMode {
+        case .off: playback.setRepeatMode(.all)
+        case .all: playback.setRepeatMode(.one)
+        case .one: playback.setRepeatMode(.off)
+        }
+    }
+
+    private func time(_ seconds: TimeInterval) -> String {
+        guard seconds.isFinite, seconds >= 0 else { return "0:00" }
+        let whole = Int(seconds)
+        return String(format: "%d:%02d", whole / 60, whole % 60)
+    }
+}
+
+private extension View {
+    func playerIconStyle() -> some View {
+        labelStyle(.iconOnly).buttonStyle(.plain).font(.title3).padding(5)
+    }
+
+    func playerToggleStyle(active: Bool) -> some View {
+        labelStyle(.iconOnly)
+            .buttonStyle(.borderedProminent)
+            .tint(active ? .accentColor : Color.gray.opacity(0.18))
     }
 }
 
@@ -693,8 +1093,8 @@ private struct StorageRootList: View {
 
     private func importAttentionDetail(_ batch: ImportBatch) -> String {
         if batch.status == .failed { return batch.errorSummary ?? "The scan failed. Review it and retry when ready." }
-        if batch.status == .cancelled { return "The scan was cancelled after (batch.processedCount) item(s). Review it or retry the scan." }
-        return "(batch.errorCount) scan error(s) were recorded among (batch.processedCount) processed item(s)."
+        if batch.status == .cancelled { return "The scan was cancelled after \(batch.processedCount) item(s). Review it or retry the scan." }
+        return "\(batch.errorCount) scan error(s) were recorded among \(batch.processedCount) processed item(s)."
     }
 
     private func label(for status: StorageRootStatus) -> String { switch status { case .available: "Available"; case .offline: "Offline"; case .permissionRequired: "Permission required" } }
@@ -2120,27 +2520,36 @@ private struct AlbumDetail: View {
     @State private var artworkToMigrate: Artwork?
     @State private var discPendingDeletion: Disc?
     @State private var showsTagWritePreview = false
+    @State private var showsCatalogueDetails = false
 
     var body: some View {
         Form {
-            Section("Album") {
-                LabeledContent("Title", value: album.title)
-                if let edition = album.editionLabel, !edition.isEmpty { LabeledContent("Edition", value: edition) }
-                if let year = album.releaseYear { LabeledContent("Release year", value: String(year)) }
-                if let country = album.countryCode { LabeledContent("Country", value: country) }
-                if let catalogueNumber = album.catalogueNumber { LabeledContent("Catalogue no.", value: catalogueNumber) }
-                if let labelName = album.labelName { LabeledContent("Label", value: labelName) }
-                LabeledContent("Discs", value: String(album.discCount))
-                if let rating = album.rating { LabeledContent("Rating", value: "\(rating) / 5") }
-                if album.isFavourite { Label("Favourite", systemImage: "heart.fill").foregroundStyle(.pink) }
+            Section {
+                AlbumHero(
+                    album: album,
+                    artworkPath: artwork.first(where: { $0.role == .front && $0.isSelected })?.localPath,
+                    isLocal: library.localAlbumIDs.contains(album.id),
+                    isPublished: library.publishedAlbumIDs.contains(album.id),
+                    canPlay: !playableTracks.isEmpty,
+                    onPlay: { playAlbum(shuffled: false) },
+                    onShuffle: { playAlbum(shuffled: true) }
+                )
+                .padding(.vertical, 8)
             }
-            Section("Availability") {
-                AvailabilityBadge(title: "CD", isAvailable: album.hasCD)
-                AvailabilityBadge(title: "Digital", isAvailable: false)
-            }
-            if album.hasCD {
-                Section("Physical") {
-                    LabeledContent("Location", value: locationName)
+            .listRowBackground(Color.clear)
+
+            Section {
+                DisclosureGroup("Catalogue details", isExpanded: $showsCatalogueDetails) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        if let year = album.releaseYear { LabeledContent("Release year", value: String(year)) }
+                        if let country = album.countryCode { LabeledContent("Country", value: country) }
+                        if let catalogueNumber = album.catalogueNumber { LabeledContent("Catalogue no.", value: catalogueNumber) }
+                        if let labelName = album.labelName { LabeledContent("Label", value: labelName) }
+                        LabeledContent("Discs", value: String(album.discCount))
+                        if let rating = album.rating { LabeledContent("Rating", value: "\(rating) / 5") }
+                        if album.hasCD { LabeledContent("Physical location", value: locationName) }
+                    }
+                    .padding(.top, 8)
                 }
             }
             if !discs.isEmpty {
@@ -2253,8 +2662,11 @@ private struct AlbumDetail: View {
             }
         }
         .formStyle(.grouped)
-        .navigationTitle(album.displayTitle)
-        .toolbar { Button("Edit", action: onEdit); Button("Add Disc", systemImage: "plus") { showsAddDisc = true } }
+        .navigationTitle(album.title)
+        .toolbar {
+            Button("Edit Album", systemImage: "pencil", action: onEdit)
+            Button("Add Disc", systemImage: "plus") { showsAddDisc = true }
+        }
         .task(id: album.id) {
             do {
                 placement = try await library.boxPlacement(for: album.id)
@@ -2320,6 +2732,26 @@ private struct AlbumDetail: View {
         return "Unknown location"
     }
 
+    private var playableTracks: [Track] {
+        discs.flatMap { tracksByDisc[$0.id] ?? [] }
+    }
+
+    private func playAlbum(shuffled: Bool) {
+        Task {
+            do {
+                var items: [(url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?)] = []
+                for disc in discs {
+                    items.append(contentsOf: try await library.playbackURLs(discID: disc.id))
+                }
+                guard !items.isEmpty else { return }
+                try playback.play(items: items, startingAt: 0)
+                if shuffled { playback.toggleShuffle() }
+            } catch {
+                library.presentError(error)
+            }
+        }
+    }
+
     private func loadContent() async {
         do {
             let loadedDiscs = try await library.discs(albumID: album.id)
@@ -2356,6 +2788,57 @@ private struct AlbumDetail: View {
                 library.presentError(error)
             }
         }
+    }
+}
+
+private struct AlbumHero: View {
+    let album: Album
+    let artworkPath: String?
+    let isLocal: Bool
+    let isPublished: Bool
+    let canPlay: Bool
+    let onPlay: () -> Void
+    let onShuffle: () -> Void
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 24) {
+            AlbumArtworkImage(path: artworkPath)
+                .frame(width: 190, height: 190)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .shadow(color: .black.opacity(0.18), radius: 14, y: 7)
+
+            VStack(alignment: .leading, spacing: 12) {
+                Text(album.title)
+                    .font(.system(.largeTitle, design: .rounded, weight: .bold))
+                    .textSelection(.enabled)
+                if let edition = album.editionLabel, !edition.isEmpty {
+                    Text(edition).font(.title3).foregroundStyle(.secondary)
+                }
+                HStack(spacing: 10) {
+                    if let year = album.releaseYear { Text(String(year)) }
+                    if let label = album.labelName, !label.isEmpty { Text(label) }
+                    Text("\(album.discCount) disc\(album.discCount == 1 ? "" : "s")")
+                }
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                HStack(spacing: 8) {
+                    AlbumSourceBadges(hasCD: album.hasCD, isLocal: isLocal, isPublished: isPublished)
+                    if album.isFavourite { Label("Favourite", systemImage: "heart.fill").foregroundStyle(.pink) }
+                }
+                HStack(spacing: 10) {
+                    Button("Play", systemImage: "play.fill", action: onPlay)
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                        .disabled(!canPlay)
+                    Button("Shuffle", systemImage: "shuffle", action: onShuffle)
+                        .buttonStyle(.bordered)
+                        .controlSize(.large)
+                        .disabled(!canPlay)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

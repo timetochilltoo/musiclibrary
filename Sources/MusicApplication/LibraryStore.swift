@@ -25,6 +25,7 @@ public final class LibraryStore: ObservableObject {
     @Published public private(set) var storageRoots: [StorageRoot] = []
     @Published public private(set) var localAlbumIDs: Set<AlbumID> = []
     @Published public private(set) var publishedAlbumIDs: Set<AlbumID> = []
+    @Published public private(set) var albumFrontArtworkPaths: [AlbumID: String] = [:]
     @Published public private(set) var importBatches: [ImportBatch] = []
     @Published public private(set) var importScanProgress: [ImportBatchID: ImportScanProgress] = [:]
     @Published public private(set) var libraryHealthIssues: [LibraryHealthIssue] = []
@@ -98,6 +99,7 @@ public final class LibraryStore: ObservableObject {
         async let loadedStorageRoots = database.storageRoots()
         async let loadedLocalAlbumIDs = database.albumIDs(withAssetsIn: .localOnly)
         async let loadedPublishedAlbumIDs = database.albumIDs(withAssetsIn: .nasPublished)
+        async let loadedAlbumFrontArtworkPaths = database.selectedFrontArtworkPaths()
         async let loadedImportBatches = database.importBatches()
         async let loadedHealth = database.libraryHealthIssues()
         async let loadedPlaylists = database.playlists()
@@ -111,6 +113,7 @@ public final class LibraryStore: ObservableObject {
         storageRoots = try await loadedStorageRoots
         localAlbumIDs = try await loadedLocalAlbumIDs
         publishedAlbumIDs = try await loadedPublishedAlbumIDs
+        albumFrontArtworkPaths = try await loadedAlbumFrontArtworkPaths
         importBatches = try await loadedImportBatches
         libraryHealthIssues = try await loadedHealth
         playlists = try await loadedPlaylists

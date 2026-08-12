@@ -14,6 +14,8 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
     @Published public private(set) var currentTrackID: TrackID?
     @Published public private(set) var audioFormatDescription: String?
     @Published public private(set) var volume: Double = 1
+    @Published public private(set) var currentTime: TimeInterval = 0
+    @Published public private(set) var duration: TimeInterval = 0
     private var player: AVAudioPlayer?
     private var items: [(url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?)] = []
     private var originalItems: [(url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?)] = []
@@ -21,6 +23,7 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
     private var preparedNext: (trackID: TrackID, player: AVAudioPlayer)?
     private var preloadGeneration = 0
     private var cueEndTimer: Timer?
+    private var progressTimer: Timer?
     private let defaultsKey = "MusicLibrary.playbackQueue"
 
     public override init() {
@@ -45,6 +48,7 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
         if player.isPlaying {
             player.pause()
             isPlaying = false
+            updateProgress()
             updateNowPlayingInfo()
         } else if player.play() {
             isPlaying = true
@@ -56,9 +60,12 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
     public func stop() {
         invalidatePreparedNext()
         cueEndTimer?.invalidate(); cueEndTimer = nil
+        progressTimer?.invalidate(); progressTimer = nil
         player?.stop()
         isPlaying = false
         audioFormatDescription = nil
+        currentTime = 0
+        duration = 0
         clearNowPlayingInfo()
     }
     public func next() {
@@ -74,6 +81,7 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
     public func seek(to fraction: Double) {
         guard let player, player.duration > 0 else { return }
         player.currentTime = player.duration * min(max(0, fraction), 1)
+        updateProgress()
         updateNowPlayingInfo()
     }
     public func setVolume(_ value: Float) { volume = Double(min(max(0, value), 1)); player?.volume = Float(volume) }
@@ -133,6 +141,8 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
         currentTitle = "Playback unavailable"
         currentTrackID = nil
         audioFormatDescription = nil
+        currentTime = 0
+        duration = 0
         errorMessage = message
         clearNowPlayingInfo()
     }
@@ -183,6 +193,9 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
         currentTrackID = item.trackID
         audioFormatDescription = Self.formatDescription(for: item.url, format: openedPlayer.format)
         isPlaying = true
+        duration = openedPlayer.duration
+        currentTime = openedPlayer.currentTime
+        startProgressUpdates()
         updateNowPlayingInfo()
         scheduleCueEnd(trackID: item.trackID, endMilliseconds: item.cueEndMilliseconds)
         schedulePreload()
@@ -200,6 +213,23 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
                 self.next()
             }
         }
+    }
+
+    private func startProgressUpdates() {
+        progressTimer?.invalidate()
+        progressTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.updateProgress() }
+        }
+    }
+
+    private func updateProgress() {
+        guard let player else {
+            currentTime = 0
+            duration = 0
+            return
+        }
+        currentTime = player.currentTime
+        duration = player.duration
     }
 
     private func schedulePreload() {

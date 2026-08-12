@@ -208,6 +208,8 @@ Implemented:
 - Playlist navigation provides playlist creation, membership detail, and add-track actions.
 - Error alerts and initial database-opening progress UI.
 
+**Visual implementation checkpoint (13 August 2026):** the sidebar is now grouped into Library (Albums, Contributors, Playlists), Organize (Locations, Box Sets), Review (Library Changes), and Settings. Albums defaults to an adaptive artwork grid and can switch to a dense list; toolbar controls cover All Music / This Mac Only / NAS / iPad Music, title/newest/recent/rating sorting, and favourites-only filtering. Selected front-artwork paths are fetched in one persistence query and image decoding runs off the main actor. Album detail leads with a large artwork hero, edition/source/favourite badges, and Play/Shuffle actions, while catalogue fields remain progressively disclosed. The persistent MiniPlayer exposes seekable elapsed/duration progress, previous/play/next, visible shuffle/repeat states, volume, and stop. A pre-existing import-attention string-interpolation defect was also corrected. These changes preserve catalogue and source-media semantics. `swift build` and all 86 tests pass at this checkpoint; the next presentation slice is Library Changes, playlists, Settings, and Library Health.
+
 **Visual design review (12 August 2026):** the next Mac presentation workstream is artwork-first, icon-led, and progressively disclosed. The approved direction keeps the existing three-column shell and catalogue/review safety semantics, while simplifying the visible surfaces: Albums gets an artwork grid/list toggle plus All Music / This Mac Only / NAS / iPad Music scope filters; album detail leads with artwork and concise badges, with raw tags/technical fields behind Files or Details disclosure; Library Changes uses artwork/title/provenance/action cards; MusicBrainz Lookup becomes a resizable candidate-and-comparison workspace with imported/remote artwork and track comparison; and the MiniPlayer becomes artwork-led with explicit source, shuffle/repeat selected states, queue, lyrics, and an expanded technical view. Use native symbols consistently, pair ambiguous/destructive symbols with labels/tooltips, and never rely on color alone for status. This is UI-only scope: it must not add automatic network lookup, source-file mutation, or client-side catalogue writes. The detailed workstream and visual acceptance checks are in [BUILD_PLAN.md](BUILD_PLAN.md).
 
 Runtime database location on the Mac:
@@ -220,7 +222,7 @@ This database is user data. Do not remove it during development. If a destructiv
 
 ## 8. Current tests and verification baseline
 
-The last verified baseline contains 56 tests in 5 suites, run with a rebuilt `swift test` on 26 July 2026. Run `swift test`; do not rely on this handoff alone.
+The last verified baseline contains 86 tests in 8 suites, run with a rebuilt `swift test` on 13 August 2026. Run `swift test`; do not rely on this handoff alone.
 
 Albums now expose **Move to Recently Deleted** in the Albums list context menu. Settings displays a **Recently Deleted** section and its Restore action. This uses the existing soft-delete records, preserves album relationships, and never deletes or changes source media files.
 

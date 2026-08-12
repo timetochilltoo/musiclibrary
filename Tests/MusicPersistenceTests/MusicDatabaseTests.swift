@@ -330,6 +330,7 @@ struct MusicDatabaseTests {
         _ = try await database.addAlbumArtwork(albumID: album.id, localPath: "/art/first.jpg")
         let selected = try await database.addAlbumArtwork(albumID: album.id, localPath: "/art/second.jpg")
         #expect(try await database.albumArtwork(albumID: album.id).filter(\.isSelected).map(\.id) == [selected.id])
+        #expect(try await database.selectedFrontArtworkPaths() == [album.id: "/art/second.jpg"])
         try await database.deleteTrack(first.id)
         #expect(try await database.tracks(discID: disc.id).map(\.number) == [1])
         #expect(try await database.tracks(discID: disc.id).first?.id == second.id)

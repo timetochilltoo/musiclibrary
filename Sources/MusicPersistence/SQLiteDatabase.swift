@@ -1938,6 +1938,34 @@ public actor MusicDatabase {
         return values
     }
 
+    /// Loads the selected front cover for every active album in one query.
+    /// Album grids call this instead of issuing one database request per card.
+    public func selectedFrontArtworkPaths() throws -> [AlbumID: String] {
+        let statement = try Self.prepare(
+            """
+            SELECT artwork.owner_id, artwork.local_path
+            FROM artwork
+            JOIN album ON album.id = artwork.owner_id
+            WHERE artwork.owner_type = 'album'
+              AND artwork.role = 'front'
+              AND artwork.is_selected = 1
+              AND artwork.local_path IS NOT NULL
+              AND album.deleted_at IS NULL;
+            """,
+            on: connection
+        )
+        defer { sqlite3_finalize(statement) }
+        var values: [AlbumID: String] = [:]
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let rawAlbumID = Self.text(at: 0, from: statement),
+                  let uuid = UUID(uuidString: rawAlbumID),
+                  let path = Self.text(at: 1, from: statement),
+                  !path.isEmpty else { continue }
+            values[AlbumID(rawValue: uuid)] = path
+        }
+        return values
+    }
+
     public func addAlbumAlias(albumID: AlbumID, name: String, kind: AlbumAliasKind, locale: String? = nil) throws -> AlbumAlias {
         guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw ValidationError.requiredField("Alias") }
         let id = UUID()
