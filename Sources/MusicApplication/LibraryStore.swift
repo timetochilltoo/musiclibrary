@@ -363,8 +363,7 @@ public final class LibraryStore: ObservableObject {
         }
         guard rootAccessed || selectionAccessed else { throw DatabaseError.invalidOperation("Permission to access the selected replacement file was not available.") }
 
-        let relativePath = Self.relativePath(of: selectedURL, within: rootURL)
-        guard !relativePath.isEmpty else { throw DatabaseError.invalidOperation("Choose a replacement file inside the same registered music folder.") }
+        guard let relativePath = RegisteredPathSecurity.relativePath(of: selectedURL, within: rootURL), !relativePath.isEmpty else { throw DatabaseError.invalidOperation("Choose a replacement file inside the same registered music folder.") }
         let values = try selectedURL.resourceValues(forKeys: [.isDirectoryKey, .contentTypeKey, .isRegularFileKey])
         guard values.isRegularFile == true, values.isDirectory != true else { throw DatabaseError.invalidOperation("Choose an audio file, not a folder.") }
         let isDSF = selectedURL.pathExtension.caseInsensitiveCompare("dsf") == .orderedSame
@@ -740,12 +739,10 @@ public final class LibraryStore: ObservableObject {
     public func startImportScan(containing folderURL: URL) async throws -> ImportBatchID {
         guard database != nil else { throw DatabaseError.notFound("Catalogue database") }
         try await refreshStorageRootAccess()
-        let selectedPath = folderURL.standardizedFileURL.path
         let matchingRoots = storageRoots.compactMap { root -> (StorageRoot, URL)? in
             let resolved = resolveSecurityScopedBookmark(root)
             guard resolved.status == .available, let rootURL = resolved.url else { return nil }
-            let rootPath = rootURL.standardizedFileURL.path
-            guard selectedPath == rootPath || selectedPath.hasPrefix(rootPath.hasSuffix("/") ? rootPath : rootPath + "/") else { return nil }
+            guard RegisteredPathSecurity.contains(folderURL, within: rootURL) else { return nil }
             return (root, rootURL)
         }
         guard let match = matchingRoots.max(by: { $0.1.path.count < $1.1.path.count }) else {
@@ -761,13 +758,13 @@ public final class LibraryStore: ObservableObject {
         let resolved = resolveSecurityScopedBookmark(root)
         guard resolved.status == .available, let rootURL = resolved.url else { throw DatabaseError.invalidOperation("The selected storage root is not available.") }
         let scanURL = (folderURL ?? rootURL).standardizedFileURL
-        let rootPath = rootURL.standardizedFileURL.path
-        let scanPath = scanURL.path
-        guard scanPath == rootPath || scanPath.hasPrefix(rootPath.hasSuffix("/") ? rootPath : rootPath + "/") else {
+        guard RegisteredPathSecurity.contains(scanURL, within: rootURL) else {
             throw DatabaseError.invalidOperation("The selected album folder must be inside its registered music folder.")
         }
-        let scannedRoot = scanPath == rootPath
-        let relativeDirectory = Self.relativePath(of: scanURL, within: rootURL)
+        let scannedRoot = RegisteredPathSecurity.resolvedURL(scanURL) == RegisteredPathSecurity.resolvedURL(rootURL)
+        guard let relativeDirectory = RegisteredPathSecurity.relativePath(of: scanURL, within: rootURL) else {
+            throw DatabaseError.invalidOperation("Unable to derive a safe registered-root-relative folder path.")
+        }
         let batch = try await database.createImportBatch(storageRootID: rootID, sourceDescription: scanURL.path)
         await refreshImportBatches()
         let progressSink: @Sendable (ImportScanProgress) -> Void = { [store = self, batchID = batch.id] progress in
@@ -835,12 +832,6 @@ public final class LibraryStore: ObservableObject {
         guard batch.status != .scanning else { throw DatabaseError.invalidOperation("This import batch is already scanning.") }
         let folderURL = batch.sourceDescription.map(URL.init(fileURLWithPath:))
         return try await startImportScan(rootID: rootID, folderURL: folderURL)
-    }
-
-    private static func relativePath(of url: URL, within rootURL: URL) -> String {
-        let root = rootURL.standardizedFileURL.path.hasSuffix("/") ? rootURL.standardizedFileURL.path : rootURL.standardizedFileURL.path + "/"
-        let path = url.standardizedFileURL.path
-        return path.hasPrefix(root) ? String(path.dropFirst(root.count)) : ""
     }
 
     public func addLocation(_ draft: NewPhysicalLocation) async throws {

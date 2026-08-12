@@ -35,6 +35,7 @@ public struct ImportScanner: Sendable {
         isCancelled: @Sendable () -> Bool = { Task.isCancelled },
         onProgress: @Sendable (ImportScanProgress) -> Void = { _ in }
     ) -> ImportScanResult {
+        let rootURL = rootURL.standardizedFileURL
         let keys: Set<URLResourceKey> = [.isDirectoryKey, .isPackageKey, .isHiddenKey, .contentTypeKey, .fileSizeKey, .contentModificationDateKey]
         var errors: [String] = []
         guard let enumerator = FileManager.default.enumerator(at: rootURL, includingPropertiesForKeys: Array(keys), options: [.skipsHiddenFiles, .skipsPackageDescendants], errorHandler: { url, error in
@@ -53,8 +54,15 @@ public struct ImportScanner: Sendable {
             }
             examinedItemCount += 1
             do {
+                guard RegisteredPathSecurity.contains(url, within: rootURL) else {
+                    errors.append("\(url.lastPathComponent): path resolves outside the registered music folder.")
+                    continue
+                }
                 let values = try url.resourceValues(forKeys: keys)
-                let relative = relativePath(of: url, within: rootURL)
+                guard let relative = RegisteredPathSecurity.relativePath(of: url, within: rootURL) else {
+                    errors.append("\(url.lastPathComponent): unable to derive a safe registered-root-relative path.")
+                    continue
+                }
                 onProgress(.init(examinedItemCount: examinedItemCount, audioCandidateCount: candidates.count, currentRelativePath: relative))
                 if values.isDirectory == true || values.isPackage == true || values.isHidden == true { continue }
                 if url.pathExtension.lowercased() == "cue" { cueFiles.append(url); continue }
@@ -74,7 +82,10 @@ public struct ImportScanner: Sendable {
                 let cueDirectory = cueURL.deletingLastPathComponent()
                 for fileName in Set(tracks.map(\.fileName)) {
                     let audioURL = cueDirectory.appending(path: fileName)
-                    let relative = relativePath(of: audioURL, within: rootURL)
+                    guard let relative = RegisteredPathSecurity.relativePath(of: audioURL, within: rootURL) else {
+                        errors.append("\(cueURL.lastPathComponent): referenced audio file \(fileName) resolves outside the registered music folder.")
+                        continue
+                    }
                     guard let base = candidates.first(where: { $0.relativePath.caseInsensitiveCompare(relative) == .orderedSame }) else {
                         errors.append("\(cueURL.lastPathComponent): referenced audio file \(fileName) was not found.")
                         continue
@@ -93,9 +104,4 @@ public struct ImportScanner: Sendable {
         return .init(candidates: candidates, errors: errors, wasCancelled: isCancelled())
     }
 
-    private func relativePath(of url: URL, within rootURL: URL) -> String {
-        let root = rootURL.standardizedFileURL.path.hasSuffix("/") ? rootURL.standardizedFileURL.path : rootURL.standardizedFileURL.path + "/"
-        let path = url.standardizedFileURL.path
-        return path.hasPrefix(root) ? String(path.dropFirst(root.count)) : url.lastPathComponent
-    }
 }

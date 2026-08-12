@@ -90,6 +90,36 @@ struct ImportScannerTests {
         #expect(candidates.allSatisfy { $0.relativePath == "album.wav" })
     }
 
+    @Test("Scanner rejects a CUE parent-directory escape")
+    func rejectsCueTraversal() throws {
+        let parent = temporaryDirectory()
+        let root = parent.appending(path: "Music")
+        defer { try? FileManager.default.removeItem(at: parent) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try Data([0]).write(to: parent.appending(path: "outside.wav"))
+        let cue = "FILE \"../outside.wav\" WAVE\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n"
+        try Data(cue.utf8).write(to: root.appending(path: "album.cue"))
+
+        let result = ImportScanner().scan(rootURL: root)
+        #expect(result.candidates.isEmpty)
+        #expect(result.errors.contains { $0.localizedCaseInsensitiveContains("unsafe") })
+    }
+
+    @Test("Scanner rejects an audio symlink which resolves outside the registered root")
+    func rejectsSymlinkEscape() throws {
+        let parent = temporaryDirectory()
+        let root = parent.appending(path: "Music")
+        defer { try? FileManager.default.removeItem(at: parent) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let outside = parent.appending(path: "outside.mp3")
+        try Data([0]).write(to: outside)
+        try FileManager.default.createSymbolicLink(at: root.appending(path: "linked.mp3"), withDestinationURL: outside)
+
+        let result = ImportScanner().scan(rootURL: root)
+        #expect(result.candidates.isEmpty)
+        #expect(result.errors.contains { $0.localizedCaseInsensitiveContains("outside") })
+    }
+
     @Test("Metadata grouping keeps Unicode multi-disc candidates in one proposal")
     func groupsMetadata() {
         let batchID = ImportBatchID()

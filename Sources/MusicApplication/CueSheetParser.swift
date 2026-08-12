@@ -3,6 +3,17 @@ import MusicDomain
 
 /// Minimal CUE parser for a single audio-file album. INDEX 01 positions are stored in CD frames (75/s).
 struct CueSheetParser: Sendable {
+    enum ParseError: LocalizedError, Equatable {
+        case unsafeFileReference(String)
+
+        var errorDescription: String? {
+            switch self {
+            case .unsafeFileReference(let value):
+                return "Unsafe CUE FILE reference \(value)."
+            }
+        }
+    }
+
     struct Track: Sendable {
         let fileName: String
         let number: Int
@@ -49,7 +60,13 @@ struct CueSheetParser: Sendable {
         for rawLine in text.components(separatedBy: .newlines) {
             let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !line.isEmpty else { continue }
-            if let value = fileValue(line) { fileName = value; continue }
+            if let value = fileValue(line) {
+                guard !RegisteredPathSecurity.isUnsafeRelativeReference(value) else {
+                    throw ParseError.unsafeFileReference(value)
+                }
+                fileName = value
+                continue
+            }
             if line.uppercased().hasPrefix("TRACK ") {
                 finishCurrent()
                 let parts = line.split(separator: " ")

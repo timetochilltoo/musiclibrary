@@ -448,6 +448,8 @@ The transaction must be idempotent using `import_candidate.created_album_id` or 
 
 - Resolve and start security-scoped access for each selected root.
 - Enumerate recursively off the main actor.
+- Enforce registered-root containment using standardized paths plus symlink resolution and a component boundary; reject files/folders whose resolved target escapes the root.
+- Treat CUE `FILE` values as relative references only: reject absolute, parent-directory, and NUL-containing values before resolving them against the CUE directory, then apply the same registered-root containment check.
 - Ignore hidden/system files, package contents, and configured exclusions.
 - Recognize supported audio by Uniform Type Identifier/content probe, not extension alone.
 - Yield progress periodically by item count and current path.

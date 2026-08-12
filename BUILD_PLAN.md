@@ -10,6 +10,20 @@ Operational continuation guide: [HANDOFF.md](HANDOFF.md)
 
 Implementation baseline (22 July 2026): the macOS catalogue foundation, retained local/NAS authorization, Import Inbox, assets, playback, recovery, destination-configured snapshot publication with revision retention/status and tested scheduling, verified read-only cache, iPad browsing/playback, foreground update indication, and a generated Xcode iPad project are complete and covered by thirty-seven automated tests. The remaining Mac publication gap is a time-bounded quit flush; device deployment needs a Development Team selected in Xcode. See [HANDOFF.md](HANDOFF.md) for the current Git baseline and next implementation slice.
 
+## Current execution gate — audit hardening before visual redesign (12 August 2026)
+
+The existing Mac catalogue and player now have enough working surface area to justify a release-oriented audit before the planned artwork-first UI pass. The audit found no evidence of a data breach or catalogue corruption in the current test baseline, but it identified several defensive and reliability improvements that must be completed first. The visual implementation workstream is therefore **blocked until this gate exits**.
+
+The hardening workstream is executed as small, independently tested slices:
+
+1. **Path and CUE safety:** enforce component-aware, symlink-resolved containment for registered roots, child-folder imports, replacement/relink paths, and CUE `FILE` references. Reject absolute/parent escapes and add traversal/symlink regression tests.
+2. **Backup and snapshot safety:** validate manifest filenames and archive paths, preserve the last known-good manifest until the replacement is verified, and make local/NAS cache replacement pair-consistent and bounded.
+3. **Audio-container validation:** make DSF/WAV arithmetic overflow-safe, reject malformed/truncated headers before allocation or playback, and add malformed-file tests for the supported catalogue/playback paths.
+4. **Reliability and performance:** move full-file fingerprinting and other avoidable blocking work off the main actor, add bounded network/database waits, prevent startup failure from permanently disabling retry, and remove duplicate scheduled backup work.
+5. **Exit verification:** run focused tests after each slice, then the complete debug/release Swift test and build checks, update `HANDOFF.md`, commit, and push. Only after this exit review may the visual foundation begin.
+
+These changes preserve the fixed product invariants: the Mac remains the only catalogue writer, scans and lookups remain explicit and non-mutating, source audio is never rewritten by review actions, NAS publication remains snapshot-based, and the later UI redesign must not alter persistence semantics.
+
 ## 1. Recommendation
 
 Build this as a **local-first macOS music catalog and lossless player**, with iPad support designed in from the start. Treat Android, network sync, AI cover recognition, and AI music generation as later modules.
