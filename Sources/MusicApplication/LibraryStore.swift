@@ -270,13 +270,15 @@ public final class LibraryStore: ObservableObject {
 
     public func refreshStorageRootAccess() async throws {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        var didUpdateRoot = false
         for root in storageRoots {
             let state = resolveSecurityScopedBookmark(root)
             if root.status != state.status || root.bookmarkNeedsRefresh != state.bookmarkNeedsRefresh || state.refreshedBookmarkData != nil || (state.status == .available && root.lastKnownPath != state.url?.path) {
                 try await database.updateStorageRootAccess(root.id, status: state.status, lastKnownPath: state.url?.path, bookmarkData: state.refreshedBookmarkData, bookmarkNeedsRefresh: state.bookmarkNeedsRefresh)
+                didUpdateRoot = true
             }
         }
-        try await reload()
+        if didUpdateRoot { try await reload() }
     }
 
     public func recheckLibraryHealth() async throws {
@@ -535,6 +537,10 @@ public final class LibraryStore: ObservableObject {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
         try await refreshStorageRootAccess()
         guard let asset = try await database.playbackAsset(trackID: trackID) else { throw DatabaseError.notFound("Playable asset") }
+        return try playbackURL(for: asset)
+    }
+
+    private func playbackURL(for asset: PlaybackAssetReference) throws -> (url: URL, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?) {
         guard asset.availability == .available else { throw DatabaseError.invalidOperation("This asset is not currently available.") }
         guard let root = storageRoots.first(where: { $0.id == asset.storageRootID }) else { throw DatabaseError.notFound("Storage root") }
         let resolved = resolveSecurityScopedBookmark(root)
@@ -545,26 +551,36 @@ public final class LibraryStore: ObservableObject {
     }
 
     public func playbackURLs(discID: DiscID) async throws -> [(url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?)] {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        try await refreshStorageRootAccess()
         let discTracks = try await tracks(discID: discID)
         var results: [(url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?)] = []
-        for track in discTracks { let asset = try await playbackURL(for: track.id); results.append((asset.url, track.id, asset.title, asset.cueStartMilliseconds, asset.cueEndMilliseconds)) }
+        for track in discTracks {
+            guard let asset = try await database.playbackAsset(trackID: track.id) else { throw DatabaseError.notFound("Playable asset") }
+            let resolved = try playbackURL(for: asset)
+            results.append((resolved.url, track.id, resolved.title, resolved.cueStartMilliseconds, resolved.cueEndMilliseconds))
+        }
         return results
     }
     public func playbackURLs(playlistID: PlaylistID) async throws -> [(url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?)] {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        try await refreshStorageRootAccess()
         var results: [(url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?)] = []
         for item in try await playlistItems(playlistID) {
-            if let asset = try? await playbackURL(for: item.trackID) {
-                results.append((asset.url, item.trackID, asset.title, asset.cueStartMilliseconds, asset.cueEndMilliseconds))
+            if let asset = try? await database.playbackAsset(trackID: item.trackID), let resolved = try? playbackURL(for: asset) {
+                results.append((resolved.url, item.trackID, resolved.title, resolved.cueStartMilliseconds, resolved.cueEndMilliseconds))
             }
         }
         guard !results.isEmpty else { throw DatabaseError.invalidOperation("This playlist has no currently playable tracks.") }
         return results
     }
     public func playbackURLs(trackIDs: [TrackID]) async -> [(url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?)] {
+        guard let database else { return [] }
+        try? await refreshStorageRootAccess()
         var results: [(url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?)] = []
         for trackID in trackIDs {
-            if let asset = try? await playbackURL(for: trackID) {
-                results.append((asset.url, trackID, asset.title, asset.cueStartMilliseconds, asset.cueEndMilliseconds))
+            if let asset = try? await database.playbackAsset(trackID: trackID), let resolved = try? playbackURL(for: asset) {
+                results.append((resolved.url, trackID, resolved.title, resolved.cueStartMilliseconds, resolved.cueEndMilliseconds))
             }
         }
         return results

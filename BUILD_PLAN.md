@@ -24,7 +24,7 @@ The hardening workstream is executed as small, independently tested slices:
 
 These changes preserve the fixed product invariants: the Mac remains the only catalogue writer, scans and lookups remain explicit and non-mutating, source audio is never rewritten by review actions, NAS publication remains snapshot-based, and the later UI redesign must not alter persistence semantics.
 
-**Hardening progress (12 August 2026):** the registered-root/CUE containment, backup/snapshot safety, and DSF/WAV validation slices are complete and independently tested. The remaining gate is reliability/performance cleanup followed by exit verification; the visual redesign remains blocked until those checks pass.
+**Hardening progress (12 August 2026):** the registered-root/CUE containment, backup/snapshot safety, DSF/WAV validation, and first playback repeated-work cleanup slices are complete and independently tested. The remaining gate is reliability/performance cleanup followed by exit verification; the visual redesign remains blocked until those checks pass.
 
 ## 1. Recommendation
 
