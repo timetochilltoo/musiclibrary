@@ -120,6 +120,80 @@ public struct ImportReleaseProposal: Identifiable, Equatable, Sendable {
     }
 }
 
+public enum ImportAttachmentMode: String, Equatable, Sendable {
+    /// The selected catalogue album has no tracks. Import confirmation will add
+    /// the proposal's disc/track structure and attach its digital assets.
+    case populateEmptyAlbum
+    /// The selected catalogue album already has tracks. Import confirmation
+    /// attaches each scanned asset to the explicitly previewed catalogue track.
+    case attachToExistingTracks
+}
+
+public struct ImportAttachmentPair: Identifiable, Equatable, Sendable {
+    public let candidateID: ImportCandidateID
+    public let discNumber: Int
+    public let importedTrackNumber: Int?
+    public let importedTitle: String
+    public let relativePath: String
+    public let catalogueTrackID: TrackID?
+    public let catalogueTrackNumber: Int?
+    public let catalogueTitle: String?
+
+    public var id: ImportCandidateID { candidateID }
+
+    public init(
+        candidateID: ImportCandidateID,
+        discNumber: Int,
+        importedTrackNumber: Int?,
+        importedTitle: String,
+        relativePath: String,
+        catalogueTrackID: TrackID?,
+        catalogueTrackNumber: Int?,
+        catalogueTitle: String?
+    ) {
+        self.candidateID = candidateID
+        self.discNumber = discNumber
+        self.importedTrackNumber = importedTrackNumber
+        self.importedTitle = importedTitle
+        self.relativePath = relativePath
+        self.catalogueTrackID = catalogueTrackID
+        self.catalogueTrackNumber = catalogueTrackNumber
+        self.catalogueTitle = catalogueTitle
+    }
+}
+
+/// Read-only evidence shown before an import proposal is attached to an
+/// existing catalogue album. `isCompatible` is deliberately re-evaluated in
+/// the same transaction that performs the attachment; the preview is never an
+/// authorization token and cannot become a stale unsafe write.
+public struct ImportAttachmentPreview: Equatable, Sendable {
+    public let proposalID: UUID
+    public let albumID: AlbumID
+    public let albumTitle: String
+    public let mode: ImportAttachmentMode
+    public let pairs: [ImportAttachmentPair]
+    public let isCompatible: Bool
+    public let compatibilityMessage: String
+
+    public init(
+        proposalID: UUID,
+        albumID: AlbumID,
+        albumTitle: String,
+        mode: ImportAttachmentMode,
+        pairs: [ImportAttachmentPair],
+        isCompatible: Bool,
+        compatibilityMessage: String
+    ) {
+        self.proposalID = proposalID
+        self.albumID = albumID
+        self.albumTitle = albumTitle
+        self.mode = mode
+        self.pairs = pairs
+        self.isCompatible = isCompatible
+        self.compatibilityMessage = compatibilityMessage
+    }
+}
+
 public struct ExternalMetadataSelection: Identifiable, Equatable, Sendable {
     public let id: UUID
     public let importProposalID: UUID

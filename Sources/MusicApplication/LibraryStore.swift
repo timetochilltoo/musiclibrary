@@ -428,6 +428,18 @@ public final class LibraryStore: ObservableObject {
         return albumID
     }
 
+    public func importAttachmentPreview(proposalID: UUID, albumID: AlbumID) async throws -> ImportAttachmentPreview {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        return try await database.importAttachmentPreview(proposalID: proposalID, albumID: albumID)
+    }
+
+    public func attachImportReleaseProposal(_ proposalID: UUID, to albumID: AlbumID) async throws -> AlbumID {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        let attachedAlbumID = try await database.attachImportReleaseProposal(proposalID, to: albumID)
+        try await reload()
+        return attachedAlbumID
+    }
+
     private func importedFolderArtwork(for proposalID: UUID) async throws -> URL? {
         guard let database else { return nil }
         for batch in importBatches {

@@ -556,6 +556,114 @@ struct MusicDatabaseTests {
         #expect(try await database.albums().map(\.id) == [albumID])
     }
 
+    @Test("Approved import attaches digital files to an exactly matching catalogue edition")
+    func importAttachesToMatchingExistingAlbum() async throws {
+        let database = try MusicDatabase(url: temporaryDatabaseURL())
+        try await database.migrate()
+        let target = try await database.createAlbum(.init(title: "Catalogue title", editionLabel: "Japan pressing"))
+        let disc = try await database.createDisc(albumID: target.id)
+        let firstTrack = try await database.createTrack(discID: disc.id, draft: .init(title: "Catalogue first"))
+        let secondTrack = try await database.createTrack(discID: disc.id, draft: .init(title: "Catalogue second"))
+        let root = try await database.createStorageRoot(.init(displayName: "Music", lastKnownPath: "/Music", bookmarkData: Data([1])))
+        let batch = try await database.createImportBatch(storageRootID: root.id, sourceDescription: "/Music")
+        for path in ["Rip/02.flac", "Rip/01.flac"] {
+            try await database.recordImportCandidate(batchID: batch.id, payload: .init(relativePath: path, fileName: URL(fileURLWithPath: path).lastPathComponent, contentTypeIdentifier: "org.xiph.flac", fileSize: 10, modifiedAt: nil))
+        }
+        let candidates = try await database.importCandidates(batchID: batch.id)
+        for candidate in candidates {
+            let number = candidate.payload?.fileName == "01.flac" ? 1 : 2
+            try await database.saveEmbeddedMetadata(.init(title: "Imported \(number)", albumTitle: "Different embedded title", artist: "Embedded artist", albumArtist: nil, discNumber: 1, trackNumber: number, durationMilliseconds: number * 1_000, rawTags: [:], codec: "FLAC"), for: candidate.id)
+        }
+        try await database.rebuildImportReleaseProposals(batchID: batch.id, drafts: [.init(title: "Different embedded title", artist: "Embedded artist", discCount: 1, confidence: 1, candidateIDs: candidates.map(\.id))])
+        let proposal = try #require(await database.importReleaseProposals(batchID: batch.id).first)
+        try await database.updateImportReleaseProposal(proposal.id, status: .approved)
+
+        let preview = try await database.importAttachmentPreview(proposalID: proposal.id, albumID: target.id)
+        #expect(preview.isCompatible)
+        #expect(preview.mode == .attachToExistingTracks)
+        #expect(preview.pairs.map(\.catalogueTrackID) == [firstTrack.id, secondTrack.id])
+        #expect(preview.pairs.map(\.importedTrackNumber) == [1, 2])
+        let revisionBefore = try await database.currentRevision()
+
+        let attachedAlbumID = try await database.attachImportReleaseProposal(proposal.id, to: target.id)
+
+        #expect(attachedAlbumID == target.id)
+        #expect(try await database.currentRevision() == revisionBefore + 1)
+        #expect(try await database.albums().map(\.displayTitle) == ["Catalogue title — Japan pressing"])
+        #expect(try await database.tracks(discID: disc.id).map(\.title) == ["Catalogue first", "Catalogue second"])
+        #expect(try await database.digitalAssetIDs(albumID: target.id).count == 2)
+        #expect(try await database.createdAlbumID(forImportProposal: proposal.id) == target.id)
+        #expect(try await database.attachImportReleaseProposal(proposal.id, to: target.id) == target.id)
+        #expect(try await database.currentRevision() == revisionBefore + 1)
+    }
+
+    @Test("Import attachment refuses a track-count mismatch without partial writes")
+    func importAttachmentMismatchRollsBack() async throws {
+        let database = try MusicDatabase(url: temporaryDatabaseURL())
+        try await database.migrate()
+        let target = try await database.createAlbum(.init(title: "Existing edition"))
+        let disc = try await database.createDisc(albumID: target.id)
+        _ = try await database.createTrack(discID: disc.id, draft: .init(title: "Only catalogue track"))
+        let root = try await database.createStorageRoot(.init(displayName: "Music", lastKnownPath: "/Music", bookmarkData: Data([1])))
+        let batch = try await database.createImportBatch(storageRootID: root.id, sourceDescription: "/Music")
+        for number in 1...2 {
+            let path = "Rip/\(number).flac"
+            try await database.recordImportCandidate(batchID: batch.id, payload: .init(relativePath: path, fileName: "\(number).flac", contentTypeIdentifier: "org.xiph.flac", fileSize: 10, modifiedAt: nil))
+        }
+        let candidates = try await database.importCandidates(batchID: batch.id)
+        for (number, candidate) in candidates.enumerated() {
+            try await database.saveEmbeddedMetadata(.init(title: "Imported \(number + 1)", albumTitle: "Import", artist: nil, albumArtist: nil, discNumber: 1, trackNumber: number + 1, durationMilliseconds: nil, rawTags: [:]), for: candidate.id)
+        }
+        try await database.rebuildImportReleaseProposals(batchID: batch.id, drafts: [.init(title: "Import", artist: nil, discCount: 1, confidence: 1, candidateIDs: candidates.map(\.id))])
+        let proposal = try #require(await database.importReleaseProposals(batchID: batch.id).first)
+        try await database.updateImportReleaseProposal(proposal.id, status: .approved)
+        let revisionBefore = try await database.currentRevision()
+
+        let preview = try await database.importAttachmentPreview(proposalID: proposal.id, albumID: target.id)
+        #expect(!preview.isCompatible)
+        #expect(preview.compatibilityMessage.contains("2 imported files but 1 catalogue tracks"))
+        do {
+            _ = try await database.attachImportReleaseProposal(proposal.id, to: target.id)
+            Issue.record("A mismatched import must not attach any assets.")
+        } catch let error as DatabaseError {
+            #expect(error.errorDescription?.contains("2 imported files but 1 catalogue tracks") == true)
+        }
+        #expect(try await database.digitalAssetIDs(albumID: target.id).isEmpty)
+        #expect(try await database.createdAlbumID(forImportProposal: proposal.id) == nil)
+        #expect(try await database.currentRevision() == revisionBefore)
+    }
+
+    @Test("Approved import can populate an empty existing catalogue album")
+    func importPopulatesEmptyExistingAlbum() async throws {
+        let database = try MusicDatabase(url: temporaryDatabaseURL())
+        try await database.migrate()
+        let target = try await database.createAlbum(.init(title: "Manually catalogued edition", editionLabel: "Keep this label", discCount: 1, hasCD: true))
+        let root = try await database.createStorageRoot(.init(displayName: "Music", lastKnownPath: "/Music", bookmarkData: Data([1])))
+        let batch = try await database.createImportBatch(storageRootID: root.id, sourceDescription: "/Music")
+        for number in 1...2 {
+            let path = "Rip/0\(number).flac"
+            try await database.recordImportCandidate(batchID: batch.id, payload: .init(relativePath: path, fileName: "0\(number).flac", contentTypeIdentifier: "org.xiph.flac", fileSize: 10, modifiedAt: nil))
+        }
+        let candidates = try await database.importCandidates(batchID: batch.id)
+        for (number, candidate) in candidates.enumerated() {
+            try await database.saveEmbeddedMetadata(.init(title: "Imported title \(number + 1)", albumTitle: "Wrong embedded album", artist: "Wrong artist", albumArtist: nil, discNumber: 1, trackNumber: number + 1, durationMilliseconds: nil, rawTags: [:]), for: candidate.id)
+        }
+        try await database.rebuildImportReleaseProposals(batchID: batch.id, drafts: [.init(title: "Wrong embedded album", artist: "Wrong artist", discCount: 1, confidence: 1, candidateIDs: candidates.map(\.id))])
+        let proposal = try #require(await database.importReleaseProposals(batchID: batch.id).first)
+        try await database.updateImportReleaseProposal(proposal.id, status: .approved)
+
+        let preview = try await database.importAttachmentPreview(proposalID: proposal.id, albumID: target.id)
+        #expect(preview.isCompatible)
+        #expect(preview.mode == .populateEmptyAlbum)
+        #expect(preview.pairs.allSatisfy { $0.catalogueTrackID == nil })
+        _ = try await database.attachImportReleaseProposal(proposal.id, to: target.id)
+
+        #expect(try await database.albums().map(\.displayTitle) == ["Manually catalogued edition — Keep this label"])
+        let disc = try #require(await database.discs(albumID: target.id).first)
+        #expect(try await database.tracks(discID: disc.id).map(\.title) == ["Imported title 1", "Imported title 2"])
+        #expect(try await database.digitalAssetIDs(albumID: target.id).count == 2)
+    }
+
     @Test("Applying a relink proposal changes only the stored catalogue path")
     func applyRelinkProposal() async throws {
         let database = try MusicDatabase(url: temporaryDatabaseURL())

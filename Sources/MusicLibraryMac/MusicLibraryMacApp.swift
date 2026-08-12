@@ -896,6 +896,7 @@ private struct ImportBatchDetail: View {
     @State private var proposals: [ImportReleaseProposal] = []
     @State private var proposalPreviews: [UUID: ImportProposalPreview] = [:]
     @State private var proposalToConfirm: ImportReleaseProposal?
+    @State private var proposalToAttach: ImportReleaseProposal?
     @State private var proposalToLookUp: ImportReleaseProposal?
     @State private var selectionToReview: ExternalMetadataSelection?
     @State private var selections: [UUID: ExternalMetadataSelection] = [:]
@@ -1050,7 +1051,8 @@ private struct ImportBatchDetail: View {
                                 }
                             }
                             if proposal.status == .approved && proposal.createdAlbumID == nil {
-                                Button("Create Catalogue Records…", systemImage: "checkmark.seal") { proposalToConfirm = proposal }
+                                Button("Create New Edition…", systemImage: "plus.rectangle.on.folder") { proposalToConfirm = proposal }
+                                Button("Attach to Existing Edition…", systemImage: "link.badge.plus") { proposalToAttach = proposal }
                             }
                         }
                         .frame(minWidth: 230, alignment: .trailing)
@@ -1143,6 +1145,9 @@ private struct ImportBatchDetail: View {
         .sheet(item: $proposalToLookUp) { proposal in
             ExternalMetadataLookupView(library: library, proposal: proposal, onSelected: { await load() })
         }
+        .sheet(item: $proposalToAttach) { proposal in
+            ExistingAlbumAttachmentView(library: library, proposal: proposal, onAttached: { await load() })
+        }
         .sheet(item: $selectionToReview) { selection in ExternalMetadataComparisonView(library: library, selection: selection, proposal: proposals.first(where: { $0.id == selection.importProposalID }), onApplied: { await load() }) }
     }
 
@@ -1224,6 +1229,228 @@ private struct ImportBatchDetail: View {
         if !unregisteredCandidates.isEmpty { parts.append("\(unregisteredCandidates.count) new audio file\(unregisteredCandidates.count == 1 ? "" : "s")") }
         if !missingAssets.isEmpty { parts.append("\(missingAssets.count) missing catalogue reference\(missingAssets.count == 1 ? "" : "s")") }
         return "This completed scan found " + parts.joined(separator: " and ") + ". Review the items below; nothing is changed automatically."
+    }
+}
+
+private struct ExistingAlbumAttachmentView: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var library: LibraryStore
+    let proposal: ImportReleaseProposal
+    let onAttached: () async -> Void
+
+    @State private var searchText = ""
+    @State private var selectedAlbumID: AlbumID?
+    @State private var preview: ImportAttachmentPreview?
+    @State private var isLoadingPreview = false
+    @State private var isAttaching = false
+
+    private var filteredAlbums: [Album] {
+        let term = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return library.albums
+            .filter { album in
+                guard !term.isEmpty else { return true }
+                return [album.title, album.editionLabel, album.catalogueNumber, album.countryCode, album.releaseYear.map(String.init)]
+                    .compactMap { $0 }
+                    .contains { $0.localizedCaseInsensitiveContains(term) }
+            }
+            .sorted { $0.displayTitle.localizedStandardCompare($1.displayTitle) == .orderedAscending }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Attach Files to an Existing Edition")
+                    .font(.title2.bold())
+                Text("Choose the catalogue edition these scanned files belong to. Catalogue titles, credits, artwork, and edition metadata will not be replaced.")
+                    .foregroundStyle(.secondary)
+                Label("\(proposal.trackCount) imported file\(proposal.trackCount == 1 ? "" : "s") · \(proposal.discCount) disc\(proposal.discCount == 1 ? "" : "s")", systemImage: "waveform.badge.plus")
+                    .font(.subheadline.weight(.medium))
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(24)
+            Divider()
+
+            HSplitView {
+                VStack(spacing: 0) {
+                    HStack {
+                        Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                        TextField("Find an album or edition", text: $searchText)
+                            .textFieldStyle(.plain)
+                    }
+                    .padding(10)
+                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 9))
+                    .padding(12)
+
+                    List(filteredAlbums, selection: $selectedAlbumID) { album in
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(album.displayTitle).font(.headline).lineLimit(2)
+                            HStack(spacing: 6) {
+                                if let year = album.releaseYear { Text(String(year)) }
+                                if let country = album.countryCode { Text(country) }
+                                if let catalogueNumber = album.catalogueNumber { Text(catalogueNumber) }
+                            }
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            HStack(spacing: 6) {
+                                if library.localAlbumIDs.contains(album.id) {
+                                    Label("Mac", systemImage: "macbook")
+                                }
+                                if library.publishedAlbumIDs.contains(album.id) {
+                                    Label("NAS", systemImage: "externaldrive.connected.to.line.below")
+                                }
+                                if album.hasCD { Label("CD", systemImage: "opticaldisc") }
+                            }
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        }
+                        .padding(.vertical, 5)
+                        .tag(album.id)
+                    }
+                    .overlay {
+                        if filteredAlbums.isEmpty {
+                            ContentUnavailableView.search(text: searchText)
+                        }
+                    }
+                }
+                .frame(minWidth: 300, idealWidth: 350)
+
+                Group {
+                    if isLoadingPreview {
+                        ProgressView("Checking discs, tracks, and file paths…")
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else if let preview {
+                        attachmentPreview(preview)
+                    } else {
+                        ContentUnavailableView(
+                            "Select an Existing Edition",
+                            systemImage: "rectangle.stack.badge.person.crop",
+                            description: Text("The app will compare every imported file with the selected catalogue edition before enabling attachment.")
+                        )
+                    }
+                }
+                .frame(minWidth: 560, maxWidth: .infinity, maxHeight: .infinity)
+            }
+
+            Divider()
+            HStack {
+                Label("Source audio files are never copied, moved, renamed, or modified.", systemImage: "lock.shield")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button {
+                    attach()
+                } label: {
+                    if isAttaching {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Label("Attach Digital Files", systemImage: "link.badge.plus")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+                .disabled(preview?.isCompatible != true || isLoadingPreview || isAttaching)
+            }
+            .padding(16)
+        }
+        .frame(minWidth: 940, idealWidth: 1120, minHeight: 640, idealHeight: 760)
+        .presentationSizing(.fitted)
+        .task(id: selectedAlbumID) { await loadPreview() }
+    }
+
+    @ViewBuilder
+    private func attachmentPreview(_ preview: ImportAttachmentPreview) -> some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 7) {
+                    Text(preview.albumTitle).font(.title2.bold())
+                    Label(
+                        preview.isCompatible ? "Ready to attach" : "Cannot attach safely",
+                        systemImage: preview.isCompatible ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
+                    )
+                    .font(.headline)
+                    .foregroundStyle(preview.isCompatible ? .green : .orange)
+                    Text(preview.compatibilityMessage).foregroundStyle(.secondary)
+                    Text(preview.mode == .populateEmptyAlbum
+                         ? "This catalogue edition is empty. The imported disc and track structure will be created while its existing album metadata remains unchanged."
+                         : "The imported files will be paired with the existing tracks below. Existing track titles and ordering remain unchanged.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Divider()
+
+                Text("File-to-track preview").font(.headline)
+                ForEach(preview.pairs) { pair in
+                    HStack(alignment: .top, spacing: 14) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Label("Imported", systemImage: "doc.badge.plus")
+                                .font(.caption.bold()).foregroundStyle(.secondary)
+                            Text(pair.importedTitle).fontWeight(.medium)
+                            Text(pair.relativePath).font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                        Image(systemName: "arrow.right")
+                            .foregroundStyle(.secondary)
+                            .padding(.top, 24)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Label("Catalogue · Disc \(pair.discNumber)", systemImage: "music.note.list")
+                                .font(.caption.bold()).foregroundStyle(.secondary)
+                            if let title = pair.catalogueTitle {
+                                Text(title).fontWeight(.medium)
+                                Text("Track \(pair.catalogueTrackNumber.map(String.init) ?? "—") · title preserved")
+                                    .font(.caption2).foregroundStyle(.secondary)
+                            } else {
+                                Text(pair.importedTitle).fontWeight(.medium)
+                                Text("New catalogue track will be created")
+                                    .font(.caption2).foregroundStyle(.secondary)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .padding(12)
+                    .background(.quaternary.opacity(0.55), in: RoundedRectangle(cornerRadius: 10))
+                }
+            }
+            .padding(22)
+        }
+    }
+
+    private func loadPreview() async {
+        guard let albumID = selectedAlbumID else {
+            preview = nil
+            return
+        }
+        isLoadingPreview = true
+        preview = nil
+        do {
+            let loaded = try await library.importAttachmentPreview(proposalID: proposal.id, albumID: albumID)
+            guard selectedAlbumID == albumID else { return }
+            preview = loaded
+        } catch {
+            guard selectedAlbumID == albumID else { return }
+            library.presentError(error)
+        }
+        if selectedAlbumID == albumID { isLoadingPreview = false }
+    }
+
+    private func attach() {
+        guard let albumID = selectedAlbumID, preview?.isCompatible == true else { return }
+        isAttaching = true
+        Task {
+            do {
+                _ = try await library.attachImportReleaseProposal(proposal.id, to: albumID)
+                await onAttached()
+                dismiss()
+            } catch {
+                library.presentError(error)
+                isAttaching = false
+                await loadPreview()
+            }
+        }
     }
 }
 

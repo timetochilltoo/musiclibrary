@@ -45,6 +45,38 @@ public actor MusicDatabase {
         let source: String
     }
 
+    private struct ImportedAttachmentCandidate {
+        let id: ImportCandidateID
+        let payload: ImportCandidatePayload
+        let metadata: EmbeddedMetadataPayload
+
+        var discNumber: Int { max(1, metadata.discNumber ?? 1) }
+        var preferredTrackNumber: Int? {
+            guard let number = metadata.trackNumber, number > 0 else { return nil }
+            return number
+        }
+        var title: String { metadata.title ?? payload.fileName }
+    }
+
+    private struct CatalogueAttachmentTrack {
+        let discNumber: Int
+        let id: TrackID
+        let number: Int
+        let title: String
+    }
+
+    private struct ImportAttachmentContext {
+        let status: ImportProposalStatus
+        let createdAlbumID: AlbumID?
+        let rootID: StorageRootID?
+        let expectedTrackCount: Int
+        let rawCandidateCount: Int
+        let albumTitle: String
+        let candidates: [ImportedAttachmentCandidate]
+        let existingDiscIDs: [Int: DiscID]
+        let existingTracks: [CatalogueAttachmentTrack]
+    }
+
     public init(url: URL) throws {
         var handle: OpaquePointer?
         let flags = SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX
@@ -470,6 +502,100 @@ public actor MusicDatabase {
         }
     }
 
+    public func importAttachmentPreview(proposalID: UUID, albumID: AlbumID) throws -> ImportAttachmentPreview {
+        let context = try Self.importAttachmentContext(proposalID: proposalID, albumID: albumID, on: connection)
+        return try Self.importAttachmentPreview(proposalID: proposalID, albumID: albumID, context: context, on: connection)
+    }
+
+    /// Attaches an approved import proposal to an album that already represents the
+    /// same edition. Catalogue metadata is deliberately left untouched. An empty
+    /// target receives the imported disc/track structure; a populated target must
+    /// match the proposal's disc and track counts exactly.
+    public func attachImportReleaseProposal(_ proposalID: UUID, to albumID: AlbumID) throws -> AlbumID {
+        var result: AlbumID?
+        try transaction {
+            let context = try Self.importAttachmentContext(proposalID: proposalID, albumID: albumID, on: connection)
+            if let createdAlbumID = context.createdAlbumID {
+                guard createdAlbumID == albumID else {
+                    throw DatabaseError.invalidOperation("This proposal has already been added to another catalogue album.")
+                }
+                result = albumID
+                return
+            }
+            guard context.status == .approved else {
+                throw DatabaseError.invalidOperation("Approve the proposal before attaching digital files.")
+            }
+            let preview = try Self.importAttachmentPreview(proposalID: proposalID, albumID: albumID, context: context, on: connection)
+            guard preview.isCompatible else { throw DatabaseError.invalidOperation(preview.compatibilityMessage) }
+            guard let rootID = context.rootID else { throw DatabaseError.notFound("Storage root") }
+            let availability = try Self.importedAssetAvailability(rootID: rootID, on: connection)
+            let candidatesByID = Dictionary(uniqueKeysWithValues: context.candidates.map { ($0.id, $0) })
+
+            switch preview.mode {
+            case .populateEmptyAlbum:
+                var discIDs = context.existingDiscIDs
+                for candidate in context.candidates {
+                    let discID: DiscID
+                    if let existing = discIDs[candidate.discNumber] {
+                        discID = existing
+                    } else {
+                        discID = DiscID()
+                        discIDs[candidate.discNumber] = discID
+                        let insertDisc = try Self.prepare("INSERT INTO disc (id, album_id, number) VALUES (?, ?, ?);", on: connection)
+                        defer { sqlite3_finalize(insertDisc) }
+                        try Self.bind(discID.description, at: 1, to: insertDisc)
+                        try Self.bind(albumID.description, at: 2, to: insertDisc)
+                        try Self.bind(Int64(candidate.discNumber), at: 3, to: insertDisc)
+                        try Self.stepDone(insertDisc, connection: connection)
+                    }
+                    let trackID = TrackID()
+                    let trackNumber = try Self.importedTrackNumber(preferredNumber: candidate.preferredTrackNumber, discID: discID, on: connection)
+                    let insertTrack = try Self.prepare("INSERT INTO track (id, disc_id, number, title, duration_ms) VALUES (?, ?, ?, ?, ?);", on: connection)
+                    defer { sqlite3_finalize(insertTrack) }
+                    try Self.bind(trackID.description, at: 1, to: insertTrack)
+                    try Self.bind(discID.description, at: 2, to: insertTrack)
+                    try Self.bind(Int64(trackNumber), at: 3, to: insertTrack)
+                    try Self.bind(candidate.title, at: 4, to: insertTrack)
+                    try Self.bind(candidate.metadata.durationMilliseconds.map(Int64.init), at: 5, to: insertTrack)
+                    try Self.stepDone(insertTrack, connection: connection)
+                    try Self.insertImportedAsset(candidate: candidate, trackID: trackID, rootID: rootID, availability: availability, on: connection)
+                }
+                let updateAlbum = try Self.prepare("UPDATE album SET disc_count = ?, updated_at = ? WHERE id = ?;", on: connection)
+                defer { sqlite3_finalize(updateAlbum) }
+                try Self.bind(Int64(max(1, Set(context.candidates.map(\.discNumber)).count)), at: 1, to: updateAlbum)
+                try Self.bind(Self.milliseconds(Date()), at: 2, to: updateAlbum)
+                try Self.bind(albumID.description, at: 3, to: updateAlbum)
+                try Self.stepDone(updateAlbum, connection: connection)
+
+            case .attachToExistingTracks:
+                for pair in preview.pairs {
+                    guard let candidate = candidatesByID[pair.candidateID], let trackID = pair.catalogueTrackID else {
+                        throw DatabaseError.invalidOperation("The attachment preview no longer matches the catalogue. Rescan and review it again.")
+                    }
+                    try Self.insertImportedAsset(candidate: candidate, trackID: trackID, rootID: rootID, availability: availability, on: connection)
+                }
+            }
+
+            let now = Self.milliseconds(Date())
+            let confirm = try Self.prepare("UPDATE import_release_proposal SET created_album_id = ?, confirmed_at = ?, updated_at = ? WHERE id = ? AND created_album_id IS NULL;", on: connection)
+            defer { sqlite3_finalize(confirm) }
+            try Self.bind(albumID.description, at: 1, to: confirm)
+            try Self.bind(now, at: 2, to: confirm)
+            try Self.bind(now, at: 3, to: confirm)
+            try Self.bind(proposalID.uuidString.lowercased(), at: 4, to: confirm)
+            try Self.stepDone(confirm, connection: connection)
+            guard sqlite3_changes(connection) == 1 else {
+                throw DatabaseError.invalidOperation("The proposal changed while it was being attached. Review it again.")
+            }
+            try incrementRevision(changes: [
+                .init(entityType: "import_release_proposal", entityID: proposalID.uuidString.lowercased(), fieldName: "attached_album_id", oldValue: nil, newValue: albumID.description, source: "mac-import")
+            ])
+            result = albumID
+        }
+        guard let result else { throw DatabaseError.notFound("Import release proposal") }
+        return result
+    }
+
     public func confirmImportReleaseProposal(_ proposalID: UUID) throws -> AlbumID {
         var result: AlbumID?
         try transaction {
@@ -509,7 +635,7 @@ public actor MusicDatabase {
                 defer { sqlite3_finalize(rootStatus) }; try Self.bind(rootID.description, at: 1, to: rootStatus); guard sqlite3_step(rootStatus) == SQLITE_ROW else { throw DatabaseError.notFound("Storage root") }
                 let availability = Self.text(at: 0, from: rootStatus) == StorageRootStatus.available.rawValue ? DigitalAssetAvailability.available.rawValue : DigitalAssetAvailability.rootOffline.rawValue
                 let asset = try Self.prepare("INSERT INTO digital_asset (id, track_id, storage_root_id, relative_path, file_size, modified_at, duration_ms, codec, container, sample_rate_hz, bit_depth, channel_count, origin, availability, embedded_metadata_payload, cue_start_ms, cue_end_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);", on: connection)
-                defer { sqlite3_finalize(asset) }; try Self.bind(DigitalAssetID().description, at: 1, to: asset); try Self.bind(trackID.description, at: 2, to: asset); try Self.bind(rootID.description, at: 3, to: asset); try Self.bind(payload.relativePath, at: 4, to: asset); try Self.bind(payload.fileSize, at: 5, to: asset); try Self.bind(payload.modifiedAt.map(Self.milliseconds), at: 6, to: asset); try Self.bind(metadata.durationMilliseconds.map(Int64.init), at: 7, to: asset); try Self.bind(metadata.codec, at: 8, to: asset); try Self.bind(metadata.codec, at: 9, to: asset); try Self.bind(metadata.sampleRateHz.map(Int64.init), at: 10, to: asset); try Self.bind(metadata.bitDepth.map(Int64.init), at: 11, to: asset); try Self.bind(metadata.channelCount.map(Int64.init), at: 12, to: asset); try Self.bind(metadata.provenance, at: 13, to: asset); try Self.bind(availability, at: 14, to: asset); try Self.bind(try JSONEncoder().encode(metadata), at: 15, to: asset); try Self.bind(payload.cueStartMilliseconds.map(Int64.init), at: 16, to: asset); try Self.bind(payload.cueEndMilliseconds.map(Int64.init), at: 17, to: asset); try Self.stepDone(asset, connection: connection)
+                defer { sqlite3_finalize(asset) }; try Self.bind(DigitalAssetID().description, at: 1, to: asset); try Self.bind(trackID.description, at: 2, to: asset); try Self.bind(rootID.description, at: 3, to: asset); try Self.bind(payload.relativePath, at: 4, to: asset); try Self.bind(payload.fileSize, at: 5, to: asset); try Self.bind(payload.modifiedAt.map(Self.milliseconds), at: 6, to: asset); try Self.bind(metadata.durationMilliseconds.map(Int64.init), at: 7, to: asset); try Self.bind(metadata.codec, at: 8, to: asset); try Self.bind(URL(fileURLWithPath: payload.relativePath).pathExtension.lowercased(), at: 9, to: asset); try Self.bind(metadata.sampleRateHz.map(Int64.init), at: 10, to: asset); try Self.bind(metadata.bitDepth.map(Int64.init), at: 11, to: asset); try Self.bind(metadata.channelCount.map(Int64.init), at: 12, to: asset); try Self.bind(DigitalAssetOrigin.localOther.rawValue, at: 13, to: asset); try Self.bind(availability, at: 14, to: asset); try Self.bind(try JSONEncoder().encode(metadata), at: 15, to: asset); try Self.bind(payload.cueStartMilliseconds.map(Int64.init), at: 16, to: asset); try Self.bind(payload.cueEndMilliseconds.map(Int64.init), at: 17, to: asset); try Self.stepDone(asset, connection: connection)
             }
             guard !discs.isEmpty else { throw DatabaseError.invalidOperation("The proposal has no readable metadata candidates.") }
             if let releaseYear {
@@ -2154,6 +2280,252 @@ public actor MusicDatabase {
 
     /// Embedded tags are advisory during import. Preserve a positive unique number, but do
     /// not let duplicated (or zero) tags abort the whole approved proposal transaction.
+    private static func importAttachmentContext(
+        proposalID: UUID,
+        albumID: AlbumID,
+        on connection: OpaquePointer,
+    ) throws -> ImportAttachmentContext {
+        let proposal = try prepare("""
+            SELECT proposal.status, proposal.created_album_id, batch.storage_root_id,
+                   proposal.track_count, album.title
+            FROM import_release_proposal proposal
+            JOIN import_batch batch ON batch.id = proposal.batch_id
+            JOIN album ON album.id = ? AND album.deleted_at IS NULL
+            WHERE proposal.id = ?;
+            """, on: connection)
+        defer { sqlite3_finalize(proposal) }
+        try bind(albumID.description, at: 1, to: proposal)
+        try bind(proposalID.uuidString.lowercased(), at: 2, to: proposal)
+        guard sqlite3_step(proposal) == SQLITE_ROW,
+              let rawStatus = text(at: 0, from: proposal),
+              let status = ImportProposalStatus(rawValue: rawStatus)
+        else { throw DatabaseError.notFound("Import proposal or target album") }
+        let createdAlbumID = text(at: 1, from: proposal)
+            .flatMap(UUID.init(uuidString:))
+            .map(AlbumID.init(rawValue:))
+        let rootID = text(at: 2, from: proposal)
+            .flatMap(UUID.init(uuidString:))
+            .map(StorageRootID.init(rawValue:))
+        let expectedTrackCount = Int(int(at: 3, from: proposal) ?? 0)
+        let albumTitle = text(at: 4, from: proposal) ?? ""
+
+        let candidateRows = try prepare("SELECT id, proposed_payload, metadata_payload FROM import_candidate WHERE proposal_id = ? ORDER BY rowid;", on: connection)
+        defer { sqlite3_finalize(candidateRows) }
+        try bind(proposalID.uuidString.lowercased(), at: 1, to: candidateRows)
+        var rawCandidateCount = 0
+        var candidates: [ImportedAttachmentCandidate] = []
+        while sqlite3_step(candidateRows) == SQLITE_ROW {
+            rawCandidateCount += 1
+            guard let rawID = text(at: 0, from: candidateRows),
+                  let id = UUID(uuidString: rawID),
+                  let payloadData = data(at: 1, from: candidateRows),
+                  let payload = try? JSONDecoder().decode(ImportCandidatePayload.self, from: payloadData),
+                  let metadataData = data(at: 2, from: candidateRows),
+                  let metadata = try? JSONDecoder().decode(EmbeddedMetadataPayload.self, from: metadataData)
+            else { continue }
+            candidates.append(.init(id: .init(rawValue: id), payload: payload, metadata: metadata))
+        }
+        candidates.sort(by: importedAttachmentCandidateOrder)
+
+        let catalogueRows = try prepare("""
+            SELECT disc.id, disc.number, track.id, track.number, track.title
+            FROM disc
+            LEFT JOIN track ON track.disc_id = disc.id
+            WHERE disc.album_id = ?
+            ORDER BY disc.number, track.number, track.id;
+            """, on: connection)
+        defer { sqlite3_finalize(catalogueRows) }
+        try bind(albumID.description, at: 1, to: catalogueRows)
+        var existingDiscIDs: [Int: DiscID] = [:]
+        var existingTracks: [CatalogueAttachmentTrack] = []
+        while sqlite3_step(catalogueRows) == SQLITE_ROW {
+            guard let rawDiscID = text(at: 0, from: catalogueRows),
+                  let discUUID = UUID(uuidString: rawDiscID)
+            else { throw DatabaseError.invalidIdentifier("disc.id") }
+            let discNumber = Int(int(at: 1, from: catalogueRows) ?? 1)
+            existingDiscIDs[discNumber] = .init(rawValue: discUUID)
+            guard let rawTrackID = text(at: 2, from: catalogueRows),
+                  let trackUUID = UUID(uuidString: rawTrackID)
+            else { continue }
+            existingTracks.append(.init(
+                discNumber: discNumber,
+                id: .init(rawValue: trackUUID),
+                number: Int(int(at: 3, from: catalogueRows) ?? 0),
+                title: text(at: 4, from: catalogueRows) ?? ""
+            ))
+        }
+        return .init(
+            status: status,
+            createdAlbumID: createdAlbumID,
+            rootID: rootID,
+            expectedTrackCount: expectedTrackCount,
+            rawCandidateCount: rawCandidateCount,
+            albumTitle: albumTitle,
+            candidates: candidates,
+            existingDiscIDs: existingDiscIDs,
+            existingTracks: existingTracks
+        )
+    }
+
+    private static func importAttachmentPreview(
+        proposalID: UUID,
+        albumID: AlbumID,
+        context: ImportAttachmentContext,
+        on connection: OpaquePointer,
+    ) throws -> ImportAttachmentPreview {
+        let mode: ImportAttachmentMode = context.existingTracks.isEmpty ? .populateEmptyAlbum : .attachToExistingTracks
+        var problems: [String] = []
+        if let createdAlbumID = context.createdAlbumID {
+            problems.append(createdAlbumID == albumID
+                ? "This proposal is already attached to this catalogue album."
+                : "This proposal has already been added to another catalogue album.")
+        }
+        if context.rootID == nil { problems.append("The import batch no longer has a registered music folder.") }
+        if context.rawCandidateCount == 0 { problems.append("The proposal contains no audio candidates.") }
+        if context.candidates.count != context.rawCandidateCount {
+            problems.append("One or more imported files has unreadable metadata. Read metadata again before attaching it.")
+        }
+        if context.expectedTrackCount > 0, context.rawCandidateCount != context.expectedTrackCount {
+            problems.append("The proposal expects \(context.expectedTrackCount) tracks but contains \(context.rawCandidateCount) imported files.")
+        }
+        if let rootID = context.rootID {
+            for candidate in context.candidates where try importedAssetPathExists(candidate: candidate, rootID: rootID, on: connection) {
+                problems.append("\(candidate.payload.relativePath) is already attached to the catalogue.")
+                break
+            }
+        }
+
+        let incomingDiscNumbers = Set(context.candidates.map(\.discNumber))
+        let existingDiscNumbers = Set(context.existingDiscIDs.keys)
+        var pairs: [ImportAttachmentPair] = []
+        if mode == .populateEmptyAlbum {
+            if !existingDiscNumbers.isEmpty, existingDiscNumbers != incomingDiscNumbers {
+                problems.append("The empty target album's disc numbers do not match the imported release.")
+            }
+            pairs = context.candidates.map { candidate in
+                .init(
+                    candidateID: candidate.id,
+                    discNumber: candidate.discNumber,
+                    importedTrackNumber: candidate.preferredTrackNumber,
+                    importedTitle: candidate.title,
+                    relativePath: candidate.payload.relativePath,
+                    catalogueTrackID: nil,
+                    catalogueTrackNumber: nil,
+                    catalogueTitle: nil
+                )
+            }
+        } else {
+            let catalogueDiscNumbers = Set(context.existingTracks.map(\.discNumber))
+            if incomingDiscNumbers != catalogueDiscNumbers {
+                problems.append("Imported discs \(incomingDiscNumbers.sorted()) do not match catalogue discs \(catalogueDiscNumbers.sorted()).")
+            }
+            for discNumber in incomingDiscNumbers.union(catalogueDiscNumbers).sorted() {
+                let imported = context.candidates.filter { $0.discNumber == discNumber }
+                let catalogue = context.existingTracks
+                    .filter { $0.discNumber == discNumber }
+                    .sorted { $0.number == $1.number ? $0.id.description < $1.id.description : $0.number < $1.number }
+                guard imported.count == catalogue.count else {
+                    problems.append("Disc \(discNumber) has \(imported.count) imported files but \(catalogue.count) catalogue tracks.")
+                    continue
+                }
+                pairs.append(contentsOf: zip(imported, catalogue).map { candidate, track in
+                    .init(
+                        candidateID: candidate.id,
+                        discNumber: discNumber,
+                        importedTrackNumber: candidate.preferredTrackNumber,
+                        importedTitle: candidate.title,
+                        relativePath: candidate.payload.relativePath,
+                        catalogueTrackID: track.id,
+                        catalogueTrackNumber: track.number,
+                        catalogueTitle: track.title
+                    )
+                })
+            }
+        }
+        if pairs.count != context.candidates.count, problems.isEmpty {
+            problems.append("Not every imported file could be paired with a catalogue track.")
+        }
+        let compatible = problems.isEmpty
+        let message: String
+        if compatible {
+            message = mode == .populateEmptyAlbum
+                ? "This album is empty. The imported disc and track structure will be created without changing the album's title or edition metadata."
+                : "Every imported file has one catalogue-track destination. Review all pairs before attaching the digital files."
+        } else {
+            message = problems.joined(separator: " ")
+        }
+        return .init(
+            proposalID: proposalID,
+            albumID: albumID,
+            albumTitle: context.albumTitle,
+            mode: mode,
+            pairs: pairs,
+            isCompatible: compatible,
+            compatibilityMessage: message
+        )
+    }
+
+    private static func importedAttachmentCandidateOrder(_ left: ImportedAttachmentCandidate, _ right: ImportedAttachmentCandidate) -> Bool {
+        if left.discNumber != right.discNumber { return left.discNumber < right.discNumber }
+        let leftTrack = left.preferredTrackNumber ?? Int.max
+        let rightTrack = right.preferredTrackNumber ?? Int.max
+        if leftTrack != rightTrack { return leftTrack < rightTrack }
+        let pathOrder = left.payload.relativePath.localizedStandardCompare(right.payload.relativePath)
+        if pathOrder != .orderedSame { return pathOrder == .orderedAscending }
+        return left.id.description < right.id.description
+    }
+
+    private static func importedAssetPathExists(candidate: ImportedAttachmentCandidate, rootID: StorageRootID, on connection: OpaquePointer) throws -> Bool {
+        let statement = try prepare("SELECT 1 FROM digital_asset WHERE storage_root_id = ? AND relative_path = ? AND COALESCE(cue_start_ms, -1) = COALESCE(?, -1) LIMIT 1;", on: connection)
+        defer { sqlite3_finalize(statement) }
+        try bind(rootID.description, at: 1, to: statement)
+        try bind(candidate.payload.relativePath, at: 2, to: statement)
+        try bind(candidate.payload.cueStartMilliseconds.map(Int64.init), at: 3, to: statement)
+        return sqlite3_step(statement) == SQLITE_ROW
+    }
+
+    private static func importedAssetAvailability(rootID: StorageRootID, on connection: OpaquePointer) throws -> String {
+        let statement = try prepare("SELECT status FROM storage_root WHERE id = ?;", on: connection)
+        defer { sqlite3_finalize(statement) }
+        try bind(rootID.description, at: 1, to: statement)
+        guard sqlite3_step(statement) == SQLITE_ROW else { throw DatabaseError.notFound("Storage root") }
+        return text(at: 0, from: statement) == StorageRootStatus.available.rawValue
+            ? DigitalAssetAvailability.available.rawValue
+            : DigitalAssetAvailability.rootOffline.rawValue
+    }
+
+    private static func insertImportedAsset(
+        candidate: ImportedAttachmentCandidate,
+        trackID: TrackID,
+        rootID: StorageRootID,
+        availability: String,
+        on connection: OpaquePointer,
+    ) throws {
+        guard !(try importedAssetPathExists(candidate: candidate, rootID: rootID, on: connection)) else {
+            throw DatabaseError.invalidOperation("\(candidate.payload.relativePath) is already attached to the catalogue.")
+        }
+        let asset = try prepare("INSERT INTO digital_asset (id, track_id, storage_root_id, relative_path, file_size, modified_at, duration_ms, codec, container, sample_rate_hz, bit_depth, channel_count, origin, availability, embedded_metadata_payload, cue_start_ms, cue_end_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);", on: connection)
+        defer { sqlite3_finalize(asset) }
+        try bind(DigitalAssetID().description, at: 1, to: asset)
+        try bind(trackID.description, at: 2, to: asset)
+        try bind(rootID.description, at: 3, to: asset)
+        try bind(candidate.payload.relativePath, at: 4, to: asset)
+        try bind(candidate.payload.fileSize, at: 5, to: asset)
+        try bind(candidate.payload.modifiedAt.map(milliseconds), at: 6, to: asset)
+        try bind(candidate.metadata.durationMilliseconds.map(Int64.init), at: 7, to: asset)
+        try bind(candidate.metadata.codec, at: 8, to: asset)
+        try bind(URL(fileURLWithPath: candidate.payload.relativePath).pathExtension.lowercased(), at: 9, to: asset)
+        try bind(candidate.metadata.sampleRateHz.map(Int64.init), at: 10, to: asset)
+        try bind(candidate.metadata.bitDepth.map(Int64.init), at: 11, to: asset)
+        try bind(candidate.metadata.channelCount.map(Int64.init), at: 12, to: asset)
+        try bind(DigitalAssetOrigin.localOther.rawValue, at: 13, to: asset)
+        try bind(availability, at: 14, to: asset)
+        try bind(try JSONEncoder().encode(candidate.metadata), at: 15, to: asset)
+        try bind(candidate.payload.cueStartMilliseconds.map(Int64.init), at: 16, to: asset)
+        try bind(candidate.payload.cueEndMilliseconds.map(Int64.init), at: 17, to: asset)
+        try stepDone(asset, connection: connection)
+    }
+
     private static func importedTrackNumber(
         preferredNumber: Int?,
         discID: DiscID,

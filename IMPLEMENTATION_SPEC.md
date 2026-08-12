@@ -1,6 +1,6 @@
 # Music Library — Implementation Specification
 
-Date: 11 August 2026
+Date: 12 August 2026
 Companion document: [BUILD_PLAN.md](BUILD_PLAN.md)
 
 Operational continuation guide: [HANDOFF.md](HANDOFF.md)
@@ -16,13 +16,13 @@ Completed and verified:
 
 - Swift package structure with macOS SwiftUI executable and separate Domain, Persistence, Application, and UI modules.
 - Domain identifiers, album/edition model, physical locations, box sets, contributor roles, and derived digital-availability logic.
-- SQLite schema migrations 1 through 10, foreign keys, catalogue revision tracking, and core repositories.
+- SQLite schema migrations 1 through 16, foreign keys, catalogue revision tracking, and core repositories.
 - Persistent Mac catalogue stored in the user's Application Support directory.
 - Catalogue UI: browse/search albums; browse contributors; add albums; create/rename/move/delete hierarchical locations; create box sets; show basic album details.
 - Atomic album creation inside a box set, including inherited physical-location behaviour.
 - Album editing plus box-member browse, confirmed move, removal with a standalone placement, and reorder workflows.
 - Schema migration 2 adds `physical_location_unknown`, removing ambiguity between a boxed album and a standalone CD whose location is unknown.
-- Seventy-four automated tests across six test suites, last verified with a rebuilt `swift test` and `swift build` on 11 August 2026.
+- Eighty-six automated tests across eight test suites, last verified with a rebuilt `swift test` on 12 August 2026.
 - Catalogue-content foundation complete: ordered discs/tracks, aliases, contributor roles at album and track level, selected album artwork with local-path provenance, and safe track/alias removal. Album detail supports manual creation of each of these relationships and user-selected front artwork without modifying source files. Legacy path-only album artwork can be explicitly copied into managed storage from Album Detail; the source remains untouched and the catalogue row changes only after a successful copy.
 - Storage-root foundation complete: migration 3, persisted root records, security-scoped bookmark creation/resolution, availability checks, and Settings management. Offline and authorization-required roots are retained rather than removed.
 - Import Inbox foundation complete: migration 4, cancellable system-content-type scanning of available authorized roots, persistent batches/candidates/errors, recovery of interrupted scans, and Inbox cancellation/retry UI. Scans never create albums, tracks, or digital assets.
@@ -65,6 +65,7 @@ Completed and verified:
 - Manual replacement-file relink proposals complete: a missing-file review can open the system file picker for a replacement audio file. The chosen file must be a readable regular audio/DSF file inside that asset's existing available registered root. The app derives the root-relative path and stores a deduplicated proposal only; it does not move, rename, copy, or retag media, and it does not change the active catalogue path until the user explicitly applies the proposal from Settings.
 - Rescan attention filtering complete: Library Changes separates **New audio files** (scanned root-relative paths not already represented by a digital asset in that root) from an expandable complete scan diagnostic list. Embedded metadata extraction and release proposals run only for those new paths, so an ordinary health rescan cannot repeatedly propose catalogue albums that already exist. The scanner reports transient recursive-walk progress (items examined, audio candidates found, current relative path); Library Changes displays retained file-level errors and an explicit completed outcome without treating any scan result as an automatic catalogue mutation.
 - Combined rescan and metadata review complete: Library Changes keeps the fast reconciliation-only **Retry Scan** and the explicit metadata-only action, and additionally offers **Rescan and Read Metadata for New Files**. The combined action selects the new audit batch immediately, waits for a successful completed scan, then runs the same unregistered-path-only metadata extraction once. Failed/cancelled scans are never analyzed, and a scan with no new paths produces no proposals. Ordinary Rescan semantics remain unchanged.
+- Existing-edition digital attachment complete: after approving a release proposal, the Mac offers **Create New Edition** and **Attach to Existing Edition** as separate actions. Attachment first builds a read-only file-to-track preview. A populated target must match the proposal's complete disc-number set and exact per-disc track counts; the ordered scanned files are then paired with ordered catalogue tracks without replacing catalogue metadata. An empty target receives the proposal's disc/track structure but retains its existing album/edition fields. The write transaction revalidates proposal status, target shape, and root-relative path uniqueness; a mismatch or reused path rolls back without a revision. Repeating the same successful attachment is idempotent, and source audio is never copied, moved, renamed, retagged, or deleted.
 - Library Changes refresh and metadata grouping correction complete: retry selects its new audit batch immediately and the detail reloads as that batch's recorded state changes. Proposal identity normalizes Unicode composition, collapses harmless whitespace, and ignores letter case only for grouping; one divergent `ARTIST` without `ALBUMARTIST` may join a clear multi-track majority only within the same album folder. The first source spelling remains visible for review. Distinct registered roots remain separate scans and are never automatically merged.
 - Track rating UI complete: schema 10 stores the same optional 1–5 scale on tracks; the Mac add/edit-track sheets set it, album detail displays it, and published read-only track data includes it.
 - Detailed track-editor UI complete: the Mac editor corrects a track's title, display position, duration, work, movement number/name, and instrumental flag. These are catalogue-only corrections and never modify source audio tags.
@@ -73,9 +74,9 @@ Completed and verified:
 - Mac playback integration complete: standard macOS media keys/Now Playing controls are registered for play, pause, previous, and next; the playback bar displays the source container plus decoded runtime sample rate and channel count. Original bit depth and actual DAC output format remain real-hardware verification items rather than values the app guesses.
 - Read-only snapshot compatibility gate complete: the client rejects a verified-but-newer unsupported catalogue schema and keeps its prior verified cache. The maximum currently supported published schema is 10.
 
-Not yet implemented:
+Not yet implemented or deliberately deferred:
 
-- General deletion/recovery beyond albums, playlists, and empty box sets; tag write-back, lyrics, and AI.
+- General deletion/recovery beyond albums, playlists, and empty box sets; source-tag formats beyond FLAC; any internet lyrics provider; AI modules; live NAS endurance/latency validation; and final iPad device validation. FLAC write-back and manual plain/LRC lyrics are implemented.
 
 Remaining general recovery should be designed specifically for box sets before implementation, because hiding a box set without changing or hiding its member albums would violate the physical-placement model. Keep source media untouched; preserve identity and ordering invariants; and require explicit user action. A Mac recheck refreshes the derived availability of reachable root-relative files without changing paths or catalogue revision. A reviewed individual relink can be explicitly applied as a catalogue-only path update; it must never move or rename media. Playlists support create, ordered membership, rename, soft delete, item removal, reordering, and playback. Do not allow companion clients to alter the catalogue.
 
