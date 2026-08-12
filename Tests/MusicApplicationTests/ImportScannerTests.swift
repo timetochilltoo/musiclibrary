@@ -254,6 +254,34 @@ struct ImportScannerTests {
         #expect(header.count == 44)
     }
 
+    @Test("DSF reader rejects overflowing and truncated container declarations")
+    func rejectsMalformedDSFContainers() throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        var overflowingFormat = makeTaggedDSF()
+        setLittleEndian(&overflowingFormat, offset: 32, value: UInt64.max, byteCount: 8)
+        let overflowingFormatURL = directory.appending(path: "overflowing-format.dsf")
+        try overflowingFormat.write(to: overflowingFormatURL)
+        #expect(throws: DSFError.invalidContainer) { try DSFMetadataReader().read(url: overflowingFormatURL) }
+
+        var truncatedData = makeTaggedDSF()
+        setLittleEndian(&truncatedData, offset: 84, value: 12, byteCount: 8)
+        let truncatedDataURL = directory.appending(path: "truncated-data.dsf")
+        try truncatedData.write(to: truncatedDataURL)
+        #expect(throws: DSFError.invalidContainer) { try DSFMetadataReader().read(url: truncatedDataURL) }
+
+        var invalidMetadataOffset = makeTaggedDSF()
+        setLittleEndian(&invalidMetadataOffset, offset: 20, value: 1, byteCount: 8)
+        let invalidMetadataURL = directory.appending(path: "invalid-metadata-offset.dsf")
+        try invalidMetadataOffset.write(to: invalidMetadataURL)
+        #expect(throws: DSFError.invalidContainer) { try DSFMetadataReader().read(url: invalidMetadataURL) }
+
+        let overflowingDuration = DSFMetadataReader.Result(tags: [:], sampleRateHz: 1, bitDepth: 1, channelCount: 2, sampleCount: UInt64.max, dataOffset: 92, blockSizePerChannel: 32)
+        #expect(overflowingDuration.durationMilliseconds == nil)
+    }
+
     @Test("Snapshot publisher writes a checksummed manifest after the revision file")
     func publishesSnapshot() throws {
         let directory = temporaryDirectory()
@@ -422,6 +450,10 @@ struct ImportScannerTests {
         data += Array("fmt ".utf8) + littleEndian(52, bytes: 8) + littleEndian(1, bytes: 4) + littleEndian(0, bytes: 4) + littleEndian(0, bytes: 4) + littleEndian(2, bytes: 4) + littleEndian(2_822_400, bytes: 4) + littleEndian(1, bytes: 4) + littleEndian(sampleCount, bytes: 8) + littleEndian(32, bytes: 4) + [0, 0, 0, 0]
         data += Array("data".utf8) + littleEndian(UInt64(audio.count + 12), bytes: 8) + audio + id3
         return Data(data)
+    }
+
+    private func setLittleEndian(_ data: inout Data, offset: Int, value: UInt64, byteCount: Int) {
+        data.replaceSubrange(offset..<(offset + byteCount), with: (0..<byteCount).map { UInt8(truncatingIfNeeded: value >> UInt64($0 * 8)) })
     }
 }
 

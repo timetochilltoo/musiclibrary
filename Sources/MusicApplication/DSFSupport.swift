@@ -15,11 +15,21 @@ struct DSFMetadataReader: Sendable {
 
         var durationMilliseconds: Int? {
             guard sampleRateHz > 0 else { return nil }
-            return Int((Double(sampleCount) / Double(sampleRateHz) * 1_000).rounded())
+            let scaledResult = sampleCount.multipliedReportingOverflow(by: 1_000)
+            guard !scaledResult.overflow else { return nil }
+            let scaled = scaledResult.partialValue
+            let denominator = UInt64(sampleRateHz)
+            let rounded = scaled.addingReportingOverflow(denominator / 2)
+            guard !rounded.overflow, let milliseconds = Int(exactly: rounded.partialValue / denominator) else { return nil }
+            return milliseconds
         }
     }
 
     func read(url: URL) throws -> Result {
+        let fileSizeValue = (try url.resourceValues(forKeys: [.fileSizeKey])).fileSize ?? 0
+        guard fileSizeValue >= 0, let fileSize = UInt64(exactly: fileSizeValue), fileSize >= 92 else {
+            throw DSFError.invalidContainer
+        }
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
         let header = try requiredData(handle, count: 92)
@@ -33,15 +43,36 @@ struct DSFMetadataReader: Sendable {
         let bitDepth = Int(header.uint32LE(at: 60))
         let sampleCount = header.uint64LE(at: 64)
         let blockSize = Int(header.uint32LE(at: 72))
-        let dataOffset = UInt64(28) + fmtSize + 12
         guard channelCount > 0, channelCount <= 8, sampleRate > 0, bitDepth == 1, sampleCount > 0, blockSize > 0 else {
             throw DSFError.unsupportedStream
         }
-        let fileSize = (try url.resourceValues(forKeys: [.fileSizeKey])).fileSize ?? 0
-        guard dataOffset <= UInt64(fileSize) else { throw DSFError.invalidContainer }
+        let dataChunkOffset = UInt64(28).addingReportingOverflow(fmtSize)
+        guard !dataChunkOffset.overflow else { throw DSFError.invalidContainer }
+        let dataOffset = dataChunkOffset.partialValue.addingReportingOverflow(12)
+        guard !dataOffset.overflow, dataOffset.partialValue <= fileSize else { throw DSFError.invalidContainer }
+        try handle.seek(toOffset: dataChunkOffset.partialValue)
+        let dataHeader = try requiredData(handle, count: 12)
+        guard dataHeader.ascii(at: 0, count: 4) == "data" else { throw DSFError.invalidContainer }
+        let declaredDataChunkSize = dataHeader.uint64LE(at: 4)
+        guard declaredDataChunkSize >= 12 else { throw DSFError.invalidContainer }
+        let declaredAudioBytes = declaredDataChunkSize - 12
+        guard declaredAudioBytes <= fileSize - dataOffset.partialValue else { throw DSFError.invalidContainer }
+        let perChannelBytes = sampleCount.addingReportingOverflow(7)
+        guard !perChannelBytes.overflow else { throw DSFError.invalidContainer }
+        let expectedAudioBytes = (perChannelBytes.partialValue / 8).multipliedReportingOverflow(by: UInt64(channelCount))
+        guard !expectedAudioBytes.overflow,
+              expectedAudioBytes.partialValue <= declaredAudioBytes,
+              expectedAudioBytes.partialValue <= fileSize - dataOffset.partialValue else {
+            throw DSFError.invalidContainer
+        }
         let metadataOffset = header.uint64LE(at: 20)
+        if metadataOffset > 0 {
+            guard metadataOffset >= dataOffset.partialValue,
+                  metadataOffset <= fileSize,
+                  fileSize - metadataOffset >= 10 else { throw DSFError.invalidContainer }
+        }
         let tags = try metadataOffset > 0 ? readID3(handle: handle, at: metadataOffset) : [:]
-        return .init(tags: tags, sampleRateHz: sampleRate, bitDepth: bitDepth, channelCount: channelCount, sampleCount: sampleCount, dataOffset: dataOffset, blockSizePerChannel: blockSize)
+        return .init(tags: tags, sampleRateHz: sampleRate, bitDepth: bitDepth, channelCount: channelCount, sampleCount: sampleCount, dataOffset: dataOffset.partialValue, blockSizePerChannel: blockSize)
     }
 
     private func readID3(handle: FileHandle, at offset: UInt64) throws -> [String: String] {
@@ -124,11 +155,17 @@ struct DSFPCMTranscoder: Sendable {
         defer { try? input.close(); try? output.close() }
         try output.write(contentsOf: Data(repeating: 0, count: 44))
         try input.seek(toOffset: metadata.dataOffset)
-        let perChannelBytes = Int((metadata.sampleCount + 7) / 8)
-        var bytesRemaining = perChannelBytes * metadata.channelCount
+        let perChannelBytesValue = metadata.sampleCount.addingReportingOverflow(7)
+        guard !perChannelBytesValue.overflow,
+              let perChannelBytes = Int(exactly: perChannelBytesValue.partialValue / 8) else { throw DSFError.invalidContainer }
+        let totalBytes = perChannelBytes.multipliedReportingOverflow(by: metadata.channelCount)
+        guard !totalBytes.overflow else { throw DSFError.invalidContainer }
+        var bytesRemaining = totalBytes.partialValue
         var outputBytes = 0
         while bytesRemaining > 0 {
-            let bytesForRound = min(bytesRemaining, metadata.blockSizePerChannel * metadata.channelCount)
+            let roundCapacity = metadata.blockSizePerChannel.multipliedReportingOverflow(by: metadata.channelCount)
+            guard !roundCapacity.overflow else { throw DSFError.invalidContainer }
+            let bytesForRound = min(bytesRemaining, roundCapacity.partialValue)
             let round = try requiredData(input, count: bytesForRound)
             var channelFrames: [[Double]] = []
             var offset = 0
@@ -147,7 +184,11 @@ struct DSFPCMTranscoder: Sendable {
                 offset += count
             }
             let frameCount = channelFrames.map(\.count).min() ?? 0
-            var pcm = Data(capacity: frameCount * metadata.channelCount * 3)
+            let sampleBytes = frameCount.multipliedReportingOverflow(by: metadata.channelCount)
+            guard !sampleBytes.overflow else { throw DSFError.invalidContainer }
+            let pcmCapacity = sampleBytes.partialValue.multipliedReportingOverflow(by: 3)
+            guard !pcmCapacity.overflow else { throw DSFError.invalidContainer }
+            var pcm = Data(capacity: pcmCapacity.partialValue)
             for frame in 0..<frameCount {
                 for channel in 0..<metadata.channelCount {
                     let sample = Int32((max(-1, min(1, channelFrames[channel][frame])) * 8_388_607).rounded())
@@ -157,7 +198,9 @@ struct DSFPCMTranscoder: Sendable {
                 }
             }
             try output.write(contentsOf: pcm)
-            outputBytes += pcm.count
+            let newOutputBytes = outputBytes.addingReportingOverflow(pcm.count)
+            guard !newOutputBytes.overflow else { throw DSFError.invalidContainer }
+            outputBytes = newOutputBytes.partialValue
             bytesRemaining -= bytesForRound
         }
         try output.seek(toOffset: 0)
@@ -169,13 +212,25 @@ struct DSFPCMTranscoder: Sendable {
         return max(1, sampleRate / 176_400)
     }
 
-    private func wavHeader(sampleRate: Int, channels: Int, dataByteCount: Int) -> Data {
-        let byteRate = sampleRate * channels * 3
+    private func wavHeader(sampleRate: Int, channels: Int, dataByteCount: Int) throws -> Data {
+        guard sampleRate > 0, channels > 0, dataByteCount >= 0 else { throw DSFError.invalidContainer }
+        let channelBytes = channels.multipliedReportingOverflow(by: 3)
+        guard !channelBytes.overflow, let channelCount = UInt16(exactly: channels), let blockAlign = UInt16(exactly: channelBytes.partialValue) else {
+            throw DSFError.invalidContainer
+        }
+        let byteRate = UInt64(sampleRate).multipliedReportingOverflow(by: UInt64(channelBytes.partialValue))
+        let riffSize = dataByteCount.addingReportingOverflow(36)
+        guard !byteRate.overflow,
+              !riffSize.overflow,
+              let sampleRateValue = UInt32(exactly: sampleRate),
+              let byteRateValue = UInt32(exactly: byteRate.partialValue),
+              let dataSize = UInt32(exactly: dataByteCount),
+              let riffSizeValue = UInt32(exactly: riffSize.partialValue) else { throw DSFError.invalidContainer }
         var data = Data("RIFF".utf8)
-        data.appendUInt32LE(UInt32(36 + dataByteCount)); data.append(Data("WAVEfmt ".utf8))
-        data.appendUInt32LE(16); data.appendUInt16LE(1); data.appendUInt16LE(UInt16(channels))
-        data.appendUInt32LE(UInt32(sampleRate)); data.appendUInt32LE(UInt32(byteRate)); data.appendUInt16LE(UInt16(channels * 3)); data.appendUInt16LE(24)
-        data.append(Data("data".utf8)); data.appendUInt32LE(UInt32(dataByteCount))
+        data.appendUInt32LE(riffSizeValue); data.append(Data("WAVEfmt ".utf8))
+        data.appendUInt32LE(16); data.appendUInt16LE(1); data.appendUInt16LE(channelCount)
+        data.appendUInt32LE(sampleRateValue); data.appendUInt32LE(byteRateValue); data.appendUInt16LE(blockAlign); data.appendUInt16LE(24)
+        data.append(Data("data".utf8)); data.appendUInt32LE(dataSize)
         return data
     }
 }
@@ -215,7 +270,7 @@ private struct FIR {
     }
 }
 
-private enum DSFError: LocalizedError { case invalidContainer, unsupportedStream
+enum DSFError: LocalizedError, Equatable { case invalidContainer, unsupportedStream
     var errorDescription: String? {
         switch self {
         case .invalidContainer: return "This DSF file has an invalid container header."
