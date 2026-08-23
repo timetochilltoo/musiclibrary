@@ -682,14 +682,19 @@ private struct MiniPlayerBar: View {
         HStack(spacing: 16) {
             ZStack {
                 RoundedRectangle(cornerRadius: 8).fill(.quaternary)
-                Image(systemName: playback.isPlaying ? "waveform" : "music.note")
-                    .foregroundStyle(.secondary)
+                if playback.isLoading {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Image(systemName: playback.isPlaying ? "waveform" : "music.note")
+                        .foregroundStyle(.secondary)
+                }
             }
             .frame(width: 46, height: 46)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(playback.currentTitle).font(.headline).lineLimit(1)
-                Text(playback.audioFormatDescription ?? "Ready to play")
+                Text(playerTitle).font(.headline).lineLimit(1)
+                Text(playback.isLoading ? "Preparing audio from its music folder" : (playback.audioFormatDescription ?? "Ready to play"))
                     .font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
             .frame(minWidth: 180, maxWidth: 320, alignment: .leading)
@@ -699,6 +704,7 @@ private struct MiniPlayerBar: View {
                 .labelStyle(.iconOnly)
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
+                .disabled(playback.isLoading)
             Button("Next", systemImage: "forward.fill") { playback.next() }.playerIconStyle()
 
             VStack(spacing: 2) {
@@ -706,7 +712,7 @@ private struct MiniPlayerBar: View {
                     get: { playback.duration > 0 ? playback.currentTime / playback.duration : 0 },
                     set: { playback.seek(to: $0) }
                 ), in: 0...1)
-                .disabled(playback.duration <= 0)
+                .disabled(playback.duration <= 0 || playback.isLoading)
                 HStack {
                     Text(time(playback.currentTime))
                     Spacer()
@@ -741,6 +747,13 @@ private struct MiniPlayerBar: View {
         case .all: "Repeat All"
         case .one: "Repeat One"
         }
+    }
+
+    private var playerTitle: String {
+        if playback.isLoading {
+            return "Now Loading \u{201c}\(playback.loadingTitle ?? playback.currentTitle)\u{201d}\u{2026}"
+        }
+        return playback.currentTitle
     }
 
     private func cycleRepeatMode() {
@@ -865,10 +878,6 @@ private func proposalSummary(_ proposal: ImportReleaseProposal) -> String {
     let artist = proposal.artist ?? "Unknown artist"
     let confidence = Int((proposal.confidence * 100).rounded())
     return "\(artist) · \(proposal.discCount) disc(s) · \(proposal.trackCount) files · \(confidence)% confidence"
-}
-
-private func proposalConfirmationMessage(_ proposal: ImportReleaseProposal) -> String {
-    "This will create one album, \(proposal.trackCount) tracks, and root-relative digital asset records. It will not copy, move, or modify any audio files."
 }
 
 private func relinkConfirmationMessage(_ proposal: AssetRelinkProposal) -> String {
@@ -1479,7 +1488,6 @@ private struct ImportBatchDetail: View {
     @State private var unregisteredCandidates: [ImportCandidate] = []
     @State private var proposals: [ImportReleaseProposal] = []
     @State private var proposalPreviews: [UUID: ImportProposalPreview] = [:]
-    @State private var proposalToConfirm: ImportReleaseProposal?
     @State private var proposalToAttach: ImportReleaseProposal?
     @State private var proposalToLookUp: ImportReleaseProposal?
     @State private var selectionToReview: ExternalMetadataSelection?
@@ -1612,12 +1620,12 @@ private struct ImportBatchDetail: View {
                             if let selection = selections[proposal.id] {
                                 Button("Review MusicBrainz Fields…", systemImage: "rectangle.and.pencil.and.ellipsis") { selectionToReview = selection }
                             }
-                            if proposal.status == .proposed {
+                            if proposal.createdAlbumID == nil && (proposal.status == .proposed || proposal.status == .approved) {
                                 HStack(spacing: 8) {
-                                    Button("Approve for Later") {
+                                    Button("Create New Edition", systemImage: "plus.rectangle.on.folder") {
                                         Task {
                                             do {
-                                                try await library.setImportReleaseProposal(proposal.id, status: .approved)
+                                                _ = try await library.confirmImportReleaseProposal(proposal.id)
                                                 await load()
                                             } catch {
                                                 library.presentError(error)
@@ -1635,9 +1643,6 @@ private struct ImportBatchDetail: View {
                                         }
                                     }
                                 }
-                            }
-                            if proposal.status == .approved && proposal.createdAlbumID == nil {
-                                Button("Create New Edition…", systemImage: "plus.rectangle.on.folder") { proposalToConfirm = proposal }
                                 Button("Attach to Existing Edition…", systemImage: "link.badge.plus") { proposalToAttach = proposal }
                             }
                         }
@@ -1671,23 +1676,6 @@ private struct ImportBatchDetail: View {
         .task(id: batchRefreshToken) {
             await load()
             await analyzeNewFilesIfRequested()
-        }
-        .confirmationDialog("Create catalogue records?", isPresented: Binding(get: { proposalToConfirm != nil }, set: { if !$0 { proposalToConfirm = nil } }), titleVisibility: .visible) {
-            if let proposal = proposalToConfirm {
-                Button("Create Album, Tracks, and Assets") {
-                    Task {
-                        do {
-                            _ = try await library.confirmImportReleaseProposal(proposal.id)
-                            await load()
-                            proposalToConfirm = nil
-                        } catch {
-                            library.presentError(error)
-                        }
-                    }
-                }
-            }
-        } message: {
-            Text(proposalToConfirm.map(proposalConfirmationMessage) ?? "")
         }
         .confirmationDialog("Mark this catalogue asset missing?", isPresented: Binding(get: { missingAssetToConfirm != nil }, set: { if !$0 { missingAssetToConfirm = nil } }), titleVisibility: .visible) {
             if let asset = missingAssetToConfirm {

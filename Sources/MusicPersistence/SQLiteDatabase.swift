@@ -507,8 +507,8 @@ public actor MusicDatabase {
         return try Self.importAttachmentPreview(proposalID: proposalID, albumID: albumID, context: context, on: connection)
     }
 
-    /// Attaches an approved import proposal to an album that already represents the
-    /// same edition. Catalogue metadata is deliberately left untouched. An empty
+    /// Attaches a proposed or legacy-approved import proposal to an album that already
+    /// represents the same edition. Catalogue metadata is deliberately left untouched. An empty
     /// target receives the imported disc/track structure; a populated target must
     /// match the proposal's disc and track counts exactly.
     public func attachImportReleaseProposal(_ proposalID: UUID, to albumID: AlbumID) throws -> AlbumID {
@@ -522,8 +522,8 @@ public actor MusicDatabase {
                 result = albumID
                 return
             }
-            guard context.status == .approved else {
-                throw DatabaseError.invalidOperation("Approve the proposal before attaching digital files.")
+            guard context.status == .proposed || context.status == .approved else {
+                throw DatabaseError.invalidOperation("Only a proposed or approved release can attach digital files.")
             }
             let preview = try Self.importAttachmentPreview(proposalID: proposalID, albumID: albumID, context: context, on: connection)
             guard preview.isCompatible else { throw DatabaseError.invalidOperation(preview.compatibilityMessage) }
@@ -577,12 +577,13 @@ public actor MusicDatabase {
             }
 
             let now = Self.milliseconds(Date())
-            let confirm = try Self.prepare("UPDATE import_release_proposal SET created_album_id = ?, confirmed_at = ?, updated_at = ? WHERE id = ? AND created_album_id IS NULL;", on: connection)
+            let confirm = try Self.prepare("UPDATE import_release_proposal SET status = ?, created_album_id = ?, confirmed_at = ?, updated_at = ? WHERE id = ? AND created_album_id IS NULL;", on: connection)
             defer { sqlite3_finalize(confirm) }
-            try Self.bind(albumID.description, at: 1, to: confirm)
-            try Self.bind(now, at: 2, to: confirm)
+            try Self.bind(ImportProposalStatus.approved.rawValue, at: 1, to: confirm)
+            try Self.bind(albumID.description, at: 2, to: confirm)
             try Self.bind(now, at: 3, to: confirm)
-            try Self.bind(proposalID.uuidString.lowercased(), at: 4, to: confirm)
+            try Self.bind(now, at: 4, to: confirm)
+            try Self.bind(proposalID.uuidString.lowercased(), at: 5, to: confirm)
             try Self.stepDone(confirm, connection: connection)
             guard sqlite3_changes(connection) == 1 else {
                 throw DatabaseError.invalidOperation("The proposal changed while it was being attached. Review it again.")
@@ -603,7 +604,7 @@ public actor MusicDatabase {
             defer { sqlite3_finalize(proposal) }; try Self.bind(proposalID.uuidString.lowercased(), at: 1, to: proposal)
             guard sqlite3_step(proposal) == SQLITE_ROW, let rawBatch = Self.text(at: 0, from: proposal), let batchUUID = UUID(uuidString: rawBatch), let title = Self.text(at: 1, from: proposal), let rawStatus = Self.text(at: 3, from: proposal) else { throw DatabaseError.notFound("Import release proposal") }
             if let rawAlbum = Self.text(at: 4, from: proposal), let albumUUID = UUID(uuidString: rawAlbum) { result = .init(rawValue: albumUUID); return }
-            guard rawStatus == ImportProposalStatus.approved.rawValue else { throw DatabaseError.invalidOperation("Approve the proposal before creating catalogue records.") }
+            guard rawStatus == ImportProposalStatus.proposed.rawValue || rawStatus == ImportProposalStatus.approved.rawValue else { throw DatabaseError.invalidOperation("Only a proposed or approved release can create catalogue records.") }
             guard let rawRoot = Self.text(at: 5, from: proposal), let rootUUID = UUID(uuidString: rawRoot) else { throw DatabaseError.notFound("Storage root") }
             let batchID = ImportBatchID(rawValue: batchUUID); let rootID = StorageRootID(rawValue: rootUUID); let albumID = AlbumID(); let now = Self.milliseconds(Date()); let proposalArtist = Self.text(at: 8, from: proposal)?.trimmingCharacters(in: .whitespacesAndNewlines)
             let album = try Self.prepare("INSERT INTO album (id, title, country_code, catalogue_number, disc_count, has_cd, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?);", on: connection)
@@ -643,8 +644,8 @@ public actor MusicDatabase {
                 defer { sqlite3_finalize(updateYear) }; try Self.bind(Int64(releaseYear), at: 1, to: updateYear); try Self.bind(albumID.description, at: 2, to: updateYear); try Self.stepDone(updateYear, connection: connection)
             }
             if let proposalArtist, !proposalArtist.isEmpty { try Self.addImportedAlbumArtist(named: proposalArtist, to: albumID, on: connection) }
-            let confirm = try Self.prepare("UPDATE import_release_proposal SET created_album_id = ?, confirmed_at = ?, updated_at = ? WHERE id = ?;", on: connection)
-            defer { sqlite3_finalize(confirm) }; try Self.bind(albumID.description, at: 1, to: confirm); try Self.bind(now, at: 2, to: confirm); try Self.bind(now, at: 3, to: confirm); try Self.bind(proposalID.uuidString.lowercased(), at: 4, to: confirm); try Self.stepDone(confirm, connection: connection)
+            let confirm = try Self.prepare("UPDATE import_release_proposal SET status = ?, created_album_id = ?, confirmed_at = ?, updated_at = ? WHERE id = ?;", on: connection)
+            defer { sqlite3_finalize(confirm) }; try Self.bind(ImportProposalStatus.approved.rawValue, at: 1, to: confirm); try Self.bind(albumID.description, at: 2, to: confirm); try Self.bind(now, at: 3, to: confirm); try Self.bind(now, at: 4, to: confirm); try Self.bind(proposalID.uuidString.lowercased(), at: 5, to: confirm); try Self.stepDone(confirm, connection: connection)
             try incrementRevision(); result = albumID
         }
         guard let result else { throw DatabaseError.notFound("Import release proposal") }

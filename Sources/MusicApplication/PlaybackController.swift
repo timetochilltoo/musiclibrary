@@ -16,12 +16,16 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
     @Published public private(set) var volume: Double = 1
     @Published public private(set) var currentTime: TimeInterval = 0
     @Published public private(set) var duration: TimeInterval = 0
+    @Published public private(set) var isLoading = false
+    @Published public private(set) var loadingTitle: String?
     private var player: AVAudioPlayer?
     private var items: [(url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?)] = []
     private var originalItems: [(url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?)] = []
     private let preloader = PlaybackPreloader()
+    private let loader = PlaybackLoader()
     private var preparedNext: (trackID: TrackID, player: AVAudioPlayer)?
     private var preloadGeneration = 0
+    private var loadGeneration = 0
     private var cueEndTimer: Timer?
     private var progressTimer: Timer?
     private let defaultsKey = "MusicLibrary.playbackQueue"
@@ -37,12 +41,13 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
         originalItems = items
         queue.replace(with: items.map(\.trackID), startingAt: index)
         persist()
-        try loadCurrentAndPlay()
+        beginLoading(index: index)
     }
     public func toggle() {
+        guard !isLoading else { return }
         guard let player else {
             guard let index = queue.currentIndex else { return }
-            loadOrReport(index: index)
+            beginLoading(index: index)
             return
         }
         if player.isPlaying {
@@ -58,11 +63,15 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
         }
     }
     public func stop() {
+        loadGeneration += 1
         invalidatePreparedNext()
         cueEndTimer?.invalidate(); cueEndTimer = nil
         progressTimer?.invalidate(); progressTimer = nil
         player?.stop()
+        player = nil
         isPlaying = false
+        isLoading = false
+        loadingTitle = nil
         audioFormatDescription = nil
         currentTime = 0
         duration = 0
@@ -71,12 +80,12 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
     public func next() {
         guard queue.skipForward() != nil, let index = queue.currentIndex else { stop(); return }
         persist()
-        loadOrReport(index: index)
+        beginLoading(index: index)
     }
     public func previous() {
         guard queue.previous() != nil, let index = queue.currentIndex else { return }
         persist()
-        loadOrReport(index: index)
+        beginLoading(index: index)
     }
     public func seek(to fraction: Double) {
         guard let player, player.duration > 0 else { return }
@@ -125,19 +134,14 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
     }
     public func dismissError() { errorMessage = nil }
     private func persist() { if let data = try? JSONEncoder().encode(queue) { UserDefaults.standard.set(data, forKey: defaultsKey) } }
-    private func loadCurrentAndPlay() throws { guard let index = queue.currentIndex else { return }; try load(index: index) }
-    private func loadOrReport(index: Int) {
-        do {
-            try load(index: index)
-        } catch {
-            failPlayback(message: error.localizedDescription)
-        }
-    }
     private func failPlayback(message: String) {
+        loadGeneration += 1
         invalidatePreparedNext()
         player?.stop()
         player = nil
         isPlaying = false
+        isLoading = false
+        loadingTitle = nil
         currentTitle = "Playback unavailable"
         currentTrackID = nil
         audioFormatDescription = nil
@@ -146,42 +150,81 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
         errorMessage = message
         clearNowPlayingInfo()
     }
-    private func load(index: Int) throws {
+    private func beginLoading(index: Int) {
         guard items.indices.contains(index) else { return }
         let item = items[index]
-        let openedPlayer: AVAudioPlayer
-        let usedPreparedPlayer: Bool
+        let preparedPlayer: AVAudioPlayer?
         if let preparedNext, preparedNext.trackID == item.trackID {
-            openedPlayer = preparedNext.player
+            preparedPlayer = preparedNext.player
             self.preparedNext = nil
-            usedPreparedPlayer = true
         } else {
-            openedPlayer = try AVAudioPlayer(contentsOf: try DSFPCMTranscoder().playableURL(for: item.url))
-            usedPreparedPlayer = false
+            preparedPlayer = nil
         }
-        if let cueStartMilliseconds = item.cueStartMilliseconds {
-            openedPlayer.currentTime = Double(cueStartMilliseconds) / 1_000
+        invalidatePreparedNext()
+        loadGeneration += 1
+        let generation = loadGeneration
+
+        cueEndTimer?.invalidate(); cueEndTimer = nil
+        progressTimer?.invalidate(); progressTimer = nil
+        player?.stop()
+        player = nil
+        isPlaying = false
+        isLoading = true
+        loadingTitle = item.title
+        currentTitle = item.title
+        currentTrackID = item.trackID
+        audioFormatDescription = nil
+        currentTime = 0
+        duration = 0
+        errorMessage = nil
+        clearNowPlayingInfo()
+
+        if let preparedPlayer {
+            finishLoading(.success(PreparedAudioPlayer(preparedPlayer)), item: item, generation: generation, retryPreparedFailure: true)
+        } else {
+            prepare(item: item, generation: generation)
         }
-        if start(openedPlayer) {
-            adopt(openedPlayer, item: item)
-        } else if usedPreparedPlayer {
-            let fallback = try AVAudioPlayer(contentsOf: try DSFPCMTranscoder().playableURL(for: item.url))
+    }
+
+    private func prepare(
+        item: (url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?),
+        generation: Int
+    ) {
+        loader.prepare(url: item.url) { [weak self] result in
+            Task { @MainActor [weak self] in
+                self?.finishLoading(result, item: item, generation: generation, retryPreparedFailure: false)
+            }
+        }
+    }
+
+    private func finishLoading(
+        _ result: PreparedAudioResult,
+        item: (url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?),
+        generation: Int,
+        retryPreparedFailure: Bool
+    ) {
+        guard loadGeneration == generation, queue.currentTrackID == item.trackID else { return }
+        switch result {
+        case .failure(let message):
+            failPlayback(message: message)
+        case .success(let prepared):
+            let openedPlayer = prepared.player
             if let cueStartMilliseconds = item.cueStartMilliseconds {
-                fallback.currentTime = Double(cueStartMilliseconds) / 1_000
+                openedPlayer.currentTime = Double(cueStartMilliseconds) / 1_000
             }
-            guard start(fallback) else {
-                throw NSError(domain: "MusicLibrary", code: 2, userInfo: [NSLocalizedDescriptionKey: "The audio file could not start playing."])
+            if start(openedPlayer) {
+                adopt(openedPlayer, item: item)
+            } else if retryPreparedFailure {
+                prepare(item: item, generation: generation)
+            } else {
+                failPlayback(message: "The audio file could not start playing.")
             }
-            adopt(fallback, item: item)
-        } else {
-            throw NSError(domain: "MusicLibrary", code: 2, userInfo: [NSLocalizedDescriptionKey: "The audio file could not start playing."])
         }
     }
 
     private func start(_ player: AVAudioPlayer) -> Bool {
         player.delegate = self
         player.volume = Float(volume)
-        player.prepareToPlay()
         return player.play()
     }
 
@@ -193,6 +236,8 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
         currentTrackID = item.trackID
         audioFormatDescription = Self.formatDescription(for: item.url, format: openedPlayer.format)
         isPlaying = true
+        isLoading = false
+        loadingTitle = nil
         duration = openedPlayer.duration
         currentTime = openedPlayer.currentTime
         startProgressUpdates()
@@ -266,7 +311,7 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
     private func advanceAfterTrackFinished() {
         guard queue.next() != nil, let index = queue.currentIndex else { stop(); return }
         persist()
-        loadOrReport(index: index)
+        beginLoading(index: index)
     }
 
     private static func formatDescription(for url: URL, format: AVAudioFormat) -> String {
@@ -342,6 +387,28 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
 private final class PreparedAudioPlayer: @unchecked Sendable {
     let player: AVAudioPlayer
     init(_ player: AVAudioPlayer) { self.player = player }
+}
+
+private enum PreparedAudioResult: @unchecked Sendable {
+    case success(PreparedAudioPlayer)
+    case failure(String)
+}
+
+private final class PlaybackLoader: @unchecked Sendable {
+    private let queue = DispatchQueue(label: "MusicLibrary.playback-loader", qos: .userInitiated)
+
+    func prepare(url: URL, completion: @escaping @Sendable (PreparedAudioResult) -> Void) {
+        queue.async {
+            do {
+                let playableURL = try DSFPCMTranscoder().playableURL(for: url)
+                let player = try AVAudioPlayer(contentsOf: playableURL)
+                player.prepareToPlay()
+                completion(.success(PreparedAudioPlayer(player)))
+            } catch {
+                completion(.failure(error.localizedDescription))
+            }
+        }
+    }
 }
 
 private final class PlaybackPreloader: @unchecked Sendable {

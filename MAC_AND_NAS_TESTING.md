@@ -25,18 +25,26 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 
 1. Open **Library Changes** and select a completed batch for a registered folder.
 2. Press **Retry Scan**. Confirm a fresh batch is selected immediately and its status/counts update without selecting the folder again. Confirm that already-catalogued files remain in **Scan diagnostics**, not in a new metadata proposal.
-3. If the scan reports **New audio files**, press **Read Metadata for New Files**. Confirm proposals appear only after this explicit action; the catalogue and source files remain unchanged until the normal approve/create workflow.
+3. If the scan reports **New audio files**, press **Read Metadata for New Files**. Confirm proposals appear only after this explicit action; the catalogue and source files remain unchanged until you press **Create New Edition** or complete **Attach to Existing Edition**.
 4. Repeat with **Rescan and Read Metadata for New Files**. Confirm the app selects the new batch, waits while it scans, and then automatically performs the metadata pass once the scan completes. Confirm the resulting proposals are the same new-file-only proposals that the two separate actions would produce.
 5. Repeat the combined action on a folder with no new files. Confirm it completes without creating duplicate proposals. If the scan is cancelled or fails, confirm metadata is not read automatically and the user can retry explicitly.
 
 ### A. Basic playback
 
 1. In **Settings**, add the test music folder under **Music Folders** and allow the macOS folder-access prompt.
-2. In **Import Inbox**, scan that folder, review a small proposal, and explicitly create a catalogue album from it.
+2. In **Library Changes**, use **Rescan and Review New Files**, review a small proposal, and press **Create New Edition** once. Confirm the album is created without a separate **Approve for Later** step and the proposal shows its created state.
 3. Open the album, then start a track.
 4. Confirm the bottom playback bar shows the correct title and a runtime format line such as `FLAC · 44.1 kHz · 2 ch`.
 5. Test **Pause**, **Play**, **Previous**, **Next**, **Stop**, the volume slider, shuffle, and each repeat mode.
 6. Close and reopen the app. Confirm the queue selection and repeat mode were retained. A saved queue does not guarantee a track will still be reachable if its NAS root is disconnected.
+
+### A1. Dock icon and slow NAS/DSF loading
+
+1. Confirm the packaged **Music Library** app shows the vinyl/CD/library icon in Finder, the app switcher, and the Dock rather than a generic executable icon.
+2. Start an ordinary local track, then select a large DSF track on the NAS.
+3. Confirm the old track stops promptly and the player displays a spinner plus `Now Loading “song title”…` while the network read/conversion/player preparation runs. The window must remain interactive and should not show a sustained rainbow pinwheel.
+4. While that track is still loading, select a different playable track. Confirm the newest selection is the one that eventually plays; the older slow request must not take over later.
+5. Repeat once with the NAS disconnected. Confirm loading ends with a local playback error and no catalogue record, source file, or queue membership is deleted.
 
 ### B. Playlist behaviour
 

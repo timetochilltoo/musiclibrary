@@ -425,6 +425,27 @@ struct MusicDatabaseTests {
         #expect(try await database.currentRevision() == 1)
     }
 
+    @Test("Proposed release creates its catalogue edition in one transaction")
+    func proposedReleaseCreatesEdition() async throws {
+        let database = try MusicDatabase(url: temporaryDatabaseURL())
+        try await database.migrate()
+        let root = try await database.createStorageRoot(.init(displayName: "Music", lastKnownPath: "/Music", bookmarkData: Data([1])))
+        let batch = try await database.createImportBatch(storageRootID: root.id, sourceDescription: "/Music")
+        try await database.recordImportCandidate(batchID: batch.id, payload: .init(relativePath: "Album/song.flac", fileName: "song.flac", contentTypeIdentifier: "org.xiph.flac", fileSize: 123, modifiedAt: nil))
+        let candidate = try #require(await database.importCandidates(batchID: batch.id).first)
+        try await database.saveEmbeddedMetadata(.init(title: "Song", albumTitle: "Album", artist: "Artist", albumArtist: nil, discNumber: 1, trackNumber: 1, durationMilliseconds: 1000, rawTags: [:]), for: candidate.id)
+        try await database.rebuildImportReleaseProposals(batchID: batch.id, drafts: [.init(title: "Album", artist: "Artist", discCount: 1, confidence: 0.9, candidateIDs: [candidate.id])])
+        let proposal = try #require(await database.importReleaseProposals(batchID: batch.id).first)
+        #expect(proposal.status == .proposed)
+
+        let albumID = try await database.confirmImportReleaseProposal(proposal.id)
+
+        let confirmed = try #require(await database.importReleaseProposals(batchID: batch.id).first)
+        #expect(confirmed.status == .approved)
+        #expect(confirmed.createdAlbumID == albumID)
+        #expect(try await database.albums().map(\.id) == [albumID])
+    }
+
     @Test("Approved proposal confirmation is idempotent and derives offline health")
     func confirmedDigitalAssets() async throws {
         let database = try MusicDatabase(url: temporaryDatabaseURL())
@@ -557,7 +578,7 @@ struct MusicDatabaseTests {
         #expect(try await database.albums().map(\.id) == [albumID])
     }
 
-    @Test("Approved import attaches digital files to an exactly matching catalogue edition")
+    @Test("Proposed import attaches digital files to an exactly matching catalogue edition in one transaction")
     func importAttachesToMatchingExistingAlbum() async throws {
         let database = try MusicDatabase(url: temporaryDatabaseURL())
         try await database.migrate()
@@ -577,8 +598,6 @@ struct MusicDatabaseTests {
         }
         try await database.rebuildImportReleaseProposals(batchID: batch.id, drafts: [.init(title: "Different embedded title", artist: "Embedded artist", discCount: 1, confidence: 1, candidateIDs: candidates.map(\.id))])
         let proposal = try #require(await database.importReleaseProposals(batchID: batch.id).first)
-        try await database.updateImportReleaseProposal(proposal.id, status: .approved)
-
         let preview = try await database.importAttachmentPreview(proposalID: proposal.id, albumID: target.id)
         #expect(preview.isCompatible)
         #expect(preview.mode == .attachToExistingTracks)
@@ -594,6 +613,7 @@ struct MusicDatabaseTests {
         #expect(try await database.tracks(discID: disc.id).map(\.title) == ["Catalogue first", "Catalogue second"])
         #expect(try await database.digitalAssetIDs(albumID: target.id).count == 2)
         #expect(try await database.createdAlbumID(forImportProposal: proposal.id) == target.id)
+        #expect(try await database.importReleaseProposals(batchID: batch.id).first?.status == .approved)
         #expect(try await database.attachImportReleaseProposal(proposal.id, to: target.id) == target.id)
         #expect(try await database.currentRevision() == revisionBefore + 1)
     }
