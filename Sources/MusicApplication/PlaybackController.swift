@@ -18,6 +18,9 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
     @Published public private(set) var duration: TimeInterval = 0
     @Published public private(set) var isLoading = false
     @Published public private(set) var loadingTitle: String?
+    @Published public private(set) var loadingProgress: Double?
+    @Published public private(set) var loadingEstimatedTimeRemaining: TimeInterval?
+    @Published public private(set) var isFinalizingLoad = false
     private var player: AVAudioPlayer?
     private var items: [(url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?)] = []
     private var originalItems: [(url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?)] = []
@@ -72,6 +75,7 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
         isPlaying = false
         isLoading = false
         loadingTitle = nil
+        resetLoadingProgress()
         audioFormatDescription = nil
         currentTime = 0
         duration = 0
@@ -142,6 +146,7 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
         isPlaying = false
         isLoading = false
         loadingTitle = nil
+        resetLoadingProgress()
         currentTitle = "Playback unavailable"
         currentTrackID = nil
         audioFormatDescription = nil
@@ -171,6 +176,7 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
         isPlaying = false
         isLoading = true
         loadingTitle = item.title
+        resetLoadingProgress()
         currentTitle = item.title
         currentTrackID = item.trackID
         audioFormatDescription = nil
@@ -190,7 +196,14 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
         item: (url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?),
         generation: Int
     ) {
-        loader.prepare(url: item.url) { [weak self] result in
+        loader.prepare(url: item.url, progress: { [weak self] progress in
+            Task { @MainActor [weak self] in
+                guard let self, self.loadGeneration == generation, self.queue.currentTrackID == item.trackID else { return }
+                self.loadingProgress = progress.fractionCompleted
+                self.loadingEstimatedTimeRemaining = progress.estimatedTimeRemaining
+                self.isFinalizingLoad = progress.isFinalizing
+            }
+        }) { [weak self] result in
             Task { @MainActor [weak self] in
                 self?.finishLoading(result, item: item, generation: generation, retryPreparedFailure: false)
             }
@@ -238,12 +251,19 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
         isPlaying = true
         isLoading = false
         loadingTitle = nil
+        resetLoadingProgress()
         duration = openedPlayer.duration
         currentTime = openedPlayer.currentTime
         startProgressUpdates()
         updateNowPlayingInfo()
         scheduleCueEnd(trackID: item.trackID, endMilliseconds: item.cueEndMilliseconds)
         schedulePreload()
+    }
+
+    private func resetLoadingProgress() {
+        loadingProgress = nil
+        loadingEstimatedTimeRemaining = nil
+        isFinalizingLoad = false
     }
 
     private func scheduleCueEnd(trackID: TrackID, endMilliseconds: Int?) {
@@ -394,13 +414,59 @@ private enum PreparedAudioResult: @unchecked Sendable {
     case failure(String)
 }
 
+private struct PlaybackPreparationProgress: Sendable {
+    let fractionCompleted: Double
+    let estimatedTimeRemaining: TimeInterval?
+    let isFinalizing: Bool
+}
+
+private final class PlaybackProgressEstimator: @unchecked Sendable {
+    private let startedAt = Date()
+    private var lastReportedFraction = -1.0
+    private var lastReportedAt = Date.distantPast
+    private var smoothedEstimate: TimeInterval?
+
+    func update(fraction: Double) -> PlaybackPreparationProgress? {
+        let clampedFraction = min(max(0, fraction), 1)
+        let now = Date()
+        guard clampedFraction >= 1 ||
+                clampedFraction - lastReportedFraction >= 0.01 ||
+                now.timeIntervalSince(lastReportedAt) >= 0.2 else { return nil }
+
+        let elapsed = now.timeIntervalSince(startedAt)
+        var estimate: TimeInterval?
+        if clampedFraction >= 0.02, clampedFraction < 1, elapsed >= 0.5 {
+            let rawEstimate = elapsed * (1 - clampedFraction) / clampedFraction
+            let boundedEstimate = min(max(0, rawEstimate), 24 * 60 * 60)
+            estimate = smoothedEstimate.map { $0 * 0.7 + boundedEstimate * 0.3 } ?? boundedEstimate
+            smoothedEstimate = estimate
+        }
+        lastReportedFraction = clampedFraction
+        lastReportedAt = now
+        return .init(fractionCompleted: clampedFraction, estimatedTimeRemaining: estimate, isFinalizing: false)
+    }
+}
+
 private final class PlaybackLoader: @unchecked Sendable {
     private let queue = DispatchQueue(label: "MusicLibrary.playback-loader", qos: .userInitiated)
 
-    func prepare(url: URL, completion: @escaping @Sendable (PreparedAudioResult) -> Void) {
+    func prepare(
+        url: URL,
+        progress: @escaping @Sendable (PlaybackPreparationProgress) -> Void,
+        completion: @escaping @Sendable (PreparedAudioResult) -> Void
+    ) {
         queue.async {
             do {
-                let playableURL = try DSFPCMTranscoder().playableURL(for: url)
+                let isDSF = url.pathExtension.caseInsensitiveCompare("dsf") == .orderedSame
+                let estimator = PlaybackProgressEstimator()
+                let playableURL = try DSFPCMTranscoder().playableURL(for: url) { fraction in
+                    if let update = estimator.update(fraction: fraction) {
+                        progress(update)
+                    }
+                }
+                if isDSF {
+                    progress(.init(fractionCompleted: 1, estimatedTimeRemaining: nil, isFinalizing: true))
+                }
                 let player = try AVAudioPlayer(contentsOf: playableURL)
                 player.prepareToPlay()
                 completion(.success(PreparedAudioPlayer(player)))

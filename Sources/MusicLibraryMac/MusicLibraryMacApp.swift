@@ -694,7 +694,7 @@ private struct MiniPlayerBar: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(playerTitle).font(.headline).lineLimit(1)
-                Text(playback.isLoading ? "Preparing audio from its music folder" : (playback.audioFormatDescription ?? "Ready to play"))
+                Text(playback.isLoading ? loadingDetail : (playback.audioFormatDescription ?? "Ready to play"))
                     .font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
             .frame(minWidth: 180, maxWidth: 320, alignment: .leading)
@@ -708,17 +708,34 @@ private struct MiniPlayerBar: View {
             Button("Next", systemImage: "forward.fill") { playback.next() }.playerIconStyle()
 
             VStack(spacing: 2) {
-                Slider(value: Binding(
-                    get: { playback.duration > 0 ? playback.currentTime / playback.duration : 0 },
-                    set: { playback.seek(to: $0) }
-                ), in: 0...1)
-                .disabled(playback.duration <= 0 || playback.isLoading)
-                HStack {
-                    Text(time(playback.currentTime))
-                    Spacer()
-                    Text(time(playback.duration))
+                if playback.isLoading, let progress = playback.loadingProgress {
+                    ProgressView(value: progress, total: 1)
+                        .progressViewStyle(.linear)
+                    HStack {
+                        Text("\(Int((progress * 100).rounded()))%")
+                        Spacer()
+                        if let remaining = playback.loadingEstimatedTimeRemaining {
+                            Text("About \(remainingTime(remaining)) remaining")
+                        } else if playback.isFinalizingLoad {
+                            Text("Finalizing playback")
+                        } else {
+                            Text("Estimating time remaining")
+                        }
+                    }
+                    .font(.caption2).monospacedDigit().foregroundStyle(.secondary)
+                } else {
+                    Slider(value: Binding(
+                        get: { playback.duration > 0 ? playback.currentTime / playback.duration : 0 },
+                        set: { playback.seek(to: $0) }
+                    ), in: 0...1)
+                    .disabled(playback.duration <= 0 || playback.isLoading)
+                    HStack {
+                        Text(time(playback.currentTime))
+                        Spacer()
+                        Text(time(playback.duration))
+                    }
+                    .font(.caption2).monospacedDigit().foregroundStyle(.secondary)
                 }
-                .font(.caption2).monospacedDigit().foregroundStyle(.secondary)
             }
             .frame(minWidth: 140, maxWidth: .infinity)
 
@@ -756,6 +773,12 @@ private struct MiniPlayerBar: View {
         return playback.currentTitle
     }
 
+    private var loadingDetail: String {
+        if playback.isFinalizingLoad { return "DSF conversion complete — preparing playback" }
+        if playback.loadingProgress != nil { return "Converting DSF to high-resolution PCM" }
+        return "Opening audio from its music folder"
+    }
+
     private func cycleRepeatMode() {
         switch playback.queue.repeatMode {
         case .off: playback.setRepeatMode(.all)
@@ -768,6 +791,15 @@ private struct MiniPlayerBar: View {
         guard seconds.isFinite, seconds >= 0 else { return "0:00" }
         let whole = Int(seconds)
         return String(format: "%d:%02d", whole / 60, whole % 60)
+    }
+
+    private func remainingTime(_ seconds: TimeInterval) -> String {
+        guard seconds.isFinite, seconds >= 0 else { return "a moment" }
+        let rounded = Int(seconds.rounded())
+        if rounded < 60 { return "\(max(1, rounded)) sec" }
+        let minutes = rounded / 60
+        let remainder = rounded % 60
+        return remainder == 0 ? "\(minutes) min" : "\(minutes)m \(remainder)s"
     }
 }
 

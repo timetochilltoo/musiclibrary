@@ -115,8 +115,12 @@ struct DSFMetadataReader: Sendable {
 
 /// Creates a private, replaceable PCM cache for DSF playback. Source DSF files are never modified.
 struct DSFPCMTranscoder: Sendable {
-    func playableURL(for sourceURL: URL) throws -> URL {
+    func playableURL(
+        for sourceURL: URL,
+        progress: (@Sendable (Double) -> Void)? = nil
+    ) throws -> URL {
         guard sourceURL.pathExtension.caseInsensitiveCompare("dsf") == .orderedSame else { return sourceURL }
+        progress?(0)
         let reader = DSFMetadataReader()
         let metadata = try reader.read(url: sourceURL)
         let values = try sourceURL.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
@@ -124,12 +128,16 @@ struct DSFPCMTranscoder: Sendable {
         let name = SHA256.hash(data: Data(fingerprint.utf8)).map { String(format: "%02x", $0) }.joined()
         let directory = try cacheDirectory()
         let outputURL = directory.appending(path: "\(name).wav")
-        if FileManager.default.fileExists(atPath: outputURL.path) { return outputURL }
+        if FileManager.default.fileExists(atPath: outputURL.path) {
+            progress?(1)
+            return outputURL
+        }
         let stagingURL = directory.appending(path: "\(name).partial")
         try? FileManager.default.removeItem(at: stagingURL)
         do {
-            try transcode(sourceURL: sourceURL, metadata: metadata, outputURL: stagingURL)
+            try transcode(sourceURL: sourceURL, metadata: metadata, outputURL: stagingURL, progress: progress)
             try FileManager.default.moveItem(at: stagingURL, to: outputURL)
+            progress?(1)
             return outputURL
         } catch {
             try? FileManager.default.removeItem(at: stagingURL)
@@ -144,7 +152,12 @@ struct DSFPCMTranscoder: Sendable {
         return directory
     }
 
-    private func transcode(sourceURL: URL, metadata: DSFMetadataReader.Result, outputURL: URL) throws {
+    private func transcode(
+        sourceURL: URL,
+        metadata: DSFMetadataReader.Result,
+        outputURL: URL,
+        progress: (@Sendable (Double) -> Void)?
+    ) throws {
         let factor = decimationFactor(sampleRate: metadata.sampleRateHz)
         let outputRate = metadata.sampleRateHz / factor
         let coefficients = FIR.lowPass(taps: 255, cutoff: 0.45 / Double(factor))
@@ -160,6 +173,7 @@ struct DSFPCMTranscoder: Sendable {
               let perChannelBytes = Int(exactly: perChannelBytesValue.partialValue / 8) else { throw DSFError.invalidContainer }
         let totalBytes = perChannelBytes.multipliedReportingOverflow(by: metadata.channelCount)
         guard !totalBytes.overflow else { throw DSFError.invalidContainer }
+        let totalInputBytes = totalBytes.partialValue
         var bytesRemaining = totalBytes.partialValue
         var outputBytes = 0
         while bytesRemaining > 0 {
@@ -202,6 +216,9 @@ struct DSFPCMTranscoder: Sendable {
             guard !newOutputBytes.overflow else { throw DSFError.invalidContainer }
             outputBytes = newOutputBytes.partialValue
             bytesRemaining -= bytesForRound
+            if totalInputBytes > 0 {
+                progress?(Double(totalInputBytes - bytesRemaining) / Double(totalInputBytes))
+            }
         }
         try output.seek(toOffset: 0)
         try output.write(contentsOf: wavHeader(sampleRate: outputRate, channels: metadata.channelCount, dataByteCount: outputBytes))

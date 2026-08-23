@@ -3,7 +3,8 @@ set -euo pipefail
 
 script_directory="${0:A:h}"
 repository_directory="${script_directory:h}"
-app_directory="${repository_directory}/build/Music Library.app"
+version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${repository_directory}/Packaging/MusicLibraryMac-Info.plist")"
+app_directory="${repository_directory}/build/Music Library ${version}.app"
 
 cd "${repository_directory}"
 swift build -c release --product MusicLibraryMac

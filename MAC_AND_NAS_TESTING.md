@@ -7,7 +7,7 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 ## 1. Launch the packaged Mac app
 
 1. In Finder, open the project folder.
-2. Open `build/Music Library.app`.
+2. Open the newest sequential package, currently `build/Music Library 0.3.app`. For normal use, the same build is installed at `/Applications/Music Library.app`.
 3. If macOS blocks the first launch, Control-click the app, choose **Open**, then choose **Open** again.
 4. The app opens a catalogue in its Application Support folder. It does not use a SQLite database on the NAS.
 5. Keep the app open while following the tests below. If anything unexpected happens, take a screenshot and note the exact action just before it happened.
@@ -42,9 +42,10 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 
 1. Confirm the packaged **Music Library** app shows the vinyl/CD/library icon in Finder, the app switcher, and the Dock rather than a generic executable icon.
 2. Start an ordinary local track, then select a large DSF track on the NAS.
-3. Confirm the old track stops promptly and the player displays a spinner plus `Now Loading “song title”…` while the network read/conversion/player preparation runs. The window must remain interactive and should not show a sustained rainbow pinwheel.
-4. While that track is still loading, select a different playable track. Confirm the newest selection is the one that eventually plays; the older slow request must not take over later.
-5. Repeat once with the NAS disconnected. Confirm loading ends with a local playback error and no catalogue record, source file, or queue membership is deleted.
+3. Confirm the old track stops promptly and the player displays `Now Loading “song title”…`. During an uncached DSF conversion, confirm it shows a determinate progress bar, percentage, and (after a short measurement period) an approximate time remaining. The window must remain interactive and should not show a sustained rainbow pinwheel.
+4. When the conversion reaches 100%, confirm the message changes to **DSF conversion complete — preparing playback** before playback begins. This final stage has no percentage because AVFoundation does not expose its byte progress. Replaying the same DSF may skip the visible conversion because the private PCM cache already exists.
+5. While that track is still loading, select a different playable track. Confirm the newest selection is the one that eventually plays; the older slow request must not take over later.
+6. Repeat once with the NAS disconnected. Confirm loading ends with a local playback error and no catalogue record, source file, or queue membership is deleted.
 
 ### B. Playlist behaviour
 

@@ -247,11 +247,15 @@ struct ImportScannerTests {
         let file = directory.appending(path: "playback.dsf")
         try makeTaggedDSF().write(to: file)
 
-        let converted = try DSFPCMTranscoder().playableURL(for: file)
+        let progress = DoubleProgressRecorder()
+        let converted = try DSFPCMTranscoder().playableURL(for: file) { progress.append($0) }
         let header = try Data(contentsOf: converted).prefix(44)
         #expect(String(decoding: header.prefix(4), as: UTF8.self) == "RIFF")
         #expect(String(decoding: header.dropFirst(8).prefix(4), as: UTF8.self) == "WAVE")
         #expect(header.count == 44)
+        #expect(progress.values.first == 0)
+        #expect(progress.values.last == 1)
+        #expect(zip(progress.values, progress.values.dropFirst()).allSatisfy { $0 <= $1 })
     }
 
     @Test("DSF reader rejects overflowing and truncated container declarations")
@@ -468,6 +472,23 @@ private final class ProgressRecorder: @unchecked Sendable {
     }
 
     var values: [ImportScanProgress] {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedValues
+    }
+}
+
+private final class DoubleProgressRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedValues: [Double] = []
+
+    func append(_ value: Double) {
+        lock.lock()
+        storedValues.append(value)
+        lock.unlock()
+    }
+
+    var values: [Double] {
         lock.lock()
         defer { lock.unlock() }
         return storedValues

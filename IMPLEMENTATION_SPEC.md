@@ -578,6 +578,8 @@ The Mac app supports DSF import and local playback by preserving the original `.
 
 First-play conversion and network file preparation must never block the main actor. The Mac prepares DSF conversion and `AVAudioPlayer` instances on a serial user-initiated loader, immediately acknowledges the command with `Now Loading “title”…`, and lets later selections supersede older work. This makes a slow NAS or large DSF file visible as application work rather than a frozen UI; it does not claim that network or conversion latency has disappeared.
 
+During an uncached DSF conversion, progress is the fraction of declared DSF audio payload bytes processed. The Mac may estimate remaining conversion time from the observed rate, but must label that estimate as approximate. Reaching 100% ends the conversion measurement; the subsequent `AVAudioPlayer` open/prepare stage is displayed separately because AVFoundation does not expose byte progress for it. Cached DSF and ordinary audio opens may complete without a meaningful determinate interval. Progress callbacks must use the same playback-generation guard as completion so a superseded selection cannot update or start after a newer request.
+
 Native bit-perfect DSD output and DoP are deliberately deferred. They depend on the connected DAC, USB driver, macOS output path, and the supported device formats; a future implementation must enumerate the chosen output device, expose its capability, let the user explicitly select native/DoP/PCM output, and prove the active output mode rather than infer it from the source file.
 
 ## 14. Snapshot publication protocol
