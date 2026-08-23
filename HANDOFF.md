@@ -226,7 +226,7 @@ This database is user data. Do not remove it during development. If a destructiv
 
 ## 8. Current tests and verification baseline
 
-The last verified baseline contains 87 tests in 8 suites, run with a rebuilt `swift test` on 23 August 2026. Run `swift test`; do not rely on this handoff alone.
+The last verified baseline contains 90 tests in 8 suites, run with a rebuilt `swift test` on 23 August 2026. Run `swift test`; do not rely on this handoff alone.
 
 Albums now expose **Move to Recently Deleted** in the Albums list context menu. Settings displays a **Recently Deleted** section and its Restore action. This uses the existing soft-delete records, preserves album relationships, and never deletes or changes source media files.
 
@@ -458,6 +458,14 @@ The Mac release is now bundle version 0.2 (build 2) and uses the repository-owne
 Bundle version 0.3 (build 4) replaces the earlier preview-derived icon with a repository-owned transparent 1024-pixel source and a system-decodable multi-resolution ICNS. `Scripts/prepare-app-icon.swift`, `Scripts/build-app-icon.sh`, and `Scripts/build-icns.swift` make the transformation reproducible without relying on the current macOS `iconutil` encoder, which rejected otherwise valid iconsets. The plist names `AppIcon.icns` explicitly. The packaging script reads the plist version and writes `build/Music Library 0.3.app`; the exact icon is copied into the bundle, the bundle is ad-hoc signed, and the stable installed copy at `/Applications/Music Library.app` was refreshed with Launch Services. Plist linting, embedded-icon checksum comparison, direct AppKit rendering, system ICNS decoding, and strict code-signature verification pass.
 
 First-play DSF conversion now publishes actual input-byte completion from `DSFPCMTranscoder`. The MiniPlayer shows a determinate progress bar, integer percentage, and a smoothed approximate remaining time once enough progress has been observed. At 100% it changes to **DSF conversion complete — preparing playback** while `AVAudioPlayer` opens the derived PCM file. A cached DSF reports completion immediately. Ordinary audio/NAS opening remains indeterminate because `AVAudioPlayer(contentsOf:)` exposes no byte-level load callback. Progress updates are generation-guarded, so a superseded slow request cannot update the newest selection. The monotonic progress regression test is included in the full 87-test suite; the Release package, installed bundle, plist, icon, and signature all pass validation.
+
+### 23 August 2026 DSF playback-cache management checkpoint
+
+`DSFPlaybackCache` owns only replaceable `.wav` conversions inside `~/Library/Caches/MusicLibrary/DSFPlayback`; it neither considers nor removes files outside that directory, symbolic links, hidden/partial conversion files, or any source DSF. `DSFPlaybackCachePreferences` persists a 10 GiB default with a clamped 2–100 GiB range. Cache hits update modification time, which is the LRU signal. A completed DSF conversion trims oldest entries when over budget, opening Settings also reconciles an old oversized cache, and lowering the limit trims immediately. The current playing conversion is excluded from cleanup, and `PlaybackController` prevents new playback from starting during the brief mutating cache operation.
+
+Settings > DSF Playback Cache shows binary-formatted usage, the number of cached conversions, the maximum-size stepper, and a confirmed **Clear DSF Cache** action. Clear removes only unprotected derived conversions; the originals remain untouched and replay regenerates them. The implementation is in `Sources/MusicApplication/DSFPlaybackCache.swift`, `DSFSupport.swift`, `PlaybackController.swift`, and `Sources/MusicLibraryMac/MusicLibraryMacApp.swift`, with isolated-cache LRU, clear/protection, conversion, and preference-range tests in `ImportScannerTests.swift`. Bundle version 0.4 (build 5) is the sequential Mac delivery for this slice.
+
+The rebuilt full Swift baseline passes 90 tests in 8 suites. `Scripts/package-mac-app.sh` produced the signed versioned delivery at `build/Music Library 0.4.app`; its Info.plist reports version 0.4 (build 5), `plutil -lint` passes, and `codesign --verify --deep --strict` succeeds. The same bundle was installed at `/Applications/Music Library.app`; the installed executable and packaged executable have matching SHA-256 digests, the installed artwork digest matches the repository application icon, and the verified installed executable was launched successfully from `/Applications` (PID 71092 during the delivery smoke check).
 
 ### Next safe slice
 

@@ -115,6 +115,12 @@ struct DSFMetadataReader: Sendable {
 
 /// Creates a private, replaceable PCM cache for DSF playback. Source DSF files are never modified.
 struct DSFPCMTranscoder: Sendable {
+    private let cache: DSFPlaybackCache
+
+    init(cache: DSFPlaybackCache = DSFPlaybackCache()) {
+        self.cache = cache
+    }
+
     func playableURL(
         for sourceURL: URL,
         progress: (@Sendable (Double) -> Void)? = nil
@@ -126,9 +132,10 @@ struct DSFPCMTranscoder: Sendable {
         let values = try sourceURL.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
         let fingerprint = "\(sourceURL.standardizedFileURL.path)|\(values.fileSize ?? 0)|\(values.contentModificationDate?.timeIntervalSince1970 ?? 0)"
         let name = SHA256.hash(data: Data(fingerprint.utf8)).map { String(format: "%02x", $0) }.joined()
-        let directory = try cacheDirectory()
+        let directory = try cache.directoryURL()
         let outputURL = directory.appending(path: "\(name).wav")
         if FileManager.default.fileExists(atPath: outputURL.path) {
+            try cache.markUsed(outputURL)
             progress?(1)
             return outputURL
         }
@@ -143,13 +150,6 @@ struct DSFPCMTranscoder: Sendable {
             try? FileManager.default.removeItem(at: stagingURL)
             throw error
         }
-    }
-
-    private func cacheDirectory() throws -> URL {
-        let root = try FileManager.default.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-        let directory = root.appending(path: "MusicLibrary/DSFPlayback", directoryHint: .isDirectory)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        return directory
     }
 
     private func transcode(

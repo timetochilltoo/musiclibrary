@@ -245,10 +245,11 @@ struct ImportScannerTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let file = directory.appending(path: "playback.dsf")
+        let cacheDirectory = directory.appending(path: "cache", directoryHint: .isDirectory)
         try makeTaggedDSF().write(to: file)
 
         let progress = DoubleProgressRecorder()
-        let converted = try DSFPCMTranscoder().playableURL(for: file) { progress.append($0) }
+        let converted = try DSFPCMTranscoder(cache: DSFPlaybackCache(directoryURL: cacheDirectory)).playableURL(for: file) { progress.append($0) }
         let header = try Data(contentsOf: converted).prefix(44)
         #expect(String(decoding: header.prefix(4), as: UTF8.self) == "RIFF")
         #expect(String(decoding: header.dropFirst(8).prefix(4), as: UTF8.self) == "WAVE")
@@ -256,6 +257,69 @@ struct ImportScannerTests {
         #expect(progress.values.first == 0)
         #expect(progress.values.last == 1)
         #expect(zip(progress.values, progress.values.dropFirst()).allSatisfy { $0 <= $1 })
+    }
+
+    @Test("DSF playback cache trims least recently used conversions and protects active audio")
+    func trimsDSFPlaybackCacheByRecency() throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let cache = DSFPlaybackCache(directoryURL: directory)
+        let oldest = directory.appending(path: "oldest.wav")
+        let protected = directory.appending(path: "protected.wav")
+        let newest = directory.appending(path: "newest.wav")
+        let partial = directory.appending(path: "conversion.partial")
+        try Data(repeating: 1, count: 4).write(to: oldest)
+        try Data(repeating: 2, count: 4).write(to: protected)
+        try Data(repeating: 3, count: 4).write(to: newest)
+        try Data(repeating: 4, count: 20).write(to: partial)
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 1)], ofItemAtPath: oldest.path)
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 2)], ofItemAtPath: protected.path)
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 3)], ofItemAtPath: newest.path)
+
+        let status = try cache.trim(toMaximumBytes: 8, excluding: [protected])
+
+        #expect(!FileManager.default.fileExists(atPath: oldest.path))
+        #expect(FileManager.default.fileExists(atPath: protected.path))
+        #expect(FileManager.default.fileExists(atPath: newest.path))
+        #expect(FileManager.default.fileExists(atPath: partial.path))
+        #expect(status.usageBytes == 8)
+        #expect(status.fileCount == 2)
+    }
+
+    @Test("Clearing the DSF playback cache keeps protected and in-progress files")
+    func clearsReplaceableDSFPlaybackCache() throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let cache = DSFPlaybackCache(directoryURL: directory)
+        let removable = directory.appending(path: "removable.wav")
+        let protected = directory.appending(path: "protected.wav")
+        let partial = directory.appending(path: "conversion.partial")
+        try Data(repeating: 1, count: 4).write(to: removable)
+        try Data(repeating: 2, count: 5).write(to: protected)
+        try Data(repeating: 3, count: 6).write(to: partial)
+
+        let status = try cache.clear(excluding: [protected])
+
+        #expect(!FileManager.default.fileExists(atPath: removable.path))
+        #expect(FileManager.default.fileExists(atPath: protected.path))
+        #expect(FileManager.default.fileExists(atPath: partial.path))
+        #expect(status.usageBytes == 5)
+        #expect(status.fileCount == 1)
+    }
+
+    @Test("DSF playback cache preference defaults to ten GiB and clamps its range")
+    func clampsDSFPlaybackCachePreference() {
+        let suiteName = "MusicLibraryTests.DSFCache.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        #expect(DSFPlaybackCachePreferences.maximumGiB(defaults: defaults) == 10)
+        DSFPlaybackCachePreferences.setMaximumGiB(1, defaults: defaults)
+        #expect(DSFPlaybackCachePreferences.maximumGiB(defaults: defaults) == 2)
+        DSFPlaybackCachePreferences.setMaximumGiB(101, defaults: defaults)
+        #expect(DSFPlaybackCachePreferences.maximumGiB(defaults: defaults) == 100)
     }
 
     @Test("DSF reader rejects overflowing and truncated container declarations")

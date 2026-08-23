@@ -395,6 +395,7 @@ private struct LibraryShellView: View {
         if section == .settings {
             StorageRootList(
                 library: library,
+                playback: playback,
                 onShowAlbum: { albumID in
                     selectedAlbumID = albumID
                     section = .albums
@@ -918,6 +919,7 @@ private func relinkConfirmationMessage(_ proposal: AssetRelinkProposal) -> Strin
 
 private struct StorageRootList: View {
     @ObservedObject var library: LibraryStore
+    @ObservedObject var playback: PlaybackController
     let onShowAlbum: (AlbumID) -> Void
     let onShowImportBatch: (ImportBatchID) -> Void
     @State private var rootToRename: StorageRoot?
@@ -927,6 +929,10 @@ private struct StorageRootList: View {
     @State private var playlistToPurge: Playlist?
     @State private var showsSnapshotDestinationPicker = false
     @State private var showsMasterRestorePicker = false
+    @State private var dsfCacheMaximumGiB = DSFPlaybackCachePreferences.maximumGiB()
+    @State private var dsfCacheStatus: DSFPlaybackCacheStatus?
+    @State private var isManagingDSFCache = false
+    @State private var showsClearDSFCacheConfirmation = false
 
     var body: some View {
         List {
@@ -989,6 +995,44 @@ private struct StorageRootList: View {
             } header: {
                 Label("Export", systemImage: "square.and.arrow.up")
             }
+            Section {
+                Text("DSF files are converted to replaceable high-resolution PCM WAV files for playback. Original music files are never changed.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if let dsfCacheStatus {
+                    ProgressView(
+                        value: min(Double(dsfCacheStatus.usageBytes), Double(dsfCacheStatus.maximumBytes)),
+                        total: max(1, Double(dsfCacheStatus.maximumBytes))
+                    )
+                    HStack {
+                        Text("\(formattedBytes(dsfCacheStatus.usageBytes)) of \(dsfCacheMaximumGiB) GB used")
+                        Spacer()
+                        Text("\(dsfCacheStatus.fileCount) cached conversion\(dsfCacheStatus.fileCount == 1 ? "" : "s")")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                } else {
+                    ProgressView("Checking cache…")
+                        .controlSize(.small)
+                }
+                Stepper(
+                    "Maximum cache size: \(dsfCacheMaximumGiB) GB",
+                    value: $dsfCacheMaximumGiB,
+                    in: DSFPlaybackCachePreferences.allowedMaximumGiB
+                )
+                .onChange(of: dsfCacheMaximumGiB) { _, newValue in
+                    updateDSFCacheLimit(newValue)
+                }
+                Button("Clear DSF Cache…", systemImage: "trash", role: .destructive) {
+                    showsClearDSFCacheConfirmation = true
+                }
+                Text("When the limit is exceeded, the least recently used conversions are removed automatically. A deleted conversion is recreated the next time its DSF track is played.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Label("DSF Playback Cache", systemImage: "waveform.badge.magnifyingglass")
+            }
+            .disabled(isManagingDSFCache || playback.isLoading)
             Section {
                 Button("Recheck Library Health", systemImage: "arrow.clockwise") {
                     Task {
@@ -1234,7 +1278,55 @@ private struct StorageRootList: View {
         } message: {
             Text(relinkProposalToApply.map(relinkConfirmationMessage) ?? "")
         }
+        .confirmationDialog("Clear DSF playback cache?", isPresented: $showsClearDSFCacheConfirmation, titleVisibility: .visible) {
+            Button("Clear Cached Conversions", role: .destructive) {
+                clearDSFCache()
+            }
+        } message: {
+            Text("This removes replaceable PCM conversions only. Original DSF files are never changed. A conversion currently playing is kept until it is no longer in use.")
+        }
         .sheet(item: $rootToRename) { root in StorageRootRenameEditor(library: library, root: root) }
+        .task {
+            await refreshDSFCacheStatus()
+        }
+    }
+
+    private func updateDSFCacheLimit(_ value: Int) {
+        isManagingDSFCache = true
+        Task {
+            do {
+                dsfCacheStatus = try await playback.setDSFPlaybackCacheMaximumGiB(value)
+            } catch {
+                dsfCacheMaximumGiB = DSFPlaybackCachePreferences.maximumGiB()
+                library.presentError(error)
+            }
+            isManagingDSFCache = false
+        }
+    }
+
+    private func clearDSFCache() {
+        isManagingDSFCache = true
+        Task {
+            do {
+                dsfCacheStatus = try await playback.clearDSFPlaybackCache()
+            } catch {
+                library.presentError(error)
+            }
+            isManagingDSFCache = false
+        }
+    }
+
+    private func refreshDSFCacheStatus() async {
+        do {
+            dsfCacheMaximumGiB = DSFPlaybackCachePreferences.maximumGiB()
+            dsfCacheStatus = try await playback.dsfPlaybackCacheStatus()
+        } catch {
+            library.presentError(error)
+        }
+    }
+
+    private func formattedBytes(_ bytes: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: bytes, countStyle: .binary)
     }
 
     private func healthSymbol(for kind: LibraryHealthKind) -> String {

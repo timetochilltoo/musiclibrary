@@ -21,12 +21,14 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
     @Published public private(set) var loadingProgress: Double?
     @Published public private(set) var loadingEstimatedTimeRemaining: TimeInterval?
     @Published public private(set) var isFinalizingLoad = false
+    @Published public private(set) var isManagingDSFPlaybackCache = false
     private var player: AVAudioPlayer?
     private var items: [(url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?)] = []
     private var originalItems: [(url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?)] = []
     private let preloader = PlaybackPreloader()
     private let loader = PlaybackLoader()
-    private var preparedNext: (trackID: TrackID, player: AVAudioPlayer)?
+    private var preparedNext: (trackID: TrackID, prepared: PreparedAudioPlayer)?
+    private var currentPlayableURL: URL?
     private var preloadGeneration = 0
     private var loadGeneration = 0
     private var cueEndTimer: Timer?
@@ -39,6 +41,9 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
         configureRemoteCommands()
     }
     public func play(items: [(url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?)], startingAt index: Int) throws {
+        guard !isManagingDSFPlaybackCache else {
+            throw NSError(domain: "MusicLibrary", code: 4, userInfo: [NSLocalizedDescriptionKey: "DSF cache maintenance is finishing. Try playback again in a moment."])
+        }
         guard items.indices.contains(index) else { throw NSError(domain: "MusicLibrary", code: 1, userInfo: [NSLocalizedDescriptionKey: "No playable queue item was selected."]) }
         self.items = items
         originalItems = items
@@ -47,7 +52,7 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
         beginLoading(index: index)
     }
     public func toggle() {
-        guard !isLoading else { return }
+        guard !isLoading, !isManagingDSFPlaybackCache else { return }
         guard let player else {
             guard let index = queue.currentIndex else { return }
             beginLoading(index: index)
@@ -72,6 +77,7 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
         progressTimer?.invalidate(); progressTimer = nil
         player?.stop()
         player = nil
+        currentPlayableURL = nil
         isPlaying = false
         isLoading = false
         loadingTitle = nil
@@ -82,11 +88,13 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
         clearNowPlayingInfo()
     }
     public func next() {
+        guard !isManagingDSFPlaybackCache else { return }
         guard queue.skipForward() != nil, let index = queue.currentIndex else { stop(); return }
         persist()
         beginLoading(index: index)
     }
     public func previous() {
+        guard !isManagingDSFPlaybackCache else { return }
         guard queue.previous() != nil, let index = queue.currentIndex else { return }
         persist()
         beginLoading(index: index)
@@ -137,12 +145,54 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
         schedulePreload()
     }
     public func dismissError() { errorMessage = nil }
+    public func dsfPlaybackCacheStatus() async throws -> DSFPlaybackCacheStatus {
+        let cache = DSFPlaybackCache()
+        let maximumBytes = DSFPlaybackCachePreferences.maximumBytes()
+        let protectedURLs = Set([currentPlayableURL].compactMap { $0 })
+        let shouldTrim = !isLoading
+        return try await Task.detached(priority: .utility) {
+            if shouldTrim {
+                return try cache.trim(toMaximumBytes: maximumBytes, excluding: protectedURLs)
+            }
+            return try cache.status(maximumBytes: maximumBytes)
+        }.value
+    }
+
+    public func setDSFPlaybackCacheMaximumGiB(_ value: Int) async throws -> DSFPlaybackCacheStatus {
+        guard !isLoading, !isManagingDSFPlaybackCache else {
+            throw NSError(domain: "MusicLibrary", code: 2, userInfo: [NSLocalizedDescriptionKey: "Wait for the current song to finish loading before changing the DSF cache limit."])
+        }
+        isManagingDSFPlaybackCache = true
+        defer { isManagingDSFPlaybackCache = false }
+        DSFPlaybackCachePreferences.setMaximumGiB(value)
+        let maximumBytes = DSFPlaybackCachePreferences.maximumBytes()
+        let protectedURLs = Set([currentPlayableURL].compactMap { $0 })
+        let cache = DSFPlaybackCache()
+        return try await Task.detached(priority: .utility) {
+            try cache.trim(toMaximumBytes: maximumBytes, excluding: protectedURLs)
+        }.value
+    }
+
+    public func clearDSFPlaybackCache() async throws -> DSFPlaybackCacheStatus {
+        guard !isLoading, !isManagingDSFPlaybackCache else {
+            throw NSError(domain: "MusicLibrary", code: 3, userInfo: [NSLocalizedDescriptionKey: "Wait for the current song to finish loading before clearing the DSF cache."])
+        }
+        isManagingDSFPlaybackCache = true
+        defer { isManagingDSFPlaybackCache = false }
+        let protectedURLs = Set([currentPlayableURL].compactMap { $0 })
+        let cache = DSFPlaybackCache()
+        return try await Task.detached(priority: .utility) {
+            try cache.clear(excluding: protectedURLs)
+        }.value
+    }
+
     private func persist() { if let data = try? JSONEncoder().encode(queue) { UserDefaults.standard.set(data, forKey: defaultsKey) } }
     private func failPlayback(message: String) {
         loadGeneration += 1
         invalidatePreparedNext()
         player?.stop()
         player = nil
+        currentPlayableURL = nil
         isPlaying = false
         isLoading = false
         loadingTitle = nil
@@ -158,12 +208,12 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
     private func beginLoading(index: Int) {
         guard items.indices.contains(index) else { return }
         let item = items[index]
-        let preparedPlayer: AVAudioPlayer?
+        let preparedAudio: PreparedAudioPlayer?
         if let preparedNext, preparedNext.trackID == item.trackID {
-            preparedPlayer = preparedNext.player
+            preparedAudio = preparedNext.prepared
             self.preparedNext = nil
         } else {
-            preparedPlayer = nil
+            preparedAudio = nil
         }
         invalidatePreparedNext()
         loadGeneration += 1
@@ -173,6 +223,7 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
         progressTimer?.invalidate(); progressTimer = nil
         player?.stop()
         player = nil
+        currentPlayableURL = nil
         isPlaying = false
         isLoading = true
         loadingTitle = item.title
@@ -185,8 +236,8 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
         errorMessage = nil
         clearNowPlayingInfo()
 
-        if let preparedPlayer {
-            finishLoading(.success(PreparedAudioPlayer(preparedPlayer)), item: item, generation: generation, retryPreparedFailure: true)
+        if let preparedAudio {
+            finishLoading(.success(preparedAudio), item: item, generation: generation, retryPreparedFailure: true)
         } else {
             prepare(item: item, generation: generation)
         }
@@ -226,7 +277,7 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
                 openedPlayer.currentTime = Double(cueStartMilliseconds) / 1_000
             }
             if start(openedPlayer) {
-                adopt(openedPlayer, item: item)
+                adopt(prepared, item: item)
             } else if retryPreparedFailure {
                 prepare(item: item, generation: generation)
             } else {
@@ -241,10 +292,12 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
         return player.play()
     }
 
-    private func adopt(_ openedPlayer: AVAudioPlayer, item: (url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?)) {
+    private func adopt(_ prepared: PreparedAudioPlayer, item: (url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?)) {
+        let openedPlayer = prepared.player
         player?.stop()
         cueEndTimer?.invalidate()
         player = openedPlayer
+        currentPlayableURL = prepared.playableURL
         currentTitle = item.title
         currentTrackID = item.trackID
         audioFormatDescription = Self.formatDescription(for: item.url, format: openedPlayer.format)
@@ -308,7 +361,7 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
             guard let prepared else { return }
             Task { @MainActor [weak self] in
                 guard let self, self.preloadGeneration == generation, self.queue.currentTrackID == currentTrackID else { return }
-                self.preparedNext = (item.trackID, prepared.player)
+                self.preparedNext = (item.trackID, prepared)
             }
         }
     }
@@ -329,6 +382,13 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
     }
 
     private func advanceAfterTrackFinished() {
+        guard !isManagingDSFPlaybackCache else {
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(100))
+                self?.advanceAfterTrackFinished()
+            }
+            return
+        }
         guard queue.next() != nil, let index = queue.currentIndex else { stop(); return }
         persist()
         beginLoading(index: index)
@@ -406,7 +466,11 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
 
 private final class PreparedAudioPlayer: @unchecked Sendable {
     let player: AVAudioPlayer
-    init(_ player: AVAudioPlayer) { self.player = player }
+    let playableURL: URL
+    init(_ player: AVAudioPlayer, playableURL: URL) {
+        self.player = player
+        self.playableURL = playableURL
+    }
 }
 
 private enum PreparedAudioResult: @unchecked Sendable {
@@ -465,11 +529,12 @@ private final class PlaybackLoader: @unchecked Sendable {
                     }
                 }
                 if isDSF {
+                    _ = try? DSFPlaybackCache().trim(excluding: [playableURL])
                     progress(.init(fractionCompleted: 1, estimatedTimeRemaining: nil, isFinalizing: true))
                 }
                 let player = try AVAudioPlayer(contentsOf: playableURL)
                 player.prepareToPlay()
-                completion(.success(PreparedAudioPlayer(player)))
+                completion(.success(PreparedAudioPlayer(player, playableURL: playableURL)))
             } catch {
                 completion(.failure(error.localizedDescription))
             }
@@ -487,7 +552,7 @@ private final class PlaybackPreloader: @unchecked Sendable {
                 return
             }
             player.prepareToPlay()
-            completion(PreparedAudioPlayer(player))
+            completion(PreparedAudioPlayer(player, playableURL: url))
         }
     }
 }
