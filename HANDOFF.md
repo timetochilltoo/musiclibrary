@@ -1,6 +1,6 @@
 # Music Library — Project Handoff
 
-Last updated: 24 August 2026
+Last updated: 25 August 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
@@ -198,7 +198,7 @@ Implemented:
 
 - Three-column SwiftUI navigation shell.
 - Album browsing and local search.
-- Add Album form: title, edition label, release year, country/region, catalogue number, disc count, CD toggle, direct location, and optional box set.
+- Add Album form: title, edition label, release year, country/region, catalogue number, disc count, CD toggle, direct location, and optional box set. The Albums toolbar also offers **Add Physical-only Album** for a catalogue record with CD availability, a known or explicitly unknown location, and an optional physical note; it creates no discs, tracks, or digital assets, so it is not playable until audio is attached later.
 - Hierarchical location list with full paths, indentation, create/rename/move/delete actions, parent-cycle protection, and visible deletion explanations when child locations, albums, or box sets still reference a node.
 - Box-set list and create-box-set form.
 - Basic album detail view showing edition fields, CD status, and direct location or box/unknown state.
@@ -226,7 +226,7 @@ This database is user data. Do not remove it during development. If a destructiv
 
 ## 8. Current tests and verification baseline
 
-The last verified baseline contains 90 tests in 8 suites, run with a rebuilt `swift test` on 23 August 2026. Run `swift test`; do not rely on this handoff alone.
+The last verified baseline contains 93 tests in 8 suites, run with rebuilt debug and release suites on 25 August 2026. Run `swift test` and `swift test -c release`; do not rely on this handoff alone.
 
 Albums now expose **Move to Recently Deleted** in the Albums list context menu. Settings displays a **Recently Deleted** section and its Restore action. This uses the existing soft-delete records, preserves album relationships, and never deletes or changes source media files.
 
@@ -317,7 +317,7 @@ Storage-root authorization, Import Inbox scanning, embedded common-tag proposal 
 
 `CompanionPreferenceStore` writes `CompanionPreferences.json` under iPad Application Support. It holds published album IDs starred by the user plus up to 20 recently played album IDs in newest-first order, album playback-start counts, and elapsed seconds keyed by published track ID. The iPad album detail toggles favourites, album rows show a star and local play count, a **Favourites only** filter narrows local browsing, and starting playback of a different album's track records that album and increments its count. This is a local playback-start count, not proof that an album was listened to fully. The history respects the current search/favourites filter and has a local **Clear** action; clearing it leaves favourites and counts unchanged. Pausing or switching away from a track stores its current elapsed seconds, and the iPad scene also stores the active track position when leaving the active state. Replaying that same mapped track restores it unless it is within three seconds of the track end. This data is intentionally outside the verified snapshot cache and Mac master: it is never published, uploaded, merged, or treated as catalogue data. Snapshot refresh preserves it; IDs that are absent from a newer snapshot simply do not appear until/if that album returns. It is not yet per-track history, a shared play count, or cross-device resume.
 
-`Scripts/package-mac-app.sh` produces a sequentially versioned, locally ad-hoc-signed release app (currently `build/Music Library 0.5.app`); its committed bundle metadata is in `Packaging/MusicLibraryMac-Info.plist`. The stable installed copy is `/Applications/Music Library.app`. This is suitable for local launch on this Mac, not public distribution or notarization. `MAC_AND_NAS_TESTING.md` is the step-by-step Mac/NAS/iPad real-world acceptance guide. It isolates destructive/corrupt-snapshot checks to a disposable copy and states the expected safe outcomes.
+`Scripts/package-mac-app.sh` produces a sequentially versioned, locally ad-hoc-signed release app (currently `build/Music Library 0.6.app`); its committed bundle metadata is in `Packaging/MusicLibraryMac-Info.plist`. The stable installed copy is `/Applications/Music Library.app`. This is suitable for local launch on this Mac, not public distribution or notarization. `MAC_AND_NAS_TESTING.md` is the step-by-step Mac/NAS/iPad real-world acceptance guide. It isolates destructive/corrupt-snapshot checks to a disposable copy and states the expected safe outcomes.
 
 `USER_TEST_FEEDBACK.md` records the 26 July first Mac/NAS smoke-test findings and follow-up checks. The import fallback now safely interprets conventional `Artist/Album [Disc 1]/01 Track.flac` paths when tags are missing; it takes effect only when metadata is read for a future import proposal and never rewrites existing catalogue records or source files. The Mac player now reorders the actual playback items when shuffle is enabled, visibly labels that state, and rehydrates reachable saved queue tracks after relaunch without autoplaying. The MusicBrainz lookup sheet's earlier clipped-layout issue is repaired; proposal rows now use a three-column artwork, metadata, and actions layout.
 
@@ -475,9 +475,17 @@ The complete debug and release Swift suites were rebuilt on 24 August 2026 and b
 
 This is the implementation-to-real-library validation boundary. The next user-run checks are in `MAC_AND_NAS_TESTING.md`: one-click create/attach and duplicate avoidance, local playback and playlist behavior, NAS/DSF loading acknowledgement and latest-selection behavior, offline/reconnect recovery, long-session playback, large-library scroll/search, and VoiceOver/contrast inspection. Report those results before opening another Mac feature slice. Automatic hash-based relinking, snapshot-to-master reconstruction, WAV/DSF/other non-FLAC tag write-back, internet lyrics providers, AI modules, live NAS endurance, and iPad device validation remain explicitly deferred.
 
+### 25 August 2026 physical-only album-entry checkpoint
+
+The Mac Albums toolbar now has a dedicated **Add Physical-only Album** workflow for CDs that are not represented by digital files. The form preselects CD availability, accepts the same edition metadata as a normal album, allows a structured physical location or an explicit **Location unknown for now** state, and stores an optional physical note (for example, shelf or box text). Saving creates one catalogue album with no discs, tracks, or digital-asset rows; its derived digital availability is `none`, so no player controls are shown. The album can be edited later and digital audio can be attached through the existing import flow without changing the physical identity.
+
+The slice adds domain and persistence coverage for known and unknown physical locations. The complete debug and release suites both pass **93 tests in 8 suites**. The known non-blocking compiler diagnostic remains the AVFoundation `AVMetadataItem.stringValue` deprecation in `EmbeddedMetadataExtractor.swift`.
+
+`Packaging/MusicLibraryMac-Info.plist` now reports version **0.6 (build 7)**. `Scripts/package-mac-app.sh` produced and ad-hoc-signed `build/Music Library 0.6.app`; plist linting, embedded icon presence, and strict code-signature verification pass. The package is ready for the user test in `MAC_AND_NAS_TESTING.md` section **A0. Manual physical-only album**. This validation changed no source audio, catalogue database, snapshots, or user Application Support data.
+
 ### Next safe slice
 
-The local/NAS folder workflow, safe scanning/reconciliation workflow, one-step new-versus-existing-edition import decision, legacy-artwork migration, field-level catalogue activity history, audit hardening, branded Mac packaging, responsive slow-file loading, configurable DSF PCM caching, and the artwork-first Mac presentation workstream are implemented. This release is now at the real-library validation boundary; do not begin another broad feature or redesign pass by assumption. Use `MAC_AND_NAS_TESTING.md` to report the remaining user-observable acceptance results before the next implementation slice. Automatic hash-based relinking, snapshot-to-master reconstruction, WAV/DSF/other non-FLAC tag write-back, internet lyrics providers, AI modules, live NAS endurance, and iPad device validation remain deferred; the provider/format choices in the Open Decisions section still require the user.
+The local/NAS folder workflow, safe scanning/reconciliation workflow, one-step new-versus-existing-edition import decision, physical-only album entry, legacy-artwork migration, field-level catalogue activity history, audit hardening, branded Mac packaging, responsive slow-file loading, configurable DSF PCM caching, and the artwork-first Mac presentation workstream are implemented. This release is now at the real-library validation boundary; do not begin another broad feature or redesign pass by assumption. Use `MAC_AND_NAS_TESTING.md` to report the remaining user-observable acceptance results before the next implementation slice. Automatic hash-based relinking, snapshot-to-master reconstruction, WAV/DSF/other non-FLAC tag write-back, internet lyrics providers, AI modules, live NAS endurance, and iPad device validation remain deferred; the provider/format choices in the Open Decisions section still require the user.
 
 ## 13. Planned implementation order after the next slice
 

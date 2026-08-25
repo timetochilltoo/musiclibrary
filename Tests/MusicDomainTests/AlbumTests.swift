@@ -18,6 +18,33 @@ struct AlbumTests {
         }
     }
 
+    @Test("A physical-only album can store a known location without digital assets")
+    func physicalOnlyKnownLocation() throws {
+        let locationID = PhysicalLocationID()
+        let draft = try NewAlbum(
+            title: "Physical edition",
+            hasCD: true,
+            physicalLocationID: locationID,
+            physicalNote: "Shelf 4"
+        ).validated()
+        #expect(draft.hasCD)
+        #expect(draft.physicalLocationID == locationID)
+        #expect(draft.physicalNote == "Shelf 4")
+        #expect(!draft.isPhysicalLocationUnknown)
+        #expect(DigitalAvailabilitySummary.derive(expectedTrackCount: 0, assetsByTrack: []).status == .none)
+    }
+
+    @Test("A physical-only album can leave its location unknown")
+    func physicalOnlyUnknownLocation() throws {
+        let draft = try NewAlbum(
+            title: "Unassigned physical edition",
+            hasCD: true,
+            isPhysicalLocationUnknown: true
+        ).validated()
+        #expect(draft.physicalLocationID == nil)
+        #expect(draft.isPhysicalLocationUnknown)
+    }
+
     @Test("Edition label is included in the display title")
     func editionLabelIsDisplayed() {
         let album = Album(id: AlbumID(), from: NewAlbum(title: "Kind of Blue", editionLabel: "Japan version"))

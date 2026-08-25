@@ -26,6 +26,24 @@ struct MusicDatabaseTests {
         #expect(activity.map(\.revision) == [1])
     }
 
+    @Test("A manually entered physical-only album persists location without digital assets")
+    func manualPhysicalOnlyAlbum() async throws {
+        let database = try MusicDatabase(url: temporaryDatabaseURL())
+        try await database.migrate()
+        let location = try await database.createLocation(.init(name: "Shelf 4"))
+        let album = try await database.createAlbum(.init(
+            title: "Physical record",
+            hasCD: true,
+            physicalLocationID: location.id,
+            physicalNote: "Box 3"
+        ))
+        let loaded = try #require(await database.album(id: album.id))
+        #expect(loaded.hasCD)
+        #expect(loaded.physicalLocationID == location.id)
+        #expect(loaded.physicalNote == "Box 3")
+        #expect(try await database.digitalAssetIDs(albumID: album.id).isEmpty)
+    }
+
     @Test("Consistent master backup is readable while the source catalogue remains open")
     func consistentMasterBackup() async throws {
         let database = try MusicDatabase(url: temporaryDatabaseURL())

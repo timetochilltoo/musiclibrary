@@ -8,7 +8,7 @@ Detailed coding handoff: [IMPLEMENTATION_SPEC.md](IMPLEMENTATION_SPEC.md)
 
 Operational continuation guide: [HANDOFF.md](HANDOFF.md)
 
-Implementation baseline (24 August 2026): the Mac catalogue, retained local/NAS authorization, safe scanner and review queue, explicit metadata comparison, digital assets, local playback and playlists, FLAC tag-write safety, manual lyrics, recovery/backup/export, snapshot publication, and the read-only companion foundation are implemented. The artwork-first Mac redesign is complete across Albums, the persistent player, Library Changes, playlists, and Settings. The current package is version 0.5 (build 6) and the rebuilt suite passes 90 automated tests in 8 suites. It includes a branded Dock icon, creates or attaches a reviewed release in one atomic action, keeps the UI responsive with a visible loading state while preparing slow NAS/DSF playback, and provides a bounded, user-configurable DSF PCM cache. Live NAS endurance and iPad device validation remain deliberately deferred. See [HANDOFF.md](HANDOFF.md) for the current Git baseline and next validation boundary.
+Implementation baseline (25 August 2026): the Mac catalogue, retained local/NAS authorization, safe scanner and review queue, explicit metadata comparison, digital assets, local playback and playlists, FLAC tag-write safety, manual lyrics, recovery/backup/export, snapshot publication, and the read-only companion foundation are implemented. The artwork-first Mac redesign is complete across Albums, the persistent player, Library Changes, playlists, and Settings. The current package is version 0.6 (build 7) and the rebuilt suite passes 93 automated tests in 8 suites. It includes a branded Dock icon, creates or attaches a reviewed release in one atomic action, keeps the UI responsive with a visible loading state while preparing slow NAS/DSF playback, provides a bounded, user-configurable DSF PCM cache, and supports manual physical-only album records. Live NAS endurance and iPad device validation remain deliberately deferred. See [HANDOFF.md](HANDOFF.md) for the current Git baseline and next validation boundary.
 
 The Mac implementation gate is now closed for this scope. The next phase is real-library acceptance: local and NAS playback endurance, slow DSF loading and latest-selection behavior, offline/reconnect handling, large-library scrolling/search, and accessibility/contrast review. These checks require the user's actual folders, NAS, audio output, and display environment; they cannot be proven by the repository test suite alone.
 
@@ -217,6 +217,8 @@ One **Add Album** command offers several starting methods:
 5. Enter information manually.
 
 Every method leads to the same confirmation screen: choose the matching edition, compare metadata, edit the edition label, enable CD and select a location or box set, attach digital files, then confirm.
+
+On Mac, the Albums toolbar also offers **Add Physical-only Album**. This mode records the edition metadata, CD availability, a known location or an explicit unknown location, and an optional physical note without creating discs, tracks, or digital assets. The resulting catalogue record is intentionally not playable until digital audio is attached later.
 
 When a digital scan resembles an existing album, the app explicitly offers **Attach to Existing Album** or **Create Another Edition**. It never merges editions silently.
 

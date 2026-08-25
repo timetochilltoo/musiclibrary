@@ -7,7 +7,7 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 ## 1. Launch the packaged Mac app
 
 1. In Finder, open the project folder.
-2. Open the newest sequential package, currently `build/Music Library 0.5.app`. For normal use, the same build is installed at `/Applications/Music Library.app`.
+2. Open the newest sequential package, currently `build/Music Library 0.6.app`. For normal use, the same build is installed at `/Applications/Music Library.app`.
 3. If macOS blocks the first launch, Control-click the app, choose **Open**, then choose **Open** again.
 4. The app opens a catalogue in its Application Support folder. It does not use a SQLite database on the NAS.
 5. Keep the app open while following the tests below. If anything unexpected happens, take a screenshot and note the exact action just before it happened.
@@ -37,6 +37,14 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 4. Confirm the bottom playback bar shows the correct title and a runtime format line such as `FLAC · 44.1 kHz · 2 ch`.
 5. Test **Pause**, **Play**, **Previous**, **Next**, **Stop**, the volume slider, shuffle, and each repeat mode.
 6. Close and reopen the app. Confirm the queue selection and repeat mode were retained. A saved queue does not guarantee a track will still be reachable if its NAS root is disconnected.
+
+### A0. Manual physical-only album
+
+1. Open **Albums**, choose **+**, and select **Add Physical-only Album**.
+2. Enter the album title and any edition, release, catalogue, or notes that you know. CD is selected automatically.
+3. Choose a registered physical location, or leave **Location unknown for now** enabled. Add an optional physical note such as a shelf, box, or purchase detail.
+4. Save the record. Confirm it appears in the catalogue with CD availability and no digital play controls, tracks, or queue entry. It remains searchable and can be edited later.
+5. Repeat once with an unknown location, then assign a location later from the album editor. Confirm the source folder and player are never touched.
 
 ### A1. Dock icon and slow NAS/DSF loading
 

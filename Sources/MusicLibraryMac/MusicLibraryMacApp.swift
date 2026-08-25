@@ -21,6 +21,13 @@ struct MusicLibraryMacApp: App {
     }
 }
 
+private enum AlbumEntryMode: String {
+    case standard
+    case physicalOnly
+
+    var isPhysicalOnly: Bool { self == .physicalOnly }
+}
+
 private struct LibraryShellView: View {
     private enum AlbumSourceFilter: String, CaseIterable, Identifiable {
         case all, nas, local
@@ -88,6 +95,7 @@ private struct LibraryShellView: View {
     @State private var showsFavouriteAlbumsOnly = false
     @State private var contributorSearchText = ""
     @State private var showsAlbumEditor = false
+    @State private var albumEntryMode: AlbumEntryMode = .standard
     @State private var showsLocationEditor = false
     @State private var showsBoxSetEditor = false
     @State private var showsStorageRootPicker = false
@@ -149,7 +157,7 @@ private struct LibraryShellView: View {
                 self.selectedImportBatchID = latestImportBatchesByRoot.first?.id
             }
         }
-        .sheet(isPresented: $showsAlbumEditor) { AlbumEditor(library: library) }
+        .sheet(isPresented: $showsAlbumEditor) { AlbumEditor(library: library, entryMode: albumEntryMode) }
         .sheet(isPresented: $showsLocationEditor) { LocationEditor(library: library) }
         .sheet(isPresented: $showsBoxSetEditor) { BoxSetEditor(library: library) }
         .sheet(isPresented: $showsScanRootPicker) { ScanRootPicker(library: library) }
@@ -468,14 +476,30 @@ private struct LibraryShellView: View {
             }
         }
         ToolbarItem(placement: .primaryAction) {
-            Button(section == .locations ? "Add Location" : section == .boxSets ? "Add Box Set" : section == .settings ? "Add Music Folder" : section == .importInbox ? "Rescan Music Folder" : section == .playlists ? "Add Playlist" : "Add Album", systemImage: "plus") {
-                switch section {
-                case .locations: showsLocationEditor = true
-                case .boxSets: showsBoxSetEditor = true
-                case .settings: showsStorageRootPicker = true
-                case .importInbox: showsScanRootPicker = true
-                case .playlists: showsPlaylistEditor = true
-                default: showsAlbumEditor = true
+            if section == .albums {
+                Menu {
+                    Button("Add Album", systemImage: "plus") {
+                        albumEntryMode = .standard
+                        showsAlbumEditor = true
+                    }
+                    Button("Add Physical-only Album", systemImage: "opticaldisc") {
+                        albumEntryMode = .physicalOnly
+                        showsAlbumEditor = true
+                    }
+                } label: {
+                    Label("Add Album", systemImage: "plus")
+                }
+                .help("Add a catalogue album or a physical-only record")
+            } else {
+                Button(section == .locations ? "Add Location" : section == .boxSets ? "Add Box Set" : section == .settings ? "Add Music Folder" : section == .importInbox ? "Rescan Music Folder" : section == .playlists ? "Add Playlist" : "Add Album", systemImage: "plus") {
+                    switch section {
+                    case .locations: showsLocationEditor = true
+                    case .boxSets: showsBoxSetEditor = true
+                    case .settings: showsStorageRootPicker = true
+                    case .importInbox: showsScanRootPicker = true
+                    case .playlists: showsPlaylistEditor = true
+                    default: break
+                    }
                 }
             }
         }
@@ -3501,6 +3525,7 @@ private struct LocationList: View {
 private struct AlbumEditor: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var library: LibraryStore
+    let entryMode: AlbumEntryMode
     @State private var title = ""
     @State private var editionLabel = ""
     @State private var releaseYear = ""
@@ -3508,11 +3533,19 @@ private struct AlbumEditor: View {
     @State private var catalogueNumber = ""
     @State private var discCount = 1
     @State private var hasCD = false
+    @State private var locationUnknown = true
+    @State private var physicalNote = ""
     @State private var rating = 0
     @State private var isFavourite = false
     @State private var selectedLocationID: PhysicalLocationID?
     @State private var selectedBoxSetID: BoxSetID?
     @State private var errorMessage: String?
+
+    init(library: LibraryStore, entryMode: AlbumEntryMode = .standard) {
+        self.library = library
+        self.entryMode = entryMode
+        _hasCD = State(initialValue: entryMode.isPhysicalOnly)
+    }
 
     var body: some View {
         Form {
@@ -3526,8 +3559,25 @@ private struct AlbumEditor: View {
                 Picker("Rating", selection: $rating) { Text("Not rated").tag(0); ForEach(1...5, id: \.self) { Text("\($0) star\($0 == 1 ? "" : "s")").tag($0) } }
                 Toggle("Favourite", isOn: $isFavourite)
             }
+
+            if entryMode.isPhysicalOnly {
+                Section("Physical-only record") {
+                    Label("Catalogue information only", systemImage: "opticaldisc")
+                    Text("This stores the edition and its physical location without adding digital files. It will not be playable until audio is attached later.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    TextField("Physical note (optional)", text: $physicalNote, axis: .vertical)
+                        .lineLimit(2...4)
+                }
+            }
+
             Section("Physical CD") {
-                Toggle("CD is available", isOn: $hasCD)
+                if entryMode.isPhysicalOnly {
+                    Label("CD is available", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                } else {
+                    Toggle("CD is available", isOn: $hasCD)
+                }
                 if hasCD {
                     Picker("Box set", selection: $selectedBoxSetID) {
                         Text("Not in a box set").tag(BoxSetID?.none)
@@ -3535,29 +3585,47 @@ private struct AlbumEditor: View {
                     }
                     if selectedBoxSetID == nil {
                         Picker("Location", selection: $selectedLocationID) {
-                            Text("Location unknown").tag(PhysicalLocationID?.none)
+                            Text(locationUnknown ? "Location unknown" : "Choose a location").tag(PhysicalLocationID?.none)
                             ForEach(library.locations.sorted { locationPath($0, in: library.locations) < locationPath($1, in: library.locations) }) { location in Text(locationPath(location, in: library.locations)).tag(Optional(location.id)) }
                         }
+                        Toggle("Location unknown for now", isOn: $locationUnknown)
+                            .onChange(of: locationUnknown) { _, unknown in
+                                if unknown { selectedLocationID = nil }
+                            }
                     }
                 }
             }
         }
         .formStyle(.grouped)
         .frame(width: 460)
-        .navigationTitle("Add Album")
+        .navigationTitle(entryMode.isPhysicalOnly ? "Add Physical Album" : "Add Album")
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-            ToolbarItem(placement: .confirmationAction) { Button("Add") { addAlbum() }.keyboardShortcut(.defaultAction) }
+            ToolbarItem(placement: .confirmationAction) {
+                Button(entryMode.isPhysicalOnly ? "Add Physical Album" : "Add") { addAlbum() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(title.nilIfBlank == nil)
+            }
         }
         .alert("Unable to add album", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
             Button("OK", role: .cancel) { errorMessage = nil }
         } message: { Text(errorMessage ?? "") }
-        .onChange(of: selectedBoxSetID) { _, boxID in if boxID != nil { hasCD = true; selectedLocationID = nil } }
+        .onChange(of: selectedBoxSetID) { _, boxID in
+            if boxID != nil {
+                hasCD = true
+                selectedLocationID = nil
+                locationUnknown = false
+            }
+        }
+        .onChange(of: selectedLocationID) { _, locationID in
+            if locationID != nil { locationUnknown = false }
+        }
     }
 
     private func addAlbum() {
         Task {
             do {
+                let directLocationID = selectedBoxSetID == nil && !locationUnknown ? selectedLocationID : nil
                 let draft = NewAlbum(
                     title: title,
                     editionLabel: editionLabel.nilIfBlank,
@@ -3566,7 +3634,9 @@ private struct AlbumEditor: View {
                     catalogueNumber: catalogueNumber.nilIfBlank,
                     discCount: discCount,
                     hasCD: hasCD,
-                    physicalLocationID: selectedBoxSetID == nil ? selectedLocationID : nil,
+                    physicalLocationID: directLocationID,
+                    isPhysicalLocationUnknown: hasCD && selectedBoxSetID == nil && locationUnknown,
+                    physicalNote: physicalNote.nilIfBlank,
                     rating: rating == 0 ? nil : rating,
                     isFavourite: isFavourite
                 )

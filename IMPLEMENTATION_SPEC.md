@@ -411,6 +411,8 @@ Do not mark every file missing when a NAS root is disconnected. First determine 
 
 ## 8. Add Album use case
 
+The Mac Albums toolbar exposes a dedicated **Add Physical-only Album** mode for releases that exist only in the physical collection. It uses the same catalogue fields and validation, preselects CD availability, and accepts either a structured location or an explicit unknown-location state plus an optional physical note. Because the draft has no discs, tracks, or digital assets, its derived digital availability is `none` and it is not offered to the player until audio is attached later.
+
 All entry methods create an `AlbumDraft` rather than writing album tables directly.
 
 ```swift
