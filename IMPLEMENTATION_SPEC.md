@@ -1,6 +1,6 @@
 # Music Library — Implementation Specification
 
-Date: 24 August 2026
+Date: 29 August 2026
 Companion document: [BUILD_PLAN.md](BUILD_PLAN.md)
 
 Operational continuation guide: [HANDOFF.md](HANDOFF.md)
@@ -22,7 +22,7 @@ Completed and verified:
 - Atomic album creation inside a box set, including inherited physical-location behaviour.
 - Album editing plus box-member browse, confirmed move, removal with a standalone placement, and reorder workflows.
 - Schema migration 2 adds `physical_location_unknown`, removing ambiguity between a boxed album and a standalone CD whose location is unknown.
-- Ninety automated tests across eight test suites, last verified with rebuilt debug and release `swift test` runs on 24 August 2026.
+- Ninety-six automated tests across eight test suites, last verified with rebuilt debug and release `swift test` runs on 29 August 2026.
 - Catalogue-content foundation complete: ordered discs/tracks, aliases, contributor roles at album and track level, selected album artwork with local-path provenance, and safe track/alias removal. Album detail supports manual creation of each of these relationships and user-selected front artwork without modifying source files. Legacy path-only album artwork can be explicitly copied into managed storage from Album Detail; the source remains untouched and the catalogue row changes only after a successful copy.
 - Storage-root foundation complete: migration 3, persisted root records, security-scoped bookmark creation/resolution, availability checks, and Settings management. Offline and authorization-required roots are retained rather than removed.
 - Import Inbox foundation complete: migration 4, cancellable system-content-type scanning of available authorized roots, persistent batches/candidates/errors, recovery of interrupted scans, and Inbox cancellation/retry UI. Scans never create albums, tracks, or digital assets.
@@ -411,7 +411,7 @@ Do not mark every file missing when a NAS root is disconnected. First determine 
 
 ## 8. Add Album use case
 
-The Mac Albums toolbar exposes a dedicated **Add Physical-only Album** mode for releases that exist only in the physical collection. It uses the same catalogue fields and validation, preselects CD availability, and accepts either a structured location or an explicit unknown-location state plus an optional physical note. Because the draft has no discs, tracks, or digital assets, its derived digital availability is `none` and it is not offered to the player until audio is attached later.
+The Mac Albums toolbar exposes one **Add Physical Album** command for releases that exist only in the physical collection. The form captures structured edition fields (including label, catalogue number, barcode, remaster year, and media format), one or more contributor credits with roles, rating/favourite state, physical and catalogue notes, and an explicit placement choice: a structured location, an existing box set, or unknown for now. A new location can be created and selected without leaving the form. Exact contributor names already in the catalogue are reused case-insensitively. The album, any newly needed contributor rows, all album-role joins, and optional box membership are written in one transaction with one catalogue revision; invalid credit or placement data leaves no partial album. Because the draft has no discs, tracks, or digital assets, its derived digital availability is `none` and it is not offered to the player until audio is attached later. Artwork plus optional manual disc/track detail can be added from Album Detail after creation.
 
 All entry methods create an `AlbumDraft` rather than writing album tables directly.
 

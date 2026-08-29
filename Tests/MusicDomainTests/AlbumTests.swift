@@ -51,6 +51,20 @@ struct AlbumTests {
         #expect(album.displayTitle == "Kind of Blue — Japan version")
     }
 
+    @Test("A new album contributor credit trims names and requires a contributor")
+    func newAlbumContributorValidation() throws {
+        let credit = try NewAlbumContributorCredit(
+            name: "  Glenn Gould  ",
+            role: .performer,
+            creditedName: "  Gould  "
+        ).validated()
+        #expect(credit.name == "Glenn Gould")
+        #expect(credit.creditedName == "Gould")
+        #expect(throws: ValidationError.requiredField("Contributor name")) {
+            try NewAlbumContributorCredit(name: "  ", role: .albumArtist).validated()
+        }
+    }
+
     @Test("Digital status prioritises broken assets")
     func brokenAssetsWin() {
         let summary = DigitalAvailabilitySummary.derive(

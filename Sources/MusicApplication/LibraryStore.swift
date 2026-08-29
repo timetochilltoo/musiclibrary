@@ -132,9 +132,13 @@ public final class LibraryStore: ObservableObject {
         catch { errorMessage = error.localizedDescription }
     }
 
-    public func addAlbum(_ draft: NewAlbum, toBoxSet boxSetID: BoxSetID? = nil) async throws {
+    public func addAlbum(
+        _ draft: NewAlbum,
+        toBoxSet boxSetID: BoxSetID? = nil,
+        contributors: [NewAlbumContributorCredit] = []
+    ) async throws {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
-        _ = try await database.createAlbum(draft, in: boxSetID)
+        _ = try await database.createAlbum(draft, in: boxSetID, contributors: contributors)
         try await reload()
     }
 
@@ -900,10 +904,11 @@ public final class LibraryStore: ObservableObject {
         return try await startImportScan(rootID: rootID, folderURL: folderURL)
     }
 
-    public func addLocation(_ draft: NewPhysicalLocation) async throws {
+    public func addLocation(_ draft: NewPhysicalLocation) async throws -> PhysicalLocation {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
-        _ = try await database.createLocation(draft)
+        let location = try await database.createLocation(draft)
         try await reload()
+        return location
     }
 
     public func renameLocation(_ id: PhysicalLocationID, to name: String) async throws {

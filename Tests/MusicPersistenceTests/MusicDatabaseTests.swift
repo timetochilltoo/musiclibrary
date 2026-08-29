@@ -44,6 +44,57 @@ struct MusicDatabaseTests {
         #expect(try await database.digitalAssetIDs(albumID: album.id).isEmpty)
     }
 
+    @Test("Manual physical album creation links contributor roles atomically")
+    func manualPhysicalAlbumWithContributors() async throws {
+        let database = try MusicDatabase(url: temporaryDatabaseURL())
+        try await database.migrate()
+        let location = try await database.createLocation(.init(name: "Music Room"))
+        _ = try await database.createContributor(.init(name: "Glenn Gould"))
+
+        let album = try await database.createAlbum(
+            .init(
+                title: "Goldberg Variations",
+                releaseYear: 1981,
+                labelName: "CBS",
+                catalogueNumber: "IM 37779",
+                barcode: "074643777928",
+                mediaFormat: "CD",
+                hasCD: true,
+                physicalLocationID: location.id,
+                physicalNote: "Upper shelf"
+            ),
+            in: nil,
+            contributors: [
+                .init(name: "Glenn Gould", role: .performer),
+                .init(name: "Johann Sebastian Bach", role: .composer, creditedName: "J. S. Bach")
+            ]
+        )
+
+        let credits = try await database.albumContributors(albumID: album.id)
+        #expect(credits.map(\.contributor.name) == ["Johann Sebastian Bach", "Glenn Gould"])
+        #expect(Set(credits.map(\.role)) == Set([.composer, .performer]))
+        #expect(credits.first(where: { $0.role == .composer })?.creditedName == "J. S. Bach")
+        #expect(try await database.contributors().filter { $0.name == "Glenn Gould" }.count == 1)
+        #expect(try await database.currentRevision() == 3)
+    }
+
+    @Test("An invalid manual contributor leaves no partial album or contributor")
+    func invalidManualContributorRollsBack() async throws {
+        let database = try MusicDatabase(url: temporaryDatabaseURL())
+        try await database.migrate()
+
+        await #expect(throws: ValidationError.requiredField("Contributor name")) {
+            try await database.createAlbum(
+                .init(title: "Incomplete", hasCD: true, isPhysicalLocationUnknown: true),
+                in: nil,
+                contributors: [.init(name: "  ", role: .albumArtist)]
+            )
+        }
+        #expect(try await database.albums().isEmpty)
+        #expect(try await database.contributors().isEmpty)
+        #expect(try await database.currentRevision() == 0)
+    }
+
     @Test("Consistent master backup is readable while the source catalogue remains open")
     func consistentMasterBackup() async throws {
         let database = try MusicDatabase(url: temporaryDatabaseURL())

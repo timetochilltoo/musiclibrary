@@ -97,6 +97,30 @@ public struct ContributorCredit: Identifiable, Equatable, Sendable {
     public init(contributor: Contributor, role: ContributorRole, creditedName: String?, position: Int) { self.contributor = contributor; self.role = role; self.creditedName = creditedName; self.position = position }
 }
 
+public struct NewAlbumContributorCredit: Equatable, Sendable {
+    public var name: String
+    public var role: ContributorRole
+    public var creditedName: String?
+
+    public init(name: String, role: ContributorRole, creditedName: String? = nil) {
+        self.name = name
+        self.role = role
+        self.creditedName = creditedName
+    }
+
+    public func validated() throws -> NewAlbumContributorCredit {
+        let contributor = try NewContributor(name: name).validated()
+        var result = self
+        result.name = contributor.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        result.creditedName = creditedName?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        return result
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
+}
+
 public struct AlbumAlias: Identifiable, Equatable, Sendable {
     public let id: UUID
     public let albumID: AlbumID

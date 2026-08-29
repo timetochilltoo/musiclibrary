@@ -38,13 +38,14 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 5. Test **Pause**, **Play**, **Previous**, **Next**, **Stop**, the volume slider, shuffle, and each repeat mode.
 6. Close and reopen the app. Confirm the queue selection and repeat mode were retained. A saved queue does not guarantee a track will still be reachable if its NAS root is disconnected.
 
-### A0. Manual physical-only album
+### A0. Manual physical album
 
-1. Open **Albums**, choose **+**, and select **Add Physical-only Album**.
-2. Enter the album title and any edition, release, catalogue, or notes that you know. CD is selected automatically.
-3. Choose a registered physical location, or leave **Location unknown for now** enabled. Add an optional physical note such as a shelf, box, or purchase detail.
-4. Save the record. Confirm it appears in the catalogue with CD availability and no digital play controls, tracks, or queue entry. It remains searchable and can be edited later.
-5. Repeat once with an unknown location, then assign a location later from the album editor. Confirm the source folder and player are never touched.
+1. Open **Albums** and choose **+**. Confirm the single **Add Physical Album** form opens; there is no separate generic form that hides location behind an unchecked CD toggle.
+2. Enter a title, edition/release data, label, catalogue number or barcode as available. Add at least one contributor and choose its role. Use **Add Contributor** to add a composer/performer/conductor, and try **Use Existing** for a catalogue name already present.
+3. Under **Physical Location**, test each explicit placement type: choose an existing location; create and select a new nested location; choose an existing box set; and choose **Unknown**. The final Add button must remain disabled until the title, contributor names, and selected placement are complete.
+4. Add physical and catalogue notes, then save. Confirm the album appears with CD availability, its contributor appears under Contributors, and its location or inherited box location is shown. Search for it by contributor, barcode, and location.
+5. Confirm the new physical-only record has no digital play controls or queue entry. Add artwork or optional manual disc/track details from Album Detail if desired; no source folder or player file should be touched.
+6. Edit the album and confirm label, barcode, remaster year, media format, physical note, general notes, and location remain correctable. Contributor credits are edited from Album Detail.
 
 ### A1. Dock icon and slow NAS/DSF loading
 

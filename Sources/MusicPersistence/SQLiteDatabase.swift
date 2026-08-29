@@ -1276,8 +1276,14 @@ public actor MusicDatabase {
         try createAlbum(draft, in: nil, at: nil)
     }
 
-    public func createAlbum(_ draft: NewAlbum, in boxSetID: BoxSetID?, at position: Int? = nil) throws -> Album {
+    public func createAlbum(
+        _ draft: NewAlbum,
+        in boxSetID: BoxSetID?,
+        at position: Int? = nil,
+        contributors: [NewAlbumContributorCredit] = []
+    ) throws -> Album {
         var valid = try draft.validated()
+        let validContributors = try contributors.map { try $0.validated() }
         if boxSetID != nil {
             valid.hasCD = true
             valid.physicalLocationID = nil
@@ -1328,6 +1334,44 @@ public actor MusicDatabase {
                 else { resolvedPosition = try Self.nextBoxPosition(for: boxSetID, on: connection) }
                 try Self.bind(Int64(resolvedPosition), at: 3, to: membership)
                 try Self.stepDone(membership, connection: connection)
+            }
+
+            var nextPositions: [ContributorRole: Int] = [:]
+            for credit in validContributors {
+                let contributorID: ContributorID
+                let existing = try Self.prepare("SELECT id FROM contributor WHERE name = ? COLLATE NOCASE ORDER BY created_at, id LIMIT 1;", on: connection)
+                defer { sqlite3_finalize(existing) }
+                try Self.bind(credit.name, at: 1, to: existing)
+                let lookupResult = sqlite3_step(existing)
+                if lookupResult == SQLITE_ROW {
+                    guard let rawID = Self.text(at: 0, from: existing), let uuid = UUID(uuidString: rawID) else {
+                        throw DatabaseError.invalidIdentifier("contributor.id")
+                    }
+                    contributorID = ContributorID(rawValue: uuid)
+                } else if lookupResult == SQLITE_DONE {
+                    contributorID = ContributorID()
+                    let contributor = try Self.prepare("INSERT INTO contributor (id, name, sort_name, created_at, updated_at) VALUES (?, ?, NULL, ?, ?);", on: connection)
+                    defer { sqlite3_finalize(contributor) }
+                    let timestamp = Self.milliseconds(now)
+                    try Self.bind(contributorID.description, at: 1, to: contributor)
+                    try Self.bind(credit.name, at: 2, to: contributor)
+                    try Self.bind(timestamp, at: 3, to: contributor)
+                    try Self.bind(timestamp, at: 4, to: contributor)
+                    try Self.stepDone(contributor, connection: connection)
+                } else {
+                    throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(connection)))
+                }
+
+                let creditPosition = nextPositions[credit.role, default: 0]
+                nextPositions[credit.role] = creditPosition + 1
+                let statement = try Self.prepare("INSERT INTO album_contributor (album_id, contributor_id, role, credited_name, position) VALUES (?, ?, ?, ?, ?);", on: connection)
+                defer { sqlite3_finalize(statement) }
+                try Self.bind(id.description, at: 1, to: statement)
+                try Self.bind(contributorID.description, at: 2, to: statement)
+                try Self.bind(credit.role.rawValue, at: 3, to: statement)
+                try Self.bind(credit.creditedName, at: 4, to: statement)
+                try Self.bind(Int64(creditPosition), at: 5, to: statement)
+                try Self.stepDone(statement, connection: connection)
             }
             try incrementRevision()
         }

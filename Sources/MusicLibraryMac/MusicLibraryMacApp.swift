@@ -21,13 +21,6 @@ struct MusicLibraryMacApp: App {
     }
 }
 
-private enum AlbumEntryMode: String {
-    case standard
-    case physicalOnly
-
-    var isPhysicalOnly: Bool { self == .physicalOnly }
-}
-
 private struct LibraryShellView: View {
     private enum AlbumSourceFilter: String, CaseIterable, Identifiable {
         case all, nas, local
@@ -95,7 +88,6 @@ private struct LibraryShellView: View {
     @State private var showsFavouriteAlbumsOnly = false
     @State private var contributorSearchText = ""
     @State private var showsAlbumEditor = false
-    @State private var albumEntryMode: AlbumEntryMode = .standard
     @State private var showsLocationEditor = false
     @State private var showsBoxSetEditor = false
     @State private var showsStorageRootPicker = false
@@ -157,7 +149,7 @@ private struct LibraryShellView: View {
                 self.selectedImportBatchID = latestImportBatchesByRoot.first?.id
             }
         }
-        .sheet(isPresented: $showsAlbumEditor) { AlbumEditor(library: library, entryMode: albumEntryMode) }
+        .sheet(isPresented: $showsAlbumEditor) { AlbumEditor(library: library) }
         .sheet(isPresented: $showsLocationEditor) { LocationEditor(library: library) }
         .sheet(isPresented: $showsBoxSetEditor) { BoxSetEditor(library: library) }
         .sheet(isPresented: $showsScanRootPicker) { ScanRootPicker(library: library) }
@@ -477,19 +469,10 @@ private struct LibraryShellView: View {
         }
         ToolbarItem(placement: .primaryAction) {
             if section == .albums {
-                Menu {
-                    Button("Add Album", systemImage: "plus") {
-                        albumEntryMode = .standard
-                        showsAlbumEditor = true
-                    }
-                    Button("Add Physical-only Album", systemImage: "opticaldisc") {
-                        albumEntryMode = .physicalOnly
-                        showsAlbumEditor = true
-                    }
-                } label: {
-                    Label("Add Album", systemImage: "plus")
+                Button("Add Physical Album", systemImage: "plus") {
+                    showsAlbumEditor = true
                 }
-                .help("Add a catalogue album or a physical-only record")
+                .help("Add a physical album to the catalogue")
             } else {
                 Button(section == .locations ? "Add Location" : section == .boxSets ? "Add Box Set" : section == .settings ? "Add Music Folder" : section == .importInbox ? "Rescan Music Folder" : section == .playlists ? "Add Playlist" : "Add Album", systemImage: "plus") {
                     switch section {
@@ -3522,30 +3505,70 @@ private struct LocationList: View {
     }
 }
 
+private enum ManualAlbumPlacement: String, CaseIterable, Identifiable {
+    case location
+    case boxSet
+    case unknown
+
+    var id: Self { self }
+    var title: String {
+        switch self {
+        case .location: "Location"
+        case .boxSet: "Box Set"
+        case .unknown: "Unknown"
+        }
+    }
+}
+
+private struct ManualAlbumContributor: Identifiable {
+    let id = UUID()
+    var name = ""
+    var role: ContributorRole = .albumArtist
+    var creditedName = ""
+}
+
+private extension ContributorRole {
+    var displayName: String {
+        switch self {
+        case .albumArtist: "Album Artist"
+        case .performer: "Performer"
+        case .composer: "Composer"
+        case .conductor: "Conductor"
+        case .orchestra: "Orchestra"
+        case .ensemble: "Ensemble"
+        case .soloist: "Soloist"
+        case .featuredArtist: "Featured Artist"
+        case .remixer: "Remixer"
+        case .producer: "Producer"
+        }
+    }
+}
+
 private struct AlbumEditor: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var library: LibraryStore
-    let entryMode: AlbumEntryMode
     @State private var title = ""
     @State private var editionLabel = ""
     @State private var releaseYear = ""
     @State private var countryCode = ""
+    @State private var labelName = ""
     @State private var catalogueNumber = ""
+    @State private var barcode = ""
+    @State private var remasterYear = ""
+    @State private var mediaFormat = "CD"
     @State private var discCount = 1
-    @State private var hasCD = false
-    @State private var locationUnknown = true
     @State private var physicalNote = ""
+    @State private var notes = ""
     @State private var rating = 0
     @State private var isFavourite = false
+    @State private var contributorDrafts = [ManualAlbumContributor()]
+    @State private var placement: ManualAlbumPlacement = .location
     @State private var selectedLocationID: PhysicalLocationID?
     @State private var selectedBoxSetID: BoxSetID?
+    @State private var showsNewLocationFields = false
+    @State private var newLocationName = ""
+    @State private var newLocationParentID: PhysicalLocationID?
     @State private var errorMessage: String?
-
-    init(library: LibraryStore, entryMode: AlbumEntryMode = .standard) {
-        self.library = library
-        self.entryMode = entryMode
-        _hasCD = State(initialValue: entryMode.isPhysicalOnly)
-    }
 
     var body: some View {
         Form {
@@ -3554,93 +3577,187 @@ private struct AlbumEditor: View {
                 TextField("Edition label", text: $editionLabel, prompt: Text("Japan version, 2011 remaster…"))
                 TextField("Release year", text: $releaseYear)
                 TextField("Country/region", text: $countryCode)
+                TextField("Record label", text: $labelName)
                 TextField("Catalogue number", text: $catalogueNumber)
+                TextField("Barcode", text: $barcode)
+                TextField("Remaster year", text: $remasterYear)
+                TextField("Media format", text: $mediaFormat, prompt: Text("CD, SACD…"))
                 Stepper("Discs: \(discCount)", value: $discCount, in: 1...99)
                 Picker("Rating", selection: $rating) { Text("Not rated").tag(0); ForEach(1...5, id: \.self) { Text("\($0) star\($0 == 1 ? "" : "s")").tag($0) } }
                 Toggle("Favourite", isOn: $isFavourite)
             }
 
-            if entryMode.isPhysicalOnly {
-                Section("Physical-only record") {
-                    Label("Catalogue information only", systemImage: "opticaldisc")
-                    Text("This stores the edition and its physical location without adding digital files. It will not be playable until audio is attached later.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    TextField("Physical note (optional)", text: $physicalNote, axis: .vertical)
-                        .lineLimit(2...4)
+            Section("Contributors") {
+                ForEach($contributorDrafts) { $credit in
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            TextField("Contributor name", text: $credit.name)
+                            Picker("Role", selection: $credit.role) {
+                                ForEach(ContributorRole.allCases, id: \.self) { role in
+                                    Text(role.displayName).tag(role)
+                                }
+                            }
+                            .labelsHidden()
+                            .frame(width: 155)
+                            Button(role: .destructive) {
+                                contributorDrafts.removeAll { $0.id == credit.id }
+                            } label: {
+                                Label("Remove Contributor", systemImage: "minus.circle")
+                            }
+                            .labelStyle(.iconOnly)
+                            .disabled(contributorDrafts.count == 1)
+                        }
+                        HStack {
+                            TextField("Credited name (optional)", text: $credit.creditedName)
+                            if !library.contributors.isEmpty {
+                                Menu("Use Existing") {
+                                    ForEach(library.contributors) { contributor in
+                                        Button(contributor.name) { credit.name = contributor.name }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
+                Button("Add Contributor", systemImage: "person.badge.plus") {
+                    contributorDrafts.append(.init())
+                }
+                Text("Use roles for composers, performers, conductors, ensembles, producers, and other credits. Existing names are reused instead of creating duplicates.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
-            Section("Physical CD") {
-                if entryMode.isPhysicalOnly {
-                    Label("CD is available", systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(.secondary)
-                } else {
-                    Toggle("CD is available", isOn: $hasCD)
+            Section("Physical Location") {
+                Picker("Stored in", selection: $placement) {
+                    ForEach(ManualAlbumPlacement.allCases) { option in Text(option.title).tag(option) }
                 }
-                if hasCD {
+                .pickerStyle(.segmented)
+
+                switch placement {
+                case .location:
+                    Picker("Location", selection: $selectedLocationID) {
+                        Text("Choose a location").tag(PhysicalLocationID?.none)
+                        ForEach(orderedLocations) { location in
+                            Text(locationPath(location, in: library.locations)).tag(Optional(location.id))
+                        }
+                    }
+                    DisclosureGroup("Create and select a new location", isExpanded: $showsNewLocationFields) {
+                        TextField("Location name", text: $newLocationName)
+                        Picker("Inside", selection: $newLocationParentID) {
+                            Text("Top level").tag(PhysicalLocationID?.none)
+                            ForEach(orderedLocations) { location in
+                                Text(locationPath(location, in: library.locations)).tag(Optional(location.id))
+                            }
+                        }
+                        Button("Create and Select", systemImage: "plus") { createAndSelectLocation() }
+                            .disabled(newLocationName.nilIfBlank == nil)
+                    }
+                case .boxSet:
                     Picker("Box set", selection: $selectedBoxSetID) {
-                        Text("Not in a box set").tag(BoxSetID?.none)
+                        Text("Choose a box set").tag(BoxSetID?.none)
                         ForEach(library.boxSets) { box in Text(box.title).tag(Optional(box.id)) }
                     }
-                    if selectedBoxSetID == nil {
-                        Picker("Location", selection: $selectedLocationID) {
-                            Text(locationUnknown ? "Location unknown" : "Choose a location").tag(PhysicalLocationID?.none)
-                            ForEach(library.locations.sorted { locationPath($0, in: library.locations) < locationPath($1, in: library.locations) }) { location in Text(locationPath(location, in: library.locations)).tag(Optional(location.id)) }
-                        }
-                        Toggle("Location unknown for now", isOn: $locationUnknown)
-                            .onChange(of: locationUnknown) { _, unknown in
-                                if unknown { selectedLocationID = nil }
-                            }
+                    if library.boxSets.isEmpty {
+                        Text("Create the box and its shared location in Box Sets first.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
+                case .unknown:
+                    Label("Location not yet known", systemImage: "questionmark.circle")
+                    Text("The album will be clearly marked as needing a location. You can assign one later.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
+
+                TextField("Physical note (optional)", text: $physicalNote, axis: .vertical)
+                    .lineLimit(2...4)
+                    .help("For example: second row, signed copy, damaged case, or loaned out")
+            }
+
+            Section("Notes") {
+                TextField("Catalogue notes (optional)", text: $notes, axis: .vertical)
+                    .lineLimit(3...6)
+                Label("Catalogue information only—no audio files are created or changed.", systemImage: "info.circle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
-        .frame(width: 460)
-        .navigationTitle(entryMode.isPhysicalOnly ? "Add Physical Album" : "Add Album")
+        .frame(width: 620)
+        .frame(minHeight: 720)
+        .navigationTitle("Add Physical Album")
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
             ToolbarItem(placement: .confirmationAction) {
-                Button(entryMode.isPhysicalOnly ? "Add Physical Album" : "Add") { addAlbum() }
+                Button("Add Physical Album") { addAlbum() }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(title.nilIfBlank == nil)
+                    .disabled(!canSubmit)
             }
         }
         .alert("Unable to add album", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
             Button("OK", role: .cancel) { errorMessage = nil }
         } message: { Text(errorMessage ?? "") }
-        .onChange(of: selectedBoxSetID) { _, boxID in
-            if boxID != nil {
-                hasCD = true
-                selectedLocationID = nil
-                locationUnknown = false
-            }
+        .onChange(of: placement) { _, newPlacement in
+            if newPlacement != .location { selectedLocationID = nil }
+            if newPlacement != .boxSet { selectedBoxSetID = nil }
         }
-        .onChange(of: selectedLocationID) { _, locationID in
-            if locationID != nil { locationUnknown = false }
+    }
+
+    private var orderedLocations: [PhysicalLocation] {
+        library.locations.sorted { locationPath($0, in: library.locations) < locationPath($1, in: library.locations) }
+    }
+
+    private var canSubmit: Bool {
+        guard title.nilIfBlank != nil,
+              !contributorDrafts.isEmpty,
+              contributorDrafts.allSatisfy({ $0.name.nilIfBlank != nil }) else { return false }
+        switch placement {
+        case .location: return selectedLocationID != nil
+        case .boxSet: return selectedBoxSetID != nil
+        case .unknown: return true
+        }
+    }
+
+    private func createAndSelectLocation() {
+        Task {
+            do {
+                let location = try await library.addLocation(.init(name: newLocationName, parentID: newLocationParentID))
+                selectedLocationID = location.id
+                newLocationName = ""
+                newLocationParentID = nil
+                showsNewLocationFields = false
+            } catch { errorMessage = error.localizedDescription }
         }
     }
 
     private func addAlbum() {
         Task {
             do {
-                let directLocationID = selectedBoxSetID == nil && !locationUnknown ? selectedLocationID : nil
+                let directLocationID = placement == .location ? selectedLocationID : nil
+                let boxSetID = placement == .boxSet ? selectedBoxSetID : nil
                 let draft = NewAlbum(
                     title: title,
                     editionLabel: editionLabel.nilIfBlank,
                     releaseYear: Int(releaseYear),
                     countryCode: countryCode.nilIfBlank,
+                    labelName: labelName.nilIfBlank,
                     catalogueNumber: catalogueNumber.nilIfBlank,
+                    barcode: barcode.nilIfBlank,
+                    remasterYear: Int(remasterYear),
+                    mediaFormat: mediaFormat.nilIfBlank,
                     discCount: discCount,
-                    hasCD: hasCD,
+                    hasCD: true,
                     physicalLocationID: directLocationID,
-                    isPhysicalLocationUnknown: hasCD && selectedBoxSetID == nil && locationUnknown,
+                    isPhysicalLocationUnknown: placement == .unknown,
                     physicalNote: physicalNote.nilIfBlank,
+                    notes: notes.nilIfBlank,
                     rating: rating == 0 ? nil : rating,
                     isFavourite: isFavourite
                 )
-                try await library.addAlbum(draft, toBoxSet: selectedBoxSetID)
+                let credits = contributorDrafts.map {
+                    NewAlbumContributorCredit(name: $0.name, role: $0.role, creditedName: $0.creditedName.nilIfBlank)
+                }
+                try await library.addAlbum(draft, toBoxSet: boxSetID, contributors: credits)
                 dismiss()
             } catch { errorMessage = error.localizedDescription }
         }
@@ -3675,7 +3792,7 @@ private struct LocationEditor: View {
 
     private func addLocation() {
         Task {
-            do { try await library.addLocation(.init(name: name, parentID: parentID)); dismiss() }
+            do { _ = try await library.addLocation(.init(name: name, parentID: parentID)); dismiss() }
             catch { errorMessage = error.localizedDescription }
         }
     }
@@ -3809,9 +3926,15 @@ private struct EditAlbumEditor: View {
     @State private var editionLabel: String
     @State private var releaseYear: String
     @State private var countryCode: String
+    @State private var labelName: String
     @State private var catalogueNumber: String
+    @State private var barcode: String
+    @State private var remasterYear: String
+    @State private var mediaFormat: String
     @State private var discCount: Int
     @State private var hasCD: Bool
+    @State private var physicalNote: String
+    @State private var notes: String
     @State private var rating: Int
     @State private var isFavourite: Bool
     @State private var locationID: PhysicalLocationID?
@@ -3826,9 +3949,15 @@ private struct EditAlbumEditor: View {
         _editionLabel = State(initialValue: album.editionLabel ?? "")
         _releaseYear = State(initialValue: album.releaseYear.map(String.init) ?? "")
         _countryCode = State(initialValue: album.countryCode ?? "")
+        _labelName = State(initialValue: album.labelName ?? "")
         _catalogueNumber = State(initialValue: album.catalogueNumber ?? "")
+        _barcode = State(initialValue: album.barcode ?? "")
+        _remasterYear = State(initialValue: album.remasterYear.map(String.init) ?? "")
+        _mediaFormat = State(initialValue: album.mediaFormat ?? "")
         _discCount = State(initialValue: album.discCount)
         _hasCD = State(initialValue: album.hasCD)
+        _physicalNote = State(initialValue: album.physicalNote ?? "")
+        _notes = State(initialValue: album.notes ?? "")
         _rating = State(initialValue: album.rating ?? 0)
         _isFavourite = State(initialValue: album.isFavourite)
         _locationID = State(initialValue: album.physicalLocationID)
@@ -3842,7 +3971,11 @@ private struct EditAlbumEditor: View {
                 TextField("Edition label", text: $editionLabel)
                 TextField("Release year", text: $releaseYear)
                 TextField("Country/region", text: $countryCode)
+                TextField("Record label", text: $labelName)
                 TextField("Catalogue number", text: $catalogueNumber)
+                TextField("Barcode", text: $barcode)
+                TextField("Remaster year", text: $remasterYear)
+                TextField("Media format", text: $mediaFormat)
                 Stepper("Discs: \(discCount)", value: $discCount, in: 1...99)
                 Picker("Rating", selection: $rating) { Text("Not rated").tag(0); ForEach(1...5, id: \.self) { Text("\($0) star\($0 == 1 ? "" : "s")").tag($0) } }
                 Toggle("Favourite", isOn: $isFavourite)
@@ -3861,8 +3994,14 @@ private struct EditAlbumEditor: View {
                         }
                         Toggle("Physical location is unknown", isOn: $locationUnknown)
                             .onChange(of: locationUnknown) { _, unknown in if unknown { locationID = nil } }
+                        TextField("Physical note (optional)", text: $physicalNote, axis: .vertical)
+                            .lineLimit(2...4)
                     }
                 }
+            }
+            Section("Notes") {
+                TextField("Catalogue notes (optional)", text: $notes, axis: .vertical)
+                    .lineLimit(3...6)
             }
         }
         .formStyle(.grouped)
@@ -3891,8 +4030,14 @@ private struct EditAlbumEditor: View {
                 draft.editionLabel = editionLabel.nilIfBlank
                 draft.releaseYear = Int(releaseYear)
                 draft.countryCode = countryCode.nilIfBlank
+                draft.labelName = labelName.nilIfBlank
                 draft.catalogueNumber = catalogueNumber.nilIfBlank
+                draft.barcode = barcode.nilIfBlank
+                draft.remasterYear = Int(remasterYear)
+                draft.mediaFormat = mediaFormat.nilIfBlank
                 draft.discCount = discCount
+                draft.physicalNote = hasCD ? physicalNote.nilIfBlank : nil
+                draft.notes = notes.nilIfBlank
                 draft.rating = rating == 0 ? nil : rating
                 draft.isFavourite = isFavourite
                 if placement == nil {
