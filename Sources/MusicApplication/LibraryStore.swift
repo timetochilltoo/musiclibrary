@@ -44,6 +44,7 @@ public final class LibraryStore: ObservableObject {
     @Published public private(set) var lastSnapshotPublishFailure: String?
     @Published public private(set) var isSnapshotPublishPending = false
     @Published public private(set) var masterBackupStatus = "Master backup destination not configured"
+    @Published public private(set) var catalogueMaintenanceStatus = "No catalogue cleanup has been run"
 
     private var database: MusicDatabase?
     private var startGate = LibraryStartGate()
@@ -662,6 +663,119 @@ public final class LibraryStore: ObservableObject {
     public func permanentlyDeleteAlbum(_ id: AlbumID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.permanentlyDeleteAlbum(id); try await reload() }
     public func exportCatalogue(to url: URL) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; let json = try await database.catalogueExportJSON(); try json.write(to: url, atomically: true, encoding: .utf8) }
     public func exportCatalogueCSV(to url: URL) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; let csv = try await database.catalogueExportCSV(); try csv.write(to: url, atomically: true, encoding: .utf8) }
+    public func catalogueCleanupPreview() async throws -> CatalogueCleanupPreview {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        return try await database.catalogueCleanupPreview()
+    }
+
+    public func performCatalogueCleanup(_ options: CatalogueCleanupOptions) async throws -> CatalogueCleanupResult {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        let recoveryArchive = try await createLocalRecoveryArchive(reason: "before-cleanup")
+        let result = try await database.performCatalogueCleanup(options)
+        try await reload()
+        catalogueMaintenanceStatus = result.totalCount == 0
+            ? "Cleanup found nothing to remove; recovery archive kept at \(recoveryArchive.lastPathComponent)"
+            : "Removed \(result.totalCount) unused record(s); recovery archive kept at \(recoveryArchive.lastPathComponent)"
+        return result
+    }
+
+    public func exportCompleteCatalogueArchive(to destinationDirectory: URL) async throws -> URL {
+        guard let database, let managedArtworkStore else { throw DatabaseError.notFound("Catalogue database") }
+        let accessed = destinationDirectory.startAccessingSecurityScopedResource()
+        defer { if accessed { destinationDirectory.stopAccessingSecurityScopedResource() } }
+        guard accessed else { throw DatabaseError.invalidOperation("Permission to write to the selected archive destination was not available.") }
+        let archive = try await CompleteCatalogueArchive.create(
+            database: database,
+            managedArtworkDirectory: managedArtworkStore.directory,
+            in: destinationDirectory
+        )
+        catalogueMaintenanceStatus = "Exported complete catalogue archive \(archive.lastPathComponent)"
+        return archive
+    }
+
+    public func restoreCompleteCatalogueArchive(from archiveURL: URL) async throws {
+        guard let catalogueURL, let database, let managedArtworkStore else { throw DatabaseError.notFound("Catalogue database") }
+        let accessed = archiveURL.startAccessingSecurityScopedResource()
+        defer { if accessed { archiveURL.stopAccessingSecurityScopedResource() } }
+        guard accessed else { throw DatabaseError.invalidOperation("Permission to read the selected catalogue archive was not available.") }
+
+        let supportDirectory = try applicationSupportDirectory()
+        let stagingParent = supportDirectory.appending(path: "RestoreStaging", directoryHint: .isDirectory)
+        let liveArtworkDirectory = managedArtworkStore.directory
+        let staged = try await Task.detached(priority: .userInitiated) {
+            try CompleteCatalogueArchive.stageRestore(
+                from: archiveURL,
+                in: stagingParent,
+                liveArtworkDirectory: liveArtworkDirectory
+            )
+        }.value
+        let stagingDirectory = staged.databaseURL.deletingLastPathComponent()
+        defer { try? FileManager.default.removeItem(at: stagingDirectory) }
+        let recoveryArchive = try await createLocalRecoveryArchive(reason: "before-archive-restore")
+        try await database.checkpointWAL()
+
+        let rollbackDirectory = supportDirectory.appending(path: "RestoreRollback-\(UUID().uuidString)", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: rollbackDirectory, withIntermediateDirectories: true)
+        let rollbackDatabase = rollbackDirectory.appending(path: CompleteCatalogueArchive.databaseFileName)
+        let rollbackArtwork = rollbackDirectory.appending(path: CompleteCatalogueArchive.artworkDirectoryName, directoryHint: .isDirectory)
+        self.database = nil
+        removeSQLiteSidecars(for: catalogueURL)
+        do {
+            try await Task.detached(priority: .userInitiated) {
+                let installManager = FileManager.default
+                if installManager.fileExists(atPath: catalogueURL.path) { try installManager.moveItem(at: catalogueURL, to: rollbackDatabase) }
+                if installManager.fileExists(atPath: liveArtworkDirectory.path) { try installManager.moveItem(at: liveArtworkDirectory, to: rollbackArtwork) }
+                try installManager.copyItem(at: staged.databaseURL, to: catalogueURL)
+                try installManager.copyItem(at: staged.artworkDirectory, to: liveArtworkDirectory)
+            }.value
+            let restored = try MusicDatabase(url: catalogueURL)
+            try await restored.migrate()
+            try await restored.remapManagedArtworkPaths(staged.artworkPathMappings)
+            self.database = restored
+            self.managedArtworkStore = .init(directory: managedArtworkStore.directory)
+            try await reload()
+            try? FileManager.default.removeItem(at: rollbackDirectory)
+            catalogueMaintenanceStatus = "Restored revision \(staged.manifest.revision); previous catalogue archived as \(recoveryArchive.lastPathComponent)"
+        } catch {
+            self.database = nil
+            removeSQLiteSidecars(for: catalogueURL)
+            if FileManager.default.fileExists(atPath: catalogueURL.path) { try? FileManager.default.removeItem(at: catalogueURL) }
+            if FileManager.default.fileExists(atPath: liveArtworkDirectory.path) { try? FileManager.default.removeItem(at: liveArtworkDirectory) }
+            if FileManager.default.fileExists(atPath: rollbackDatabase.path) { try? FileManager.default.moveItem(at: rollbackDatabase, to: catalogueURL) }
+            if FileManager.default.fileExists(atPath: rollbackArtwork.path) { try? FileManager.default.moveItem(at: rollbackArtwork, to: liveArtworkDirectory) }
+            let recovered = try MusicDatabase(url: catalogueURL)
+            try await recovered.migrate()
+            self.database = recovered
+            self.managedArtworkStore = .init(directory: managedArtworkStore.directory)
+            try? FileManager.default.removeItem(at: rollbackDirectory)
+            throw error
+        }
+    }
+
+    public func resetCatalogue(confirmation: String) async throws -> URL {
+        guard confirmation == "RESET" else { throw DatabaseError.invalidOperation("Type RESET exactly before clearing the catalogue.") }
+        guard let database, let managedArtworkStore else { throw DatabaseError.notFound("Catalogue database") }
+        let recoveryArchive = try await createLocalRecoveryArchive(reason: "before-reset")
+        let manager = FileManager.default
+        let supportDirectory = try applicationSupportDirectory()
+        let displacedArtwork = supportDirectory.appending(path: "ResetArtwork-\(UUID().uuidString)", directoryHint: .isDirectory)
+        if manager.fileExists(atPath: managedArtworkStore.directory.path) {
+            try manager.moveItem(at: managedArtworkStore.directory, to: displacedArtwork)
+        }
+        do {
+            try await database.resetCataloguePreservingStorageRoots(confirmation: confirmation)
+            try? manager.removeItem(at: displacedArtwork)
+            try manager.createDirectory(at: managedArtworkStore.directory, withIntermediateDirectories: true)
+            try await reload()
+            catalogueMaintenanceStatus = "Catalogue reset; music folders preserved and recovery archive kept at \(recoveryArchive.lastPathComponent)"
+            return recoveryArchive
+        } catch {
+            if manager.fileExists(atPath: displacedArtwork.path), !manager.fileExists(atPath: managedArtworkStore.directory.path) {
+                try? manager.moveItem(at: displacedArtwork, to: managedArtworkStore.directory)
+            }
+            throw error
+        }
+    }
     public func publishSnapshot(to directory: URL) async throws -> SnapshotManifest {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
         let value = try await database.publicationRevisionAndJSON()
@@ -1014,6 +1128,24 @@ public final class LibraryStore: ObservableObject {
         let directory = base.appending(path: "MusicLibrary", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory
+    }
+
+    private func createLocalRecoveryArchive(reason: String) async throws -> URL {
+        guard let database, let managedArtworkStore else { throw DatabaseError.notFound("Catalogue database") }
+        let directory = try applicationSupportDirectory()
+            .appending(path: "Recovery", directoryHint: .isDirectory)
+            .appending(path: "CatalogueArchives", directoryHint: .isDirectory)
+            .appending(path: reason, directoryHint: .isDirectory)
+        return try await CompleteCatalogueArchive.create(
+            database: database,
+            managedArtworkDirectory: managedArtworkStore.directory,
+            in: directory
+        )
+    }
+
+    private func removeSQLiteSidecars(for databaseURL: URL) {
+        try? FileManager.default.removeItem(at: URL(fileURLWithPath: databaseURL.path + "-wal"))
+        try? FileManager.default.removeItem(at: URL(fileURLWithPath: databaseURL.path + "-shm"))
     }
 
     private func refreshImportBatches() async {

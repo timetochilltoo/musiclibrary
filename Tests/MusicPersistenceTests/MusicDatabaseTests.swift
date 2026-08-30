@@ -882,6 +882,66 @@ struct MusicDatabaseTests {
         #expect((tracks.first?["assets"] as? [[String: Any]])?.isEmpty == true)
     }
 
+    @Test("Catalogue cleanup previews and removes only superseded or unreferenced records")
+    func catalogueCleanup() async throws {
+        let database = try MusicDatabase(url: temporaryDatabaseURL())
+        try await database.migrate()
+        let root = try await database.createStorageRoot(.init(displayName: "Local", lastKnownPath: "/Music", bookmarkData: Data([1])))
+        let firstBatch = try await database.createImportBatch(storageRootID: root.id, sourceDescription: "/Music")
+        try await database.finishImportBatch(firstBatch.id, status: .completed)
+        let secondBatch = try await database.createImportBatch(storageRootID: root.id, sourceDescription: "/Music")
+        try await database.finishImportBatch(secondBatch.id, status: .completed)
+        _ = try await database.createContributor(.init(name: "Never linked"))
+        let cabinet = try await database.createLocation(.init(name: "Cabinet"))
+        let protectedShelf = try await database.createLocation(.init(name: "Protected shelf", parentID: cabinet.id))
+        let unusedCabinet = try await database.createLocation(.init(name: "Unused cabinet"))
+        _ = try await database.createLocation(.init(name: "Unused shelf", parentID: unusedCabinet.id))
+        _ = try await database.createAlbum(.init(title: "Physical album", hasCD: true, physicalLocationID: protectedShelf.id))
+        let revisionBeforeCleanup = try await database.currentRevision()
+
+        let preview = try await database.catalogueCleanupPreview()
+        #expect(preview.supersededImportBatchCount == 1)
+        #expect(preview.orphanContributorCount == 1)
+        #expect(preview.unusedLocationCount == 2)
+        #expect(preview.totalCount == 4)
+
+        let result = try await database.performCatalogueCleanup(.init())
+        #expect(result.removedImportBatchCount == 1)
+        #expect(result.removedContributorCount == 1)
+        #expect(result.removedLocationCount == 2)
+        #expect(try await database.importBatches().count == 1)
+        #expect(try await database.contributors().isEmpty)
+        #expect(Set(try await database.locations().map(\.id)) == Set([cabinet.id, protectedShelf.id]))
+        #expect(try await database.currentRevision() == revisionBeforeCleanup + 1)
+        #expect(try await database.catalogueCleanupPreview().totalCount == 0)
+    }
+
+    @Test("Catalogue reset requires typed confirmation and preserves registered music folders")
+    func catalogueReset() async throws {
+        let database = try MusicDatabase(url: temporaryDatabaseURL())
+        try await database.migrate()
+        let root = try await database.createStorageRoot(.init(displayName: "NAS", lastKnownPath: "/Volumes/Music", bookmarkData: Data([1])))
+        let location = try await database.createLocation(.init(name: "Shelf"))
+        _ = try await database.createAlbum(.init(title: "Disposable", hasCD: true, physicalLocationID: location.id))
+        _ = try await database.createContributor(.init(name: "Disposable contributor"))
+        _ = try await database.createPlaylist(name: "Disposable playlist")
+        let batch = try await database.createImportBatch(storageRootID: root.id, sourceDescription: "/Volumes/Music")
+        try await database.finishImportBatch(batch.id, status: .completed)
+
+        await #expect(throws: DatabaseError.invalidOperation("Type RESET exactly before clearing the catalogue.")) {
+            try await database.resetCataloguePreservingStorageRoots(confirmation: "reset")
+        }
+        #expect(try await database.albums().count == 1)
+
+        try await database.resetCataloguePreservingStorageRoots(confirmation: "RESET")
+        #expect(try await database.storageRoots().map(\.id) == [root.id])
+        #expect(try await database.albums().isEmpty)
+        #expect(try await database.contributors().isEmpty)
+        #expect(try await database.locations().isEmpty)
+        #expect(try await database.playlists().isEmpty)
+        #expect(try await database.importBatches().isEmpty)
+    }
+
     private func temporaryDatabaseURL() -> URL {
         FileManager.default.temporaryDirectory.appending(path: "MusicDatabaseTests-\(UUID().uuidString).sqlite")
     }

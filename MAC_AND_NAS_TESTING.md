@@ -7,7 +7,7 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 ## 1. Launch the packaged Mac app
 
 1. In Finder, open the project folder.
-2. Open the newest sequential package, currently `build/Music Library 0.6.app`. For normal use, the same build is installed at `/Applications/Music Library.app`.
+2. Open the newest sequential package, currently `build/Music Library 0.8.app`. For normal use, the same build is installed at `/Applications/Music Library.app`.
 3. If macOS blocks the first launch, Control-click the app, choose **Open**, then choose **Open** again.
 4. The app opens a catalogue in its Application Support folder. It does not use a SQLite database on the NAS.
 5. Keep the app open while following the tests below. If anything unexpected happens, take a screenshot and note the exact action just before it happened.
@@ -20,6 +20,17 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 4. Do not move, rename, or edit the original media during this guide.
 
 ## 3. Phase 3 — Mac player and playlists
+
+## 3.0 Catalogue cleanup and complete archive
+
+Use ordinary test records only for this section. None of these actions should touch source audio.
+
+1. In **Settings > Catalogue Maintenance**, press **Review Safe Cleanup…**. Confirm the review separately counts old completed scan history, unlinked contributors, and unused physical locations. Untick one category and confirm the selected total changes.
+2. Press **Create Recovery Archive and Clean Up**. Confirm the status reports how many rows were removed and names a local recovery archive. Confirm albums, tracks, playlists, registered music folders, linked contributors/locations, covers, and playback still work. Reopen the review and confirm removed categories now show zero.
+3. Press **Export Complete Catalogue Archive…**, choose an empty test destination, and confirm one `.musiclibraryarchive` folder appears. It must contain `manifest.json`, `MusicLibrary.sqlite`, and an `Artwork` folder. It must not contain audio files from registered local/NAS music folders.
+4. Make one obvious disposable catalogue-only change after export, such as adding a test album. Choose **Restore Complete Catalogue Archive…**, select the archive folder, and approve restore. Confirm the post-export test change disappears, the archived albums and managed covers return, registered roots reopen, and source media remain unchanged.
+5. To test corruption refusal, duplicate the archive, change or delete one copied artwork file, then try to restore the damaged duplicate. Confirm verification fails before the live catalogue changes; the currently open catalogue and artwork must remain usable.
+6. Test **Reset Catalogue…** only if you intentionally want to clear the test catalogue. Confirm the button remains disabled until `RESET` is typed exactly. After reset, albums/import history/managed covers are gone but registered music folders remain and can be rescanned. The status must identify the automatic pre-reset recovery archive. Do not run reset against a catalogue you have not backed up and intend to retain.
 
 ## 3A. Library Changes rescan choices
 

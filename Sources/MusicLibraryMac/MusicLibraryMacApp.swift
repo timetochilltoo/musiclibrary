@@ -940,6 +940,12 @@ private struct StorageRootList: View {
     @State private var dsfCacheStatus: DSFPlaybackCacheStatus?
     @State private var isManagingDSFCache = false
     @State private var showsClearDSFCacheConfirmation = false
+    @State private var cleanupPreview: CatalogueCleanupPreview?
+    @State private var cleanupOptions = CatalogueCleanupOptions()
+    @State private var showsCleanupReview = false
+    @State private var completeArchiveToRestore: URL?
+    @State private var showsCatalogueReset = false
+    @State private var isRunningCatalogueMaintenance = false
 
     var body: some View {
         List {
@@ -1002,6 +1008,34 @@ private struct StorageRootList: View {
             } header: {
                 Label("Export", systemImage: "square.and.arrow.up")
             }
+            Section {
+                if isRunningCatalogueMaintenance {
+                    ProgressView("Working on catalogue recovery data…")
+                        .controlSize(.small)
+                }
+                Text(library.catalogueMaintenanceStatus)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button("Review Safe Cleanup…", systemImage: "sparkles") {
+                    loadCleanupPreview()
+                }
+                Button("Export Complete Catalogue Archive…", systemImage: "archivebox") {
+                    exportCompleteCatalogueArchive()
+                }
+                Button("Restore Complete Catalogue Archive…", systemImage: "arrow.counterclockwise.circle", role: .destructive) {
+                    chooseCompleteCatalogueArchive()
+                }
+                Divider()
+                Button("Reset Catalogue…", systemImage: "trash.slash", role: .destructive) {
+                    showsCatalogueReset = true
+                }
+                Text("Safe Cleanup removes only superseded scan history and records that are not linked anywhere. Complete archives contain the database and app-managed artwork, but never source audio files. Reset preserves registered music folders.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Label("Catalogue Maintenance", systemImage: "wrench.and.screwdriver")
+            }
+            .disabled(isRunningCatalogueMaintenance)
             Section {
                 Text("DSF files are converted to replaceable high-resolution PCM WAV files for playback. Original music files are never changed.")
                     .font(.caption)
@@ -1269,6 +1303,24 @@ private struct StorageRootList: View {
         } message: {
             Text("The selected backup will be verified first. The current master database will be kept in the local Recovery folder before replacement.")
         }
+        .confirmationDialog("Restore complete catalogue archive?", isPresented: Binding(get: { completeArchiveToRestore != nil }, set: { if !$0 { completeArchiveToRestore = nil } }), titleVisibility: .visible) {
+            if let archiveURL = completeArchiveToRestore {
+                Button("Verify and Restore Archive", role: .destructive) {
+                    isRunningCatalogueMaintenance = true
+                    Task {
+                        do {
+                            try await library.restoreCompleteCatalogueArchive(from: archiveURL)
+                            completeArchiveToRestore = nil
+                        } catch {
+                            library.presentError(error)
+                        }
+                        isRunningCatalogueMaintenance = false
+                    }
+                }
+            }
+        } message: {
+            Text("The archive database and every managed artwork file are checksum-verified before replacement. The current catalogue is archived locally first. Source audio files are never changed.")
+        }
         .confirmationDialog("Apply catalogue path?", isPresented: Binding(get: { relinkProposalToApply != nil }, set: { if !$0 { relinkProposalToApply = nil } }), titleVisibility: .visible) {
             if let proposal = relinkProposalToApply {
                 Button("Apply Catalogue Path") {
@@ -1293,6 +1345,24 @@ private struct StorageRootList: View {
             Text("This removes replaceable PCM conversions only. Original DSF files are never changed. A conversion currently playing is kept until it is no longer in use.")
         }
         .sheet(item: $rootToRename) { root in StorageRootRenameEditor(library: library, root: root) }
+        .sheet(isPresented: $showsCleanupReview) {
+            if let cleanupPreview {
+                CatalogueCleanupEditor(
+                    preview: cleanupPreview,
+                    options: $cleanupOptions,
+                    isRunning: isRunningCatalogueMaintenance,
+                    onCancel: { showsCleanupReview = false },
+                    onCleanup: { performCleanup() }
+                )
+            }
+        }
+        .sheet(isPresented: $showsCatalogueReset) {
+            CatalogueResetEditor(
+                isRunning: isRunningCatalogueMaintenance,
+                onCancel: { showsCatalogueReset = false },
+                onReset: { confirmation in resetCatalogue(confirmation: confirmation) }
+            )
+        }
         .task {
             await refreshDSFCacheStatus()
         }
@@ -1376,6 +1446,163 @@ private struct StorageRootList: View {
         panel.allowedContentTypes = [.commaSeparatedText]
         guard panel.runModal() == .OK, let url = panel.url else { return }
         Task { do { try await library.exportCatalogueCSV(to: url) } catch { library.presentError(error) } }
+    }
+
+    private func loadCleanupPreview() {
+        isRunningCatalogueMaintenance = true
+        Task {
+            do {
+                cleanupPreview = try await library.catalogueCleanupPreview()
+                cleanupOptions = .init()
+                showsCleanupReview = true
+            } catch {
+                library.presentError(error)
+            }
+            isRunningCatalogueMaintenance = false
+        }
+    }
+
+    private func performCleanup() {
+        isRunningCatalogueMaintenance = true
+        Task {
+            do {
+                _ = try await library.performCatalogueCleanup(cleanupOptions)
+                showsCleanupReview = false
+                cleanupPreview = nil
+            } catch {
+                library.presentError(error)
+            }
+            isRunningCatalogueMaintenance = false
+        }
+    }
+
+    private func exportCompleteCatalogueArchive() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose Complete Catalogue Archive Destination"
+        panel.prompt = "Export Here"
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        isRunningCatalogueMaintenance = true
+        Task {
+            do { _ = try await library.exportCompleteCatalogueArchive(to: url) }
+            catch { library.presentError(error) }
+            isRunningCatalogueMaintenance = false
+        }
+    }
+
+    private func chooseCompleteCatalogueArchive() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose Complete Catalogue Archive"
+        panel.prompt = "Choose Archive"
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        completeArchiveToRestore = url
+    }
+
+    private func resetCatalogue(confirmation: String) {
+        isRunningCatalogueMaintenance = true
+        Task {
+            do {
+                _ = try await library.resetCatalogue(confirmation: confirmation)
+                showsCatalogueReset = false
+            } catch {
+                library.presentError(error)
+            }
+            isRunningCatalogueMaintenance = false
+        }
+    }
+}
+
+private struct CatalogueCleanupEditor: View {
+    let preview: CatalogueCleanupPreview
+    @Binding var options: CatalogueCleanupOptions
+    let isRunning: Bool
+    let onCancel: () -> Void
+    let onCleanup: () -> Void
+
+    private var selectedCount: Int {
+        (options.removeSupersededImportBatches ? preview.supersededImportBatchCount : 0)
+            + (options.removeOrphanContributors ? preview.orphanContributorCount : 0)
+            + (options.removeUnusedLocations ? preview.unusedLocationCount : 0)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Label("Safe Catalogue Cleanup", systemImage: "sparkles")
+                .font(.title2.bold())
+            Text("Review exactly what will be removed. A complete local recovery archive is created first. Albums, tracks, playlists, registered music folders, artwork in use, and source audio are not removed.")
+                .foregroundStyle(.secondary)
+            GroupBox {
+                VStack(alignment: .leading, spacing: 14) {
+                    Toggle(isOn: $options.removeSupersededImportBatches) {
+                        cleanupRow("Old completed scan history", count: preview.supersededImportBatchCount, detail: "Keeps the newest completed result for each registered folder.")
+                    }
+                    Divider()
+                    Toggle(isOn: $options.removeOrphanContributors) {
+                        cleanupRow("Unlinked contributors", count: preview.orphanContributorCount, detail: "Only names with no album or track credit.")
+                    }
+                    Divider()
+                    Toggle(isOn: $options.removeUnusedLocations) {
+                        cleanupRow("Unused physical locations", count: preview.unusedLocationCount, detail: "Only locations that contain no album, box set, or used child location.")
+                    }
+                }
+                .padding(6)
+            }
+            Spacer()
+            HStack {
+                Text("\(selectedCount) record\(selectedCount == 1 ? "" : "s") selected")
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Cancel", action: onCancel)
+                Button("Create Recovery Archive and Clean Up", action: onCleanup)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(selectedCount == 0 || isRunning)
+            }
+        }
+        .padding(24)
+        .frame(minWidth: 640, minHeight: 430)
+    }
+
+    private func cleanupRow(_ title: String, count: Int, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack { Text(title); Spacer(); Text(String(count)).monospacedDigit().foregroundStyle(.secondary) }
+            Text(detail).font(.caption).foregroundStyle(.secondary)
+        }
+    }
+}
+
+private struct CatalogueResetEditor: View {
+    @State private var confirmation = ""
+    let isRunning: Bool
+    let onCancel: () -> Void
+    let onReset: (String) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Label("Reset Catalogue", systemImage: "exclamationmark.triangle.fill")
+                .font(.title2.bold())
+                .foregroundStyle(.red)
+            Text("This clears albums, tracks, playlists, contributors, locations, box sets, import history, and managed artwork from the live catalogue. Registered local and NAS music folders are preserved. Source audio files are never deleted or changed.")
+            Text("A complete recovery archive is created automatically before reset.")
+                .foregroundStyle(.secondary)
+            Text("Type RESET to continue:").font(.headline)
+            TextField("RESET", text: $confirmation)
+                .textFieldStyle(.roundedBorder)
+            Spacer()
+            HStack {
+                Spacer()
+                Button("Cancel", action: onCancel)
+                Button("Archive and Reset Catalogue", role: .destructive) { onReset(confirmation) }
+                    .disabled(confirmation != "RESET" || isRunning)
+            }
+        }
+        .padding(24)
+        .frame(minWidth: 580, minHeight: 330)
     }
 }
 

@@ -156,6 +156,115 @@ public actor MusicDatabase {
         }
     }
 
+    public static func verifyDatabaseFile(at url: URL) throws {
+        var handle: OpaquePointer?
+        let result = sqlite3_open_v2(url.path, &handle, SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX, nil)
+        guard result == SQLITE_OK, let handle else {
+            defer { if let handle { sqlite3_close(handle) } }
+            throw DatabaseError.sqlite(message: "Unable to open the catalogue archive database.")
+        }
+        defer { sqlite3_close(handle) }
+        guard Self.textResult("PRAGMA integrity_check;", on: handle) == "ok" else {
+            throw DatabaseError.sqlite(message: "Catalogue archive database integrity check failed.")
+        }
+        let version = Int(try Self.scalarInt("PRAGMA user_version;", on: handle))
+        guard (1...SchemaMigrator.currentVersion).contains(version) else {
+            throw DatabaseError.invalidOperation("The catalogue archive uses unsupported database schema \(version).")
+        }
+    }
+
+    public func catalogueCleanupPreview() throws -> CatalogueCleanupPreview {
+        .init(
+            supersededImportBatchCount: Int(try Self.scalarInt(Self.supersededImportBatchCountSQL, on: connection)),
+            orphanContributorCount: Int(try Self.scalarInt(Self.orphanContributorCountSQL, on: connection)),
+            unusedLocationCount: Int(try Self.scalarInt(Self.unusedLocationCountSQL, on: connection))
+        )
+    }
+
+    public func performCatalogueCleanup(_ options: CatalogueCleanupOptions) throws -> CatalogueCleanupResult {
+        var removedImportBatches = 0
+        var removedContributors = 0
+        var removedLocations = 0
+        try transaction {
+            if options.removeSupersededImportBatches {
+                try Self.execute(Self.deleteSupersededImportBatchesSQL, on: connection)
+                removedImportBatches = Int(sqlite3_changes(connection))
+            }
+            if options.removeOrphanContributors {
+                try Self.execute("DELETE FROM contributor WHERE NOT EXISTS (SELECT 1 FROM album_contributor WHERE album_contributor.contributor_id = contributor.id) AND NOT EXISTS (SELECT 1 FROM track_contributor WHERE track_contributor.contributor_id = contributor.id);", on: connection)
+                removedContributors = Int(sqlite3_changes(connection))
+            }
+            if options.removeUnusedLocations {
+                while true {
+                    try Self.execute(Self.deleteUnusedLeafLocationsSQL, on: connection)
+                    let removed = Int(sqlite3_changes(connection))
+                    removedLocations += removed
+                    if removed == 0 { break }
+                }
+            }
+            if removedImportBatches + removedContributors + removedLocations > 0 {
+                try incrementRevision()
+            }
+        }
+        return .init(
+            removedImportBatchCount: removedImportBatches,
+            removedContributorCount: removedContributors,
+            removedLocationCount: removedLocations
+        )
+    }
+
+    public func resetCataloguePreservingStorageRoots(confirmation: String) throws {
+        guard confirmation == "RESET" else {
+            throw DatabaseError.invalidOperation("Type RESET exactly before clearing the catalogue.")
+        }
+        try transaction {
+            try Self.execute("DELETE FROM import_batch;", on: connection)
+            try Self.execute("DELETE FROM playlist;", on: connection)
+            try Self.execute("DELETE FROM box_set_album;", on: connection)
+            try Self.execute("DELETE FROM digital_asset;", on: connection)
+            try Self.execute("DELETE FROM artwork;", on: connection)
+            try Self.execute("DELETE FROM external_identifier;", on: connection)
+            try Self.execute("DELETE FROM album;", on: connection)
+            try Self.execute("DELETE FROM contributor;", on: connection)
+            try Self.execute("DELETE FROM box_set;", on: connection)
+            try Self.execute("UPDATE physical_location SET parent_id = NULL; DELETE FROM physical_location;", on: connection)
+            try Self.execute("DELETE FROM edit_event; DELETE FROM catalogue_search;", on: connection)
+            try incrementRevision()
+        }
+    }
+
+    public func remapManagedArtworkPaths(_ mappings: [String: String]) throws {
+        guard !mappings.isEmpty else { return }
+        try transaction {
+            let artwork = try Self.prepare("UPDATE artwork SET local_path = ? WHERE local_path = ?;", on: connection)
+            defer { sqlite3_finalize(artwork) }
+            let selection = try Self.prepare("UPDATE external_metadata_selection SET artwork_local_path = ? WHERE artwork_local_path = ?;", on: connection)
+            defer { sqlite3_finalize(selection) }
+            for (oldPath, newPath) in mappings {
+                for statement in [artwork, selection] {
+                    sqlite3_reset(statement)
+                    sqlite3_clear_bindings(statement)
+                    try Self.bind(newPath, at: 1, to: statement)
+                    try Self.bind(oldPath, at: 2, to: statement)
+                    try Self.stepDone(statement, connection: connection)
+                }
+            }
+        }
+    }
+
+    public func managedArtworkLocalPaths() throws -> [String] {
+        let statement = try Self.prepare(
+            "SELECT local_path FROM artwork WHERE local_path IS NOT NULL UNION SELECT artwork_local_path FROM external_metadata_selection WHERE artwork_local_path IS NOT NULL ORDER BY 1;",
+            on: connection
+        )
+        defer { sqlite3_finalize(statement) }
+        var paths: [String] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            if let path = Self.text(at: 0, from: statement), !path.isEmpty { paths.append(path) }
+        }
+        return paths
+    }
+
     public func checkpointWAL() throws {
         try Self.execute("PRAGMA wal_checkpoint(TRUNCATE);", on: connection)
     }
@@ -2248,6 +2357,13 @@ public actor MusicDatabase {
     }
 
     private static let albumSelect = "SELECT id, title, edition_label, release_year, country_code, label_name, catalogue_number, barcode, remaster_year, media_format, disc_count, has_cd, physical_location_id, physical_location_unknown, physical_note, notes, rating, is_favourite, created_at, updated_at, deleted_at FROM album"
+    private static let supersededImportBatchPartition = "CASE WHEN storage_root_id IS NOT NULL THEN storage_root_id || ':' || COALESCE(source_description, '') ELSE 'source:' || COALESCE(source_description, id) END"
+    private static let supersededImportBatchCountSQL = "WITH ranked AS (SELECT id, ROW_NUMBER() OVER (PARTITION BY \(supersededImportBatchPartition) ORDER BY started_at DESC, id DESC) AS position FROM import_batch WHERE status != 'scanning') SELECT COUNT(*) FROM ranked WHERE position > 1;"
+    private static let deleteSupersededImportBatchesSQL = "WITH ranked AS (SELECT id, ROW_NUMBER() OVER (PARTITION BY \(supersededImportBatchPartition) ORDER BY started_at DESC, id DESC) AS position FROM import_batch WHERE status != 'scanning') DELETE FROM import_batch WHERE id IN (SELECT id FROM ranked WHERE position > 1);"
+    private static let orphanContributorCountSQL = "SELECT COUNT(*) FROM contributor WHERE NOT EXISTS (SELECT 1 FROM album_contributor WHERE album_contributor.contributor_id = contributor.id) AND NOT EXISTS (SELECT 1 FROM track_contributor WHERE track_contributor.contributor_id = contributor.id);"
+    private static let protectedLocationCTE = "WITH RECURSIVE protected(id) AS (SELECT physical_location_id FROM album WHERE physical_location_id IS NOT NULL UNION SELECT physical_location_id FROM box_set WHERE physical_location_id IS NOT NULL UNION SELECT physical_location.parent_id FROM physical_location JOIN protected ON physical_location.id = protected.id WHERE physical_location.parent_id IS NOT NULL)"
+    private static let unusedLocationCountSQL = "\(protectedLocationCTE) SELECT COUNT(*) FROM physical_location WHERE id NOT IN (SELECT id FROM protected);"
+    private static let deleteUnusedLeafLocationsSQL = "\(protectedLocationCTE) DELETE FROM physical_location WHERE id NOT IN (SELECT id FROM protected) AND NOT EXISTS (SELECT 1 FROM physical_location child WHERE child.parent_id = physical_location.id);"
     private static func csvValue(_ value: String) -> String { "\"\(value.replacingOccurrences(of: "\"", with: "\"\""))\"" }
 
     private static func album(from statement: OpaquePointer) throws -> Album {
