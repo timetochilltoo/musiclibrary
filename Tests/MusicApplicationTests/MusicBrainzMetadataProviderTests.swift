@@ -25,12 +25,20 @@ struct MusicBrainzMetadataProviderTests {
     @Test("A selected release detail supplies its real track list")
     func decodesReleaseDetails() throws {
         let data = Data("""
-        { "id": "detail-1", "title": "Album", "artist-credit": [{ "name": "Artist" }],
-          "media": [{ "tracks": [{ "title": "First track" }, { "title": "Second track" }] }] }
+        { "id": "detail-1", "title": "Album", "date": "1981-04-12", "country": "GB", "barcode": "0123456789012",
+          "artist-credit": [{ "name": "Artist" }],
+          "label-info": [{ "catalog-number": "CAT-123", "label": { "name": "Example Records" } }],
+          "media": [{ "format": "CD", "tracks": [{ "title": "First track" }, { "title": "Second track" }] }] }
         """.utf8)
         let result = try MusicBrainzMetadataProvider.decodeReleaseDetail(from: data)
         #expect(result.trackTitles == ["First track", "Second track"])
         #expect(result.mediaCount == 1)
+        #expect(result.releaseYear == 1981)
+        #expect(result.countryCode == "GB")
+        #expect(result.catalogueNumber == "CAT-123")
+        #expect(result.labelName == "Example Records")
+        #expect(result.barcode == "0123456789012")
+        #expect(result.mediaFormat == "CD")
     }
 
     @Test("MusicBrainz response cache returns a stored manual-search result")

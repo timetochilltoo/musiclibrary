@@ -1,6 +1,6 @@
 # Music Library — Project Handoff
 
-Last updated: 30 August 2026
+Last updated: 22 September 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
@@ -135,6 +135,7 @@ Sources/
     AvailabilityBadge.swift      CD/Digital badge component
   MusicLibraryMac/
     MusicLibraryMacApp.swift     Current macOS SwiftUI shell and editor sheets
+    PhysicalAlbumMusicBrainzLookupView.swift  Explicit MusicBrainz search and physical-album prefill sheet
   MusicReadOnlyClient/
     SnapshotClient.swift         Verified, atomic local snapshot-cache updater
     ReadOnlyCatalogue.swift      Codable snapshot payload and album search model
@@ -503,9 +504,15 @@ Settings now has a distinct **Catalogue Maintenance** section. **Review Safe Cle
 
 `Scripts/package-mac-app.sh` produced and ad-hoc-signed `build/Music Library 0.8.app`. Plist linting, embedded `AppIcon.icns`, and strict deep signature verification pass. The same bundle is installed at `/Applications/Music Library.app`; its Info.plist reports version 0.8 (build 9), and the installed and packaged executables have the same SHA-256 digest. Packaging and validation did not launch the app, open the live catalogue, or modify source audio.
 
+### 22 September 2026 MusicBrainz physical-album prefill checkpoint
+
+The **Add Physical Album** form now has an explicit **Find on MusicBrainz…** action. The lookup sends only the user-entered title and optional artist after the user presses **Search MusicBrainz**. It lists release candidates, loads the selected release details, and shows cover artwork plus the track listing for review. **Use Selected Release** fills the returned title, release year, country/region, record label, catalogue number, barcode, media format, disc count, and primary artist contributor. Existing placement, notes, and additional contributor rows remain under the user's control; the catalogue record is still created only when the user submits the physical-album form. No audio file or source tag is touched.
+
+`ExternalReleasePreview` now decodes the physical-edition fields returned by MusicBrainz. The focused provider regression covers label, barcode, format, release year, and track-list decoding. The full debug suite passes **101 tests in 9 suites**. This is an internal feature slice; no new packaged app or bundle-version increment was produced, and no live Application Support catalogue or source media was opened or changed.
+
 ### Next safe slice
 
-The local/NAS folder workflow, safe scanning/reconciliation workflow, one-step new-versus-existing-edition import decision, complete manual physical-album entry, safe catalogue cleanup/reset, portable complete archive/restore, legacy-artwork migration, field-level catalogue activity history, audit hardening, branded Mac packaging, responsive slow-file loading, configurable DSF PCM caching, and the artwork-first Mac presentation workstream are implemented. The next safe boundary is user acceptance of `MAC_AND_NAS_TESTING.md` section **3.0 Catalogue cleanup and complete archive**, especially export, restore with covers, tamper refusal, and optional reset/root preservation. Do not perform those destructive live-catalogue checks automatically. Automatic hash-based relinking, snapshot-to-master reconstruction, WAV/DSF/other non-FLAC tag write-back, internet lyrics providers, AI modules, live NAS endurance, and iPad device validation remain deferred; the provider/format choices in the Open Decisions section still require the user.
+The local/NAS folder workflow, safe scanning/reconciliation workflow, one-step new-versus-existing-edition import decision, MusicBrainz-assisted and manual physical-album entry, safe catalogue cleanup/reset, portable complete archive/restore, legacy-artwork migration, field-level catalogue activity history, audit hardening, branded Mac packaging, responsive slow-file loading, configurable DSF PCM caching, and the artwork-first Mac presentation workstream are implemented. The next safe boundary is user acceptance of `MAC_AND_NAS_TESTING.md` sections **A0. Manual physical album** and **3.0 Catalogue cleanup and complete archive**, especially MusicBrainz field prefill, export, restore with covers, tamper refusal, and optional reset/root preservation. Do not perform those destructive live-catalogue checks automatically. Automatic hash-based relinking, snapshot-to-master reconstruction, WAV/DSF/other non-FLAC tag write-back, internet lyrics providers, AI modules, live NAS endurance, and iPad device validation remain deferred; the provider/format choices in the Open Decisions section still require the user.
 
 ## 13. Planned implementation order after the next slice
 

@@ -3789,6 +3789,7 @@ private struct AlbumEditor: View {
     @State private var rating = 0
     @State private var isFavourite = false
     @State private var contributorDrafts = [ManualAlbumContributor()]
+    @State private var showsMusicBrainzLookup = false
     @State private var placement: ManualAlbumPlacement = .location
     @State private var selectedLocationID: PhysicalLocationID?
     @State private var selectedBoxSetID: BoxSetID?
@@ -3800,6 +3801,14 @@ private struct AlbumEditor: View {
     var body: some View {
         Form {
             Section("Album") {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Button("Find on MusicBrainz…", systemImage: "magnifyingglass") {
+                        showsMusicBrainzLookup = true
+                    }
+                    Text("Fill returned release details into this form; placement, notes, and extra credits stay unchanged.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 TextField("Title", text: $title)
                 TextField("Edition label", text: $editionLabel, prompt: Text("Japan version, 2011 remaster…"))
                 TextField("Release year", text: $releaseYear)
@@ -3924,6 +3933,11 @@ private struct AlbumEditor: View {
         .alert("Unable to add album", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
             Button("OK", role: .cancel) { errorMessage = nil }
         } message: { Text(errorMessage ?? "") }
+        .sheet(isPresented: $showsMusicBrainzLookup) {
+            PhysicalAlbumMusicBrainzLookupView(library: library, title: title, artist: contributorDrafts.first?.name) { release in
+                applyMusicBrainzRelease(release)
+            }
+        }
         .onChange(of: placement) { _, newPlacement in
             if newPlacement != .location { selectedLocationID = nil }
             if newPlacement != .boxSet { selectedBoxSetID = nil }
@@ -3954,6 +3968,26 @@ private struct AlbumEditor: View {
                 newLocationParentID = nil
                 showsNewLocationFields = false
             } catch { errorMessage = error.localizedDescription }
+        }
+    }
+
+    private func applyMusicBrainzRelease(_ release: ExternalReleasePreview) {
+        title = release.title
+        if let releaseYear = release.releaseYear { self.releaseYear = String(releaseYear) }
+        if let countryCode = release.countryCode?.nilIfBlank { self.countryCode = countryCode }
+        if let labelName = release.labelName?.nilIfBlank { self.labelName = labelName }
+        if let catalogueNumber = release.catalogueNumber?.nilIfBlank { self.catalogueNumber = catalogueNumber }
+        if let barcode = release.barcode?.nilIfBlank { self.barcode = barcode }
+        if let mediaFormat = release.mediaFormat?.nilIfBlank { self.mediaFormat = mediaFormat }
+        if release.mediaCount > 0 { discCount = release.mediaCount }
+
+        guard let artist = release.artist?.nilIfBlank else { return }
+        let normalizedArtist = artist.lowercased()
+        if let blankIndex = contributorDrafts.firstIndex(where: { $0.name.nilIfBlank == nil }) {
+            contributorDrafts[blankIndex].name = artist
+            contributorDrafts[blankIndex].role = .albumArtist
+        } else if !contributorDrafts.contains(where: { $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == normalizedArtist }) {
+            contributorDrafts.insert(.init(name: artist, role: .albumArtist), at: 0)
         }
     }
 

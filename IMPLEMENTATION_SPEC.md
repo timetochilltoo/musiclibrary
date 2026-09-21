@@ -1,6 +1,6 @@
 # Music Library — Implementation Specification
 
-Date: 29 August 2026
+Date: 22 September 2026
 Companion document: [BUILD_PLAN.md](BUILD_PLAN.md)
 
 Operational continuation guide: [HANDOFF.md](HANDOFF.md)
@@ -22,7 +22,7 @@ Completed and verified:
 - Atomic album creation inside a box set, including inherited physical-location behaviour.
 - Album editing plus box-member browse, confirmed move, removal with a standalone placement, and reorder workflows.
 - Schema migration 2 adds `physical_location_unknown`, removing ambiguity between a boxed album and a standalone CD whose location is unknown.
-- Ninety-six automated tests across eight test suites, last verified with rebuilt debug and release `swift test` runs on 29 August 2026.
+- One hundred and one automated tests across nine test suites, last verified with a rebuilt debug `swift test` run on 22 September 2026; the release baseline remains required for packaged delivery.
 - Catalogue-content foundation complete: ordered discs/tracks, aliases, contributor roles at album and track level, selected album artwork with local-path provenance, and safe track/alias removal. Album detail supports manual creation of each of these relationships and user-selected front artwork without modifying source files. Legacy path-only album artwork can be explicitly copied into managed storage from Album Detail; the source remains untouched and the catalogue row changes only after a successful copy.
 - Storage-root foundation complete: migration 3, persisted root records, security-scoped bookmark creation/resolution, availability checks, and Settings management. Offline and authorization-required roots are retained rather than removed.
 - Import Inbox foundation complete: migration 4, cancellable system-content-type scanning of available authorized roots, persistent batches/candidates/errors, recovery of interrupted scans, and Inbox cancellation/retry UI. Scans never create albums, tracks, or digital assets.
@@ -50,6 +50,7 @@ Completed and verified:
 - Reviewable external metadata selection complete: a MusicBrainz result can be saved against an import proposal, then title, artist, and disc-count differences can be accepted independently. Applying selections updates only the pending import proposal with provenance; later catalogue creation remains separately approved.
 - Manual lookup reliability complete: identical title/artist requests reuse a session-only in-memory MusicBrainz response cache, while temporary HTTP 429/5xx and URL-loading failures use up to two bounded retries. No retry is scheduled unless the user already initiated the lookup.
 - Extended MusicBrainz field review complete: country/region and catalogue number are independently selectable, persisted in schema 9, and transferred into the resulting album only through the existing explicit proposal approval and creation workflow.
+- Physical-album MusicBrainz prefill complete: the Mac **Add Physical Album** form offers an explicit text-only search, release-detail review, cover/track-list preview, and **Use Selected Release** action. The selected release can fill title, release year, country/region, label, catalogue number, barcode, media format, disc count, and the primary artist contributor. Placement, notes, and additional contributor rows remain user-controlled; no catalogue row is created until the form is submitted, and source audio is never uploaded or modified.
 - Broad catalogue search complete: album search now matches title, edition, catalogue number, barcode, aliases, track titles, album/track contributors, box-set titles, direct physical locations, and inherited box locations. The existing FTS5 table is populated transactionally on migration and after successful revisions, using normalized phrase-prefix terms; the legacy LIKE predicates remain as a compatibility fallback.
 - Physical-location management complete: the Mac renders parent-linked locations as full paths, supports moving nodes with self/descendant cycle prevention, and guards deletion when children, albums, or box sets still reference a node. Editors and pickers display the same full hierarchy paths.
 - Recently Deleted recovery complete for albums, playlists, and empty box sets: Albums can be moved to Recently Deleted from their context menu, and Settings lists deleted albums, playlists, and empty box sets with restore actions. Playlist recovery retains its ordered items. A box set must be empty before deletion, preventing invalid inherited physical placement. Recovery never changes media files.
@@ -417,6 +418,8 @@ Do not mark every file missing when a NAS root is disconnected. First determine 
 ## 8. Add Album use case
 
 The Mac Albums toolbar exposes one **Add Physical Album** command for releases that exist only in the physical collection. The form captures structured edition fields (including label, catalogue number, barcode, remaster year, and media format), one or more contributor credits with roles, rating/favourite state, physical and catalogue notes, and an explicit placement choice: a structured location, an existing box set, or unknown for now. A new location can be created and selected without leaving the form. Exact contributor names already in the catalogue are reused case-insensitively. The album, any newly needed contributor rows, all album-role joins, and optional box membership are written in one transaction with one catalogue revision; invalid credit or placement data leaves no partial album. Because the draft has no discs, tracks, or digital assets, its derived digital availability is `none` and it is not offered to the player until audio is attached later. Artwork plus optional manual disc/track detail can be added from Album Detail after creation.
+
+Before saving, the form can explicitly search MusicBrainz by title and optional artist. Selecting a release fills only the returned physical-edition fields and the primary artist contributor; location, notes, and extra credits are preserved. The lookup also shows the selected release's track listing for verification, while catalogue disc/track creation remains an explicit Album Detail action.
 
 All entry methods create an `AlbumDraft` rather than writing album tables directly.
 

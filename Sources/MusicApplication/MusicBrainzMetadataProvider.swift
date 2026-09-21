@@ -9,14 +9,18 @@ public struct ExternalReleasePreview: Identifiable, Equatable, Sendable {
     public let catalogueNumber: String?
     public let mediaCount: Int
     public let trackTitles: [String]
+    public let labelName: String?
+    public let barcode: String?
+    public let mediaFormat: String?
 
-    public init(id: String, title: String, artist: String?, releaseDate: String?, countryCode: String?, catalogueNumber: String?, mediaCount: Int, trackTitles: [String] = []) {
-        self.id = id; self.title = title; self.artist = artist; self.releaseDate = releaseDate; self.countryCode = countryCode; self.catalogueNumber = catalogueNumber; self.mediaCount = mediaCount; self.trackTitles = trackTitles
+    public init(id: String, title: String, artist: String?, releaseDate: String?, countryCode: String?, catalogueNumber: String?, mediaCount: Int, trackTitles: [String] = [], labelName: String? = nil, barcode: String? = nil, mediaFormat: String? = nil) {
+        self.id = id; self.title = title; self.artist = artist; self.releaseDate = releaseDate; self.countryCode = countryCode; self.catalogueNumber = catalogueNumber; self.mediaCount = mediaCount; self.trackTitles = trackTitles; self.labelName = labelName; self.barcode = barcode; self.mediaFormat = mediaFormat
     }
 
     public var coverArtworkURL: URL? { URL(string: "https://coverartarchive.org/release/\(id)/front") }
     /// A small derivative for responsive comparison previews. Downloads still use `coverArtworkURL`.
     public var coverArtworkThumbnailURL: URL? { URL(string: "https://coverartarchive.org/release/\(id)/front-250") }
+    public var releaseYear: Int? { releaseDate.flatMap { Int($0.prefix(4)) } }
 }
 
 public protocol MetadataLookupProviding: Sendable {
@@ -96,14 +100,32 @@ public struct MusicBrainzMetadataProvider: MetadataLookupProviding {
 
     static func decodeReleases(from data: Data) throws -> [ExternalReleasePreview] {
         let payload = try JSONDecoder().decode(Response.self, from: data)
-        return payload.releases.map { release in
-            .init(id: release.id, title: release.title, artist: release.artistCredit?.map(\.name).joined(separator: ", "), releaseDate: release.date, countryCode: release.country ?? release.releaseEvents?.first?.area?.iso31661Codes?.first, catalogueNumber: release.labelInfo?.compactMap(\.catalogueNumber).first, mediaCount: release.media?.count ?? 0, trackTitles: release.media?.flatMap { $0.tracks ?? [] }.map(\.title) ?? [])
-        }
+        return payload.releases.map(Self.preview)
     }
 
     static func decodeReleaseDetail(from data: Data) throws -> ExternalReleasePreview {
         let release = try JSONDecoder().decode(Release.self, from: data)
-        return .init(id: release.id, title: release.title, artist: release.artistCredit?.map(\.name).joined(separator: ", "), releaseDate: release.date, countryCode: release.country ?? release.releaseEvents?.first?.area?.iso31661Codes?.first, catalogueNumber: release.labelInfo?.compactMap(\.catalogueNumber).first, mediaCount: release.media?.count ?? 0, trackTitles: release.media?.flatMap { $0.tracks ?? [] }.map(\.title) ?? [])
+        return preview(from: release)
+    }
+
+    private static func preview(from release: Release) -> ExternalReleasePreview {
+        var mediaFormats: [String] = []
+        for format in release.media?.compactMap(\.format) ?? [] where !format.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if !mediaFormats.contains(format) { mediaFormats.append(format) }
+        }
+        return .init(
+            id: release.id,
+            title: release.title,
+            artist: release.artistCredit?.map(\.name).joined(separator: ", "),
+            releaseDate: release.date,
+            countryCode: release.country ?? release.releaseEvents?.first?.area?.iso31661Codes?.first,
+            catalogueNumber: release.labelInfo?.compactMap(\.catalogueNumber).first,
+            mediaCount: release.media?.count ?? 0,
+            trackTitles: release.media?.flatMap { $0.tracks ?? [] }.map(\.title) ?? [],
+            labelName: release.labelInfo?.compactMap { $0.label?.name }.first,
+            barcode: release.barcode,
+            mediaFormat: mediaFormats.isEmpty ? nil : mediaFormats.joined(separator: ", ")
+        )
     }
 }
 
@@ -136,12 +158,13 @@ public actor MusicBrainzRateLimiter {
 private extension MusicBrainzMetadataProvider {
     struct Response: Decodable { let releases: [Release] }
     struct Release: Decodable {
-        let id: String; let title: String; let date: String?; let country: String?; let artistCredit: [ArtistCredit]?; let labelInfo: [LabelInfo]?; let media: [Media]?; let releaseEvents: [ReleaseEvent]?
-        enum CodingKeys: String, CodingKey { case id, title, date, country, media; case artistCredit = "artist-credit"; case labelInfo = "label-info"; case releaseEvents = "release-events" }
+        let id: String; let title: String; let date: String?; let country: String?; let barcode: String?; let artistCredit: [ArtistCredit]?; let labelInfo: [LabelInfo]?; let media: [Media]?; let releaseEvents: [ReleaseEvent]?
+        enum CodingKeys: String, CodingKey { case id, title, date, country, barcode, media; case artistCredit = "artist-credit"; case labelInfo = "label-info"; case releaseEvents = "release-events" }
     }
     struct ArtistCredit: Decodable { let name: String }
-    struct LabelInfo: Decodable { let catalogueNumber: String?; enum CodingKeys: String, CodingKey { case catalogueNumber = "catalog-number" } }
-    struct Media: Decodable { let tracks: [Track]? }
+    struct LabelInfo: Decodable { let catalogueNumber: String?; let label: Label?; enum CodingKeys: String, CodingKey { case catalogueNumber = "catalog-number"; case label } }
+    struct Label: Decodable { let name: String? }
+    struct Media: Decodable { let format: String?; let tracks: [Track]? }
     struct Track: Decodable { let title: String }
     struct ReleaseEvent: Decodable { let area: Area? }
     struct Area: Decodable { let iso31661Codes: [String]?; enum CodingKeys: String, CodingKey { case iso31661Codes = "iso-3166-1-codes" } }
