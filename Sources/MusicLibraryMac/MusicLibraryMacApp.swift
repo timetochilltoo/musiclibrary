@@ -3790,6 +3790,9 @@ private struct AlbumEditor: View {
     @State private var isFavourite = false
     @State private var contributorDrafts = [ManualAlbumContributor()]
     @State private var showsMusicBrainzLookup = false
+    @State private var selectedMusicBrainzRelease: ExternalReleasePreview?
+    @State private var saveMusicBrainzCover = false
+    @State private var isAddingAlbum = false
     @State private var placement: ManualAlbumPlacement = .location
     @State private var selectedLocationID: PhysicalLocationID?
     @State private var selectedBoxSetID: BoxSetID?
@@ -3808,6 +3811,39 @@ private struct AlbumEditor: View {
                     Text("Fill returned release details into this form; placement, notes, and extra credits stay unchanged.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                }
+                if let release = selectedMusicBrainzRelease {
+                    HStack(alignment: .top, spacing: 12) {
+                        AsyncImage(url: release.coverArtworkThumbnailURL) { phase in
+                            switch phase {
+                            case .success(let image): image.resizable().scaledToFill()
+                            case .failure:
+                                Image(systemName: "photo.badge.exclamationmark")
+                                    .font(.title2)
+                                    .foregroundStyle(.secondary)
+                            default: ProgressView()
+                            }
+                        }
+                        .frame(width: 72, height: 72)
+                        .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("MusicBrainz front cover selected")
+                                .font(.subheadline.weight(.medium))
+                            Text("The full cover will be copied into managed artwork storage when this album is added.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Toggle("Save cover with album", isOn: $saveMusicBrainzCover)
+                                .toggleStyle(.checkbox)
+                            Button("Clear release and cover") {
+                                selectedMusicBrainzRelease = nil
+                                saveMusicBrainzCover = false
+                            }
+                            .buttonStyle(.link)
+                            .font(.caption)
+                        }
+                    }
                 }
                 TextField("Title", text: $title)
                 TextField("Edition label", text: $editionLabel, prompt: Text("Japan version, 2011 remaster…"))
@@ -3857,6 +3893,11 @@ private struct AlbumEditor: View {
                 }
                 Button("Add Contributor", systemImage: "person.badge.plus") {
                     contributorDrafts.append(.init())
+                }
+                if contributorDrafts.contains(where: { $0.name.nilIfBlank == nil }) {
+                    Label("Fill or remove every empty contributor row to enable Add Physical Album.", systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
                 }
                 Text("Use roles for composers, performers, conductors, ensembles, producers, and other credits. Existing names are reused instead of creating duplicates.")
                     .font(.caption)
@@ -3925,9 +3966,9 @@ private struct AlbumEditor: View {
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
             ToolbarItem(placement: .confirmationAction) {
-                Button("Add Physical Album") { addAlbum() }
+                Button(isAddingAlbum ? "Adding…" : "Add Physical Album") { addAlbum() }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(!canSubmit)
+                    .disabled(!canSubmit || isAddingAlbum)
             }
         }
         .alert("Unable to add album", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
@@ -3972,6 +4013,8 @@ private struct AlbumEditor: View {
     }
 
     private func applyMusicBrainzRelease(_ release: ExternalReleasePreview) {
+        selectedMusicBrainzRelease = release
+        saveMusicBrainzCover = release.coverArtworkURL != nil
         title = release.title
         if let releaseYear = release.releaseYear { self.releaseYear = String(releaseYear) }
         if let countryCode = release.countryCode?.nilIfBlank { self.countryCode = countryCode }
@@ -3992,7 +4035,9 @@ private struct AlbumEditor: View {
     }
 
     private func addAlbum() {
+        isAddingAlbum = true
         Task {
+            defer { isAddingAlbum = false }
             do {
                 let directLocationID = placement == .location ? selectedLocationID : nil
                 let boxSetID = placement == .boxSet ? selectedBoxSetID : nil
@@ -4018,7 +4063,12 @@ private struct AlbumEditor: View {
                 let credits = contributorDrafts.map {
                     NewAlbumContributorCredit(name: $0.name, role: $0.role, creditedName: $0.creditedName.nilIfBlank)
                 }
-                try await library.addAlbum(draft, toBoxSet: boxSetID, contributors: credits)
+                try await library.addAlbum(
+                    draft,
+                    toBoxSet: boxSetID,
+                    contributors: credits,
+                    musicBrainzArtworkURL: saveMusicBrainzCover ? selectedMusicBrainzRelease?.coverArtworkURL : nil
+                )
                 dismiss()
             } catch { errorMessage = error.localizedDescription }
         }

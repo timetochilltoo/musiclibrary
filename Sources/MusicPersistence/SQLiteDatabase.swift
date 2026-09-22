@@ -1389,10 +1389,16 @@ public actor MusicDatabase {
         _ draft: NewAlbum,
         in boxSetID: BoxSetID?,
         at position: Int? = nil,
-        contributors: [NewAlbumContributorCredit] = []
+        contributors: [NewAlbumContributorCredit] = [],
+        frontArtworkPath: String? = nil,
+        frontArtworkSource: String = "managed-user-selected"
     ) throws -> Album {
         var valid = try draft.validated()
         let validContributors = try contributors.map { try $0.validated() }
+        let validFrontArtworkPath = frontArtworkPath?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if frontArtworkPath != nil && validFrontArtworkPath?.isEmpty != false {
+            throw DatabaseError.invalidOperation("Front artwork path cannot be blank.")
+        }
         if boxSetID != nil {
             valid.hasCD = true
             valid.physicalLocationID = nil
@@ -1481,6 +1487,17 @@ public actor MusicDatabase {
                 try Self.bind(credit.creditedName, at: 4, to: statement)
                 try Self.bind(Int64(creditPosition), at: 5, to: statement)
                 try Self.stepDone(statement, connection: connection)
+            }
+
+            if let validFrontArtworkPath {
+                let artworkID = UUID()
+                let artwork = try Self.prepare("INSERT INTO artwork (id, owner_type, owner_id, role, local_path, source, is_selected) VALUES (?, 'album', ?, 'front', ?, ?, 1);", on: connection)
+                defer { sqlite3_finalize(artwork) }
+                try Self.bind(artworkID.uuidString.lowercased(), at: 1, to: artwork)
+                try Self.bind(id.description, at: 2, to: artwork)
+                try Self.bind(validFrontArtworkPath, at: 3, to: artwork)
+                try Self.bind(frontArtworkSource, at: 4, to: artwork)
+                try Self.stepDone(artwork, connection: connection)
             }
             try incrementRevision()
         }

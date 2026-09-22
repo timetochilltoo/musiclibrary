@@ -136,10 +136,28 @@ public final class LibraryStore: ObservableObject {
     public func addAlbum(
         _ draft: NewAlbum,
         toBoxSet boxSetID: BoxSetID? = nil,
-        contributors: [NewAlbumContributorCredit] = []
+        contributors: [NewAlbumContributorCredit] = [],
+        musicBrainzArtworkURL: URL? = nil
     ) async throws {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
-        _ = try await database.createAlbum(draft, in: boxSetID, contributors: contributors)
+        let managedArtworkURL: URL?
+        if let musicBrainzArtworkURL {
+            managedArtworkURL = try await downloadManagedMusicBrainzArtwork(from: musicBrainzArtworkURL)
+        } else {
+            managedArtworkURL = nil
+        }
+        do {
+            _ = try await database.createAlbum(
+                draft,
+                in: boxSetID,
+                contributors: contributors,
+                frontArtworkPath: managedArtworkURL?.path,
+                frontArtworkSource: "managed-musicbrainz-artwork"
+            )
+        } catch {
+            if let managedArtworkURL { try? FileManager.default.removeItem(at: managedArtworkURL) }
+            throw error
+        }
         try await reload()
     }
 
@@ -492,6 +510,22 @@ public final class LibraryStore: ObservableObject {
 
     public func searchMusicBrainz(title: String, artist: String?) async throws -> [ExternalReleasePreview] {
         try await metadataLookupProvider.searchRelease(title: title, artist: artist)
+    }
+
+    private func downloadManagedMusicBrainzArtwork(from sourceURL: URL) async throws -> URL {
+        guard let managedArtworkStore else { throw DatabaseError.notFound("Managed artwork storage") }
+        var request = MusicNetworkRequestPolicy.request(url: sourceURL)
+        request.setValue("MusicLibrary/0.1 (+https://github.com/timetochilltoo/musiclibrary)", forHTTPHeaderField: "User-Agent")
+        request.setValue("image/*", forHTTPHeaderField: "Accept")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode), !data.isEmpty else {
+            throw DatabaseError.invalidOperation("MusicBrainz did not provide a usable front-cover image for this release.")
+        }
+
+        let temporaryURL = FileManager.default.temporaryDirectory.appending(path: "musicbrainz-cover-\(UUID().uuidString).jpg")
+        defer { try? FileManager.default.removeItem(at: temporaryURL) }
+        try data.write(to: temporaryURL, options: .atomic)
+        return try managedArtworkStore.importArtwork(from: temporaryURL)
     }
 
     public func importProposalPreview(_ proposal: ImportReleaseProposal) async throws -> ImportProposalPreview {

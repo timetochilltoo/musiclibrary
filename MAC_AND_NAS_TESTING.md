@@ -7,7 +7,7 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 ## 1. Launch the packaged Mac app
 
 1. In Finder, open the project folder.
-2. Open the newest sequential package, currently `build/Music Library 0.9.app`. For normal use, the same build is installed at `/Applications/Music Library.app`.
+2. Open the newest sequential package, currently `build/Music Library 0.10.app`. For normal use, the same build is installed at `/Applications/Music Library.app`.
 3. If macOS blocks the first launch, Control-click the app, choose **Open**, then choose **Open** again.
 4. The app opens a catalogue in its Application Support folder. It does not use a SQLite database on the NAS.
 5. Keep the app open while following the tests below. If anything unexpected happens, take a screenshot and note the exact action just before it happened.
@@ -52,11 +52,11 @@ Use ordinary test records only for this section. None of these actions should to
 ### A0. Manual physical album
 
 1. Open **Albums** and choose **+**. Confirm the single **Add Physical Album** form opens; there is no separate generic form that hides location behind an unchecked CD toggle.
-2. Press **Find on MusicBrainz…**, search by title and optional artist, select the correct release/pressing, and review its label, catalogue number, barcode, media format, disc count, cover, and track listing. Press **Use Selected Release** and confirm those returned fields plus the primary artist contributor fill the form. Confirm location, notes, and any additional contributor rows remain unchanged; no album is created until the physical form is submitted.
+2. Press **Find on MusicBrainz…**, search by title and optional artist, select the correct release/pressing, and review its label, catalogue number, barcode, media format, disc count, cover, and track listing. Press **Use Selected Release** and confirm those returned fields plus the primary artist contributor fill the form. Confirm the cover preview and **Save cover with album** option appear; leave the option on to test managed cover import, or turn it off to add the album without artwork. Confirm location, notes, and any additional contributor rows remain unchanged; no album is created until the physical form is submitted.
 3. Enter or correct edition/release data as needed. Add at least one contributor and choose its role. Use **Add Contributor** to add a composer/performer/conductor, and try **Use Existing** for a catalogue name already present.
 4. Under **Physical Location**, test each explicit placement type: choose an existing location; create and select a new nested location; choose an existing box set; and choose **Unknown**. The final Add button must remain disabled until the title, contributor names, and selected placement are complete.
 5. Add physical and catalogue notes, then save. Confirm the album appears with CD availability, its contributor appears under Contributors, and its location or inherited box location is shown. Search for it by contributor, barcode, and location.
-6. Confirm the new physical-only record has no digital play controls or queue entry. Add artwork or optional manual disc/track details from Album Detail if desired; no source folder or player file should be touched.
+6. Confirm the new physical-only record has no digital play controls or queue entry. If **Save cover with album** was enabled, confirm the selected MusicBrainz front cover appears in the album artwork and Library Health no longer reports missing front artwork. Add local artwork or optional manual disc/track details from Album Detail if desired; no source folder or player file should be touched.
 7. Edit the album and confirm label, barcode, remaster year, media format, physical note, general notes, and location remain correctable. Contributor credits are edited from Album Detail.
 
 ### A1. Dock icon and slow NAS/DSF loading

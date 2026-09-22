@@ -805,6 +805,27 @@ struct MusicDatabaseTests {
         #expect(try await database.libraryHealthIssues().isEmpty)
     }
 
+    @Test("Creating an album can attach a selected front cover atomically")
+    func albumCreationWithFrontArtwork() async throws {
+        let database = try MusicDatabase(url: temporaryDatabaseURL())
+        try await database.migrate()
+
+        let album = try await database.createAlbum(
+            .init(title: "Album with cover", hasCD: true),
+            in: nil,
+            frontArtworkPath: "/managed-artwork/cover.jpg",
+            frontArtworkSource: "managed-musicbrainz-artwork"
+        )
+
+        let artwork = try await database.albumArtwork(albumID: album.id)
+        #expect(artwork.count == 1)
+        #expect(artwork.first?.role == .front)
+        #expect(artwork.first?.localPath == "/managed-artwork/cover.jpg")
+        #expect(artwork.first?.source == "managed-musicbrainz-artwork")
+        #expect(artwork.first?.isSelected == true)
+        #expect(try await database.currentRevision() == 1)
+    }
+
     @Test("A deleted album can be permanently purged without touching active catalogue data")
     func permanentlyPurgeDeletedAlbum() async throws {
         let database = try MusicDatabase(url: temporaryDatabaseURL())
