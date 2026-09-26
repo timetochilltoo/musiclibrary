@@ -520,6 +520,14 @@ The former standalone **Source file tag write-back** section is removed from the
 
 ### Next safe slice
 
+The user requested a detailed whole-app UI/workflow redesign plan after rejecting the current appearance. **BUILD_PLAN.md section 12 is now the controlling redesign specification**, covering navigation, albums/other titles, entry/import, playback, organization, settings, validation, and a later iPad milestone. This is a documentation-only planning checkpoint; version 0.11/build 12 remains the latest implemented app. No redesign milestone is complete yet.
+
+When the user requests implementation (potentially by Luna), start **R0: connected native compositions with isolated fixture data**, then R1–R9 in dependency order for a whole-Mac request. The plan explicitly supersedes the old permanent three-column presentation and “UI implementation complete” gate. Do not restart Phase 0 or rebuild the existing persistence/player services. Barcode/release-URL lookup and optional MusicBrainz track creation are planned functional work, not existing capabilities. R10/iPad and deferred providers remain a separate boundary. No chat was created or messaged as part of preparing this plan.
+
+The preceding implementation was validated with 102 tests in debug and release. For this documentation-only checkpoint, validate Markdown structure, references, and Git whitespace; do not claim new runtime or visual checks.
+
+### Existing real-library acceptance boundary
+
 The local/NAS folder workflow, safe scanning/reconciliation workflow, one-step new-versus-existing-edition import decision, MusicBrainz-assisted and manual physical-album entry, safe catalogue cleanup/reset, portable complete archive/restore, legacy-artwork migration, field-level catalogue activity history, audit hardening, branded Mac packaging, responsive slow-file loading, configurable DSF PCM caching, and the artwork-first Mac presentation workstream are implemented. The next safe boundary is user acceptance of the Album Detail hierarchy/artwork actions plus `MAC_AND_NAS_TESTING.md` sections **A0. Manual physical album** and **3.0 Catalogue cleanup and complete archive**, especially MusicBrainz field prefill, export, restore with covers, tamper refusal, and optional reset/root preservation. Do not perform those destructive live-catalogue checks automatically. Automatic hash-based relinking, snapshot-to-master reconstruction, WAV/DSF/other non-FLAC tag write-back, internet lyrics providers, AI modules, live NAS endurance, and iPad device validation remain deferred; the provider/format choices in the Open Decisions section still require the user.
 
 ## 13. Planned implementation order after the next slice

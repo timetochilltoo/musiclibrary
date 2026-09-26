@@ -2,7 +2,7 @@
 
 Original plan date: 22 July 2026
 
-Last roadmap review: 22 September 2026
+Last roadmap review: 26 September 2026
 
 Detailed coding handoff: [IMPLEMENTATION_SPEC.md](IMPLEMENTATION_SPEC.md)
 
@@ -10,9 +10,11 @@ Operational continuation guide: [HANDOFF.md](HANDOFF.md)
 
 Implementation baseline (22 September 2026): the Mac catalogue, retained local/NAS authorization, safe scanner and review queue, explicit metadata comparison, digital assets, local playback and playlists, FLAC tag-write safety, manual lyrics, recovery/backup/export, snapshot publication, and the read-only companion foundation are implemented. The artwork-first Mac redesign is complete across Albums, the persistent player, Library Changes, playlists, and Settings. The current package is version 0.10 (build 11) and the rebuilt suite passes 102 automated tests in 9 suites. It includes a branded Dock icon, creates or attaches a reviewed release in one atomic action, keeps the UI responsive with a visible loading state while preparing slow NAS/DSF playback, provides a bounded user-configurable DSF PCM cache, one complete manual physical-album form with explicit MusicBrainz release prefill and optional managed cover import, preview-first catalogue cleanup, typed-confirm reset, and a checksummed complete catalogue archive containing SQLite plus managed artwork. Live NAS endurance and iPad device validation remain deliberately deferred. See [HANDOFF.md](HANDOFF.md) for the current Git baseline and next validation boundary.
 
-The Mac implementation gate is now closed for this scope. The next phase is real-library acceptance: local and NAS playback endurance, slow DSF loading and latest-selection behavior, offline/reconnect handling, large-library scrolling/search, and accessibility/contrast review. These checks require the user's actual folders, NAS, audio output, and display environment; they cannot be proven by the repository test suite alone.
+Current baseline: version 0.11 (build 12), commit `1801430` at the time of this review, with 102 tests passing in debug and release. Verify Git and test status when starting; these are recorded results, not a substitute for current checks. The earlier visual workstream is implemented but has not met the user's expectations for usability or appearance. The new controlling product direction is **section 12: Whole-app experience redesign**. It supersedes the older presentation instructions, permanent three-column layout, and closed UI implementation gate below. The existing architecture and data-safety invariants remain authoritative. This document specifies future work; it does not claim that the redesign has been built or visually verified.
 
-## Current execution gate — audit hardening before visual redesign (12 August 2026)
+Real-library acceptance remains necessary for local/NAS playback endurance, slow DSF loading, offline/reconnect handling, and physical iPad behavior. Those checks cannot be proven by repository tests alone. They do not prevent isolated design and implementation work on section 12.
+
+## Historical execution gate — audit hardening before visual redesign (12 August 2026)
 
 The existing Mac catalogue and player received a release-oriented audit before the artwork-first UI pass. The audit found no evidence of a data breach or catalogue corruption, and its defensive and reliability actions are complete. The gate is closed and the visual implementation workstream is active.
 
@@ -239,6 +241,8 @@ Create or find the box, assign its physical location once, add or scan its membe
 Store alternate, translated, original-language, and romanized titles as searchable aliases. Search covers album title, edition label, alias, track, contributor, barcode, catalogue number, box-set name, and physical location.
 
 ### Mac visual design direction (reviewed 12 August 2026)
+
+Historical first-pass direction. For new UI work, section 12 takes precedence, including where it changes navigation, editing, entry, and review workflows. Do not reproduce the old screens simply because their implementation checkpoints say complete.
 
 The catalogue and player workflow is now solid enough to receive a deliberate visual pass. The next Mac UI direction is **artwork-first, icon-led, and progressively disclosed**: show the information needed for the current decision, keep advanced/raw details available behind an obvious control, and replace repeated explanatory paragraphs with artwork, badges, concise labels, and familiar controls. This is a presentation workstream; it does not change database ownership, scan semantics, explicit metadata approval, tag-write safety, or NAS publication rules.
 
@@ -499,7 +503,7 @@ MusicLibrary/
 
 ## 10. Immediate next step
 
-Do Phase 0 before generating the full app. Assemble representative sample media (copies, not the only originals), prove metadata reading, bookmark persistence, MusicBrainz matching, FLAC playback, and iPad SMB-root selection with the real NAS. Then lock schema version 1 and build the Catalogue MVP.
+Start section 12, milestone R0, using the existing app and safe fixtures. Establish connected, native screen compositions for the library, album detail, and physical entry, then implement milestones in dependency order. Do not restart Phase 0, recreate the database, or rebuild completed playback/scanning infrastructure. The canonical operational continuation remains HANDOFF.md.
 
 ## 11. Technical references
 
@@ -511,3 +515,492 @@ Do Phase 0 before generating the full app. Assemble representative sample media 
 - AcoustID web service: https://acoustid.org/webservice
 - LRCLIB API: https://www.lrclib.net/docs
 - MiniMax music generation: https://platform.minimax.io/docs/api-reference/music-generation
+
+## 12. Whole-app experience redesign — implementation specification
+
+Specification date: 26 September 2026. Status: planned, not implemented.
+
+### 12.1 Purpose, authority, and scope
+
+The user rejected the overall appearance and invited changes to the workflows, not just rearrangement of fields. The goal is a coherent music collection application where identifying, finding, listening to, adding, and organizing albums feel natural.
+
+This section is the controlling redesign specification for the next implementation agent, including Luna. It supersedes earlier UI layout recommendations in this file. It does not supersede IMPLEMENTATION_SPEC.md's safety invariants. Where a planned workflow changes an existing product rule, update the affected technical specification in the same implementation slice.
+
+The current request is to prepare this plan. No app implementation is authorized by this documentation update alone. When the user subsequently requests a build, use the milestone sequence here; do not ask again about routine choices already specified. Do not create or message another chat merely because Luna is mentioned.
+
+Scope levels:
+
+| Level | Included |
+|---|---|
+| Required Mac redesign | Navigation, library browsing, album identity and other titles, track rows, explicit edit mode, physical entry, import review, player, contributors, locations, box sets, playlists, settings, error/empty/loading states, accessibility |
+| Functional enhancements within planned Mac milestones | Artist summaries, accurate availability, release URL/barcode/catalogue lookup, optional MusicBrainz catalogue tracks, duplicate suggestions, playlist track picker, queue view, artwork viewer |
+| Later companion milestone | iPad browsing and setup redesign, subject to available snapshot data and a separate implementation/delivery boundary |
+| Deferred | Camera barcode scanning, OCR, AcoustID integration, AI, new metadata/lyrics providers, non-FLAC tag writing, automatic merging/relinking, new playback engine/DSP, internet audio sync |
+
+Do not interpret a new button in a design as evidence that its underlying service already exists.
+
+### 12.2 Evidence and problems to solve
+
+Review basis: user screenshots plus the source at the version 0.11 baseline. There was no fresh live walkthrough of every screen. Treat actual visual inspection as required evidence during implementation.
+
+1. Album detail is still composed as a grouped form. It displays administrative controls while the user is trying to read or listen.
+2. Other titles are called Aliases and appear below tracks, detached from the primary title.
+3. The latest hero duplicates cover selection as both an overlay button and a text button, and uses caption-sized single-line fields that can truncate names, catalogue numbers, and locations.
+4. Track rows expose about seven actions each. Destructive and infrequent controls compete with playback.
+5. The permanent three-column shell constrains both cover browsing and album reading.
+6. Album cards/list rows omit the artist; the player uses a generic symbol and technical audio text rather than cover/artist identity.
+7. The Settings category list has no selection routing and sits beside a single long page.
+8. Physical entry starts with many empty fields; lookup is a nested sheet. Blank contributor rows block submission.
+9. MusicBrainz physical-release tracks are preview-only; the current provider flattens tracks into title strings, losing medium boundaries needed for reliable import.
+10. Import uses internal concepts such as batches and release proposals prominently. Folder registration, scanning, metadata review, and attachment are distributed across screens.
+11. Playlists and box sets expose repeated movement/remove buttons. Empty playlists have no direct track picker.
+12. The iPad starts with snapshot configuration, local statistics, and raw root identifiers mixed into browsing.
+13. The existing album detail enables playback from catalogue track presence, which is not proof of playable digital assets. The tag-write menu similarly checks discs rather than supported assets.
+
+### 12.3 Experience principles
+
+- Browse first: normal pages display music and collection information. Editing opens a deliberate editor or Organize mode.
+- Put related information together: title variants with the title, credits with identity, location with ownership, source paths with Files, restoration with backups.
+- Each workspace has one clear primary action and a small set of contextual secondary actions.
+- Frequent actions remain visible and labelled. Overflow menus hold secondary actions, not the only way to perform an everyday task.
+- Use progressive disclosure for advanced detail, not for basic album identity.
+- Browsing remains useful without internet or a connected music root. Availability explains what can be played.
+- Save returns the user to the created/edited object. Back returns to the same filters, selection, and scroll position.
+- Optional data is genuinely optional. Empty fields do not leave visible holes on reading pages.
+- External matching suggests an edition; it never silently equates editions or overwrites corrections.
+- Preserve existing safety mechanisms while reducing repeated technical explanation on everyday screens.
+
+### 12.4 Navigation and workspace architecture
+
+Default Mac shell: a sidebar and one main workspace. The player occupies a persistent bottom region when active. A selected album opens inside the main workspace with a visible Back action.
+
+Sidebar:
+
+| Group | Destinations | Behavior |
+|---|---|---|
+| Library | Albums, Artists & Contributors, Playlists | Main browsing destinations; retain per-destination state |
+| Collection | Locations, Box Sets | Physical organization, covers, counts, breadcrumb paths |
+| Review | Imports, Library Issues | Badge counts represent actionable work; no badge for normal historical activity |
+| Utilities | Settings | Opens real categories; recovery/history live within Settings |
+
+Use “Imports” in UI in place of “Library Changes”; keep existing persistence names if appropriate. Library Issues groups missing files, offline folders, duplicate candidates, and optional missing artwork. Missing artwork is an enhancement suggestion, not the same severity as unavailable music.
+
+The Add Album toolbar menu offers Physical Album and Import Music Folder. Their different workflows can share the same album draft/review components without forcing file import through the physical form.
+
+Use a typed navigation destination with stable IDs for albums, contributors, playlists, locations, box sets, imports, and settings categories. Keep destination history separate from selected sidebar section. Do not allow an old selectedAlbumID to show an unrelated album when switching to another destination with no selection.
+
+Navigation requirements:
+
+- Back preserves library search, filters, sort, grid/list mode, and scroll anchor.
+- Going from a location/box/contributor to an album returns to that origin, not always Albums.
+- Selecting a search result opens its associated object; deleting it produces an appropriate local empty state.
+- Optional split browsing may show a compact album list and detail on wide windows, but is a later refinement, not a prerequisite for the default layout.
+- Settings category clicks change actual content. No decorative navigation labels.
+- Common keyboard behavior: Command-F focuses search; standard Back navigation works; Escape dismisses transient UI; text-field Space remains text input.
+- Use stable IDs for selection and restoration. Async detail results must be ignored if the selected object changes before completion.
+
+### 12.5 Visual system and responsive layout
+
+Use native SwiftUI controls, system text styles, and semantic colors. Album covers provide visual character; avoid arbitrary gradients, decorative dashboards, and a rounded grey container around every group.
+
+Initial design tokens, adjustable after native visual inspection:
+
+| Element | Starting rule |
+|---|---|
+| Spacing | 4, 8, 12, 16, 24, 32 points; use one consistent rhythm |
+| Workspace gutters | 24 points regular, 16 compact |
+| Sidebar | Approximately 210–240 points; user-resizable/collapsible |
+| Main title | Approximately 28–32 points, semibold; wraps naturally |
+| Artist | Approximately 17–20 points, with clear secondary hierarchy |
+| Readable metadata | Body/callout size, typically 13–14 points; reserve caption for provenance |
+| Cover on album page | Approximately 220–260 points regular, 160–190 compact; preserve aspect ratio |
+| Cards | Cover with modest 8–12 point corner radius; subtle or no shadow; title and artist below |
+| Track rows | Approximately 40–48 points for ordinary tracks; expand for multiline/classical titles |
+| Forms | Labels close to left-aligned input controls; do not separate labels and values across huge widths |
+| Player | Approximately 72–88 points high, adapting controls to available width |
+
+At narrow main-content widths (starting breakpoint about 700 points), reflow the album header vertically or use a smaller cover; do not shrink the text until it fits. At wide sizes, cap reading-column width around 1100 points while allowing album grids to use available space. Treat breakpoints as content-based, not device-name checks.
+
+Test at full window sizes around 900×650, 1200×800, and 1600×1000 points. At the smallest size, permit sidebar collapse and vertical scrolling. Sheets must fit the available display; replace the current fixed 900-point lookup minimum with a responsive composition.
+
+Required visual states: light/dark appearance, increased contrast, reduced motion, keyboard focus, selected row, long CJK/Latin titles, missing artwork, sparse metadata, and dense classical credits. Do not rely on color or hover alone. Full essential text must be accessible by wrapping or a clearly available detail view.
+
+### 12.6 Albums library and search
+
+Toolbar: destination title/count, search, filter control, sort, grid/list switch, Add Album. Avoid placing every filter as its own always-visible control.
+
+Card hierarchy:
+
+1. Cover.
+2. Album title, up to two visible lines with full accessible text.
+3. Primary artist or a justified “Various Artists”/“Artist not recorded” value.
+4. Edition/year summary when present.
+5. Restrained ownership/availability indicators; explain ambiguous icons through accessible labels and tooltips.
+
+Do not infer “Various Artists” solely because composer and conductor credits both exist. Prefer recorded album-artist credits; when absent, use an explicit display fallback without changing catalogue data.
+
+Filters are independent concepts:
+
+- Ownership: All / Physical / Digital / Both.
+- Availability: Any / Available to Play / Unavailable.
+- Source: Any / This Mac / named registered music folder.
+- Favourite and rating filters are optional refinements.
+
+Do not use publishedAlbumIDs or an “iPad Music” sharing scope as proof that audio is physically on a NAS or currently accessible. Build display/query models from actual root and asset metadata. Physical ownership must respect the existing hasCD model while showing the recorded media format; broadening physical-media ownership semantics requires an explicit domain change.
+
+Default sort: Title; offer Artist, Release year, Recently added, Rating. Persist user preferences locally. Search continues to find titles, other titles, credits, tracks, catalogue numbers, barcode, boxes, and locations. Add a result-context subtitle such as “Matched other title” where feasible; no need to rebuild the proven search index merely to restyle results.
+
+Data loading: fetch artist/cover/availability summaries in bounded batched queries. Avoid per-card database queries, NAS existence checks, or synchronous image decoding. Cancel superseded search tasks and protect against out-of-order results.
+
+Empty states distinguish an empty library (“Add your first album”) from no search/filter results (“Clear filters”). Offer useful actions directly.
+
+### 12.7 Album page: reading layout
+
+Use a ScrollView/composed page rather than a giant Form for reading.
+
+Regular-width layout:
+
+    Back to origin                               Edit Album   More
+
+    [                     ]  Album title
+    [     Front cover     ]  Primary artist
+    [                     ]  Other titles, when recorded
+    [                     ]  Edition · year · label · country · format
+    Change cover…            Key credits, with roles
+                             Owned / available / offline status
+                             Physical location or box link
+                             Play   Shuffle   Favourite
+
+    Catalogue details: catalogue no. · barcode · remaster · rating
+    Tracks                     Credits             Files & Notes
+    Disc heading
+    Number   Track / work and movement             Duration   More
+
+This is a hierarchy guide, not a requirement to put all fields into fixed horizontal rows. Wrap/reflow gracefully. Catalogue details stay near identity, outside the track list; do not reintroduce a full-width label-at-left/value-at-far-right form.
+
+Other titles:
+
+- User-facing name is “Other titles”; keep album_alias as the internal entity.
+- Display meaningful nonduplicate variants immediately below title/artist, with a compact language/type label when useful.
+- Show up to two initially, then “Show all titles” expands in the same identity area.
+- Edit title and variants in the same album editor, including add/edit/remove and optional locale/type.
+- No empty Other titles section or Add Alias card at the page bottom.
+- A variant is searchable and never creates or renames an album implicitly.
+
+Credits:
+
+- Show primary artist prominently; display relevant composer/conductor/ensemble roles below, in readable text.
+- Limit the initial secondary summary to roughly three credits, with “View all credits” selecting the Credits section.
+- Full credits group by role and link to contributor pages.
+- In browse mode, no edit/remove buttons on every credit. Edit Album exposes credit editing.
+- Editing a shared person's canonical name must explain that it affects other credits; an album-only credited-name override is a separate action.
+
+Details and actions:
+
+- One Change cover action next to the cover. Click the image to open the artwork viewer.
+- Location and box names are navigable breadcrumbs. Display the inherited location for a boxed album.
+- A physical album without audio shows “Physical copy · No digital audio attached” and Attach digital files. Hide unavailable Play/Shuffle.
+- An offline digital album explains the unavailable folder and offers the relevant reconnect/issue route.
+- A partially playable album shows a count and plays only resolvable tracks, with a clear summary of skipped tracks.
+- Availability uses cached catalogue/root state; resolve and verify files again at actual playback time. Browsing must not probe every NAS file.
+- More holds secondary commands, including Recently Deleted and advanced file operations. Do not place permanent deletion beside Play.
+
+Tracks:
+
+- Default columns: number, title, optional artist, duration, status, one More menu. Show the current-playing marker in the number area.
+- Double-click/keyboard activation can play a playable track; a visible row action/menu provides an equivalent route.
+- More: Play Next, Add to Queue (only once implemented), Add to Playlist, Lyrics, Track Details, Edit Track, Remove from Album.
+- Disc/track creation and reordering belong in Edit Tracks/Organize mode. Preserve removal confirmations and existing reference/playlist cleanup semantics.
+- Classical display supports work headings and movement titles without flattening or renumbering musical positions incorrectly.
+- Catalogue tracks without assets remain readable and explicitly unplayable.
+
+Files & Notes:
+
+- Show physical/catalogue notes and source file information under clear subheadings.
+- Expose existing metadata inspector, source format, root/path, and availability. Never claim unmeasured DAC output or bit depth.
+- Place “Write catalogue changes to FLAC files…” in the Files area/advanced actions only when candidate FLAC assets exist. Do not read or prepare writes simply to decide menu visibility.
+- Opening that action starts the existing preview; confirmation, backups, journal, verification, and undo remain mandatory.
+
+### 12.8 Editing and artwork
+
+Edit Album is one resizable editor with sections Identity, Edition, Credits, Physical Copy, Notes. Other titles belong to Identity. Use readable aligned fields and preserve unsaved input while moving between sections. Save commits the intended draft; Cancel discards unsaved changes. Confirm discard only when there are actual changes.
+
+Normalize fully blank added credit rows away. A row with a role-specific override or other meaningful input but no name is incomplete and gets an inline error. Keep at least one meaningful contributor for physical entry under the current product rule. Explain missing requirements next to the relevant field and summarize them near Save.
+
+Validate numeric fields explicitly: invalid nonempty years must not silently become nil. Keep a visible error after submission failure and preserve the draft for retry. Show progress during saves and prevent duplicate submission.
+
+Artwork viewer:
+
+- Selected cover appears large with optional front/back/booklet/disc thumbnails when records exist.
+- Choose image, select front cover, and inspect source/provenance are deliberate actions.
+- Reuse managed-artwork copying. Never delete the original chosen image.
+- If select-existing-cover functionality is missing, implement a transaction that switches selection without duplicating files.
+- Legacy “Make Portable” becomes “Store a copy with the library,” with its existing copy/rollback protections.
+- Keep provenance/path/managed-state in Details. Never show a second oversized static cover at the bottom of the album page.
+- Remote artwork failure offers retry, local image selection, or explicit Save without cover; no silently dropped cover promise.
+
+### 12.9 Physical album entry and MusicBrainz
+
+One workflow workspace, with Back/Continue and preserved draft state:
+
+1. Find: search by title/artist, barcode, catalogue number, or paste a MusicBrainz release URL. Enter manually is visible from the start.
+2. Review: select a specific pressing; inspect cover, artist, release date, country, label, catalogue number, barcode, format, discs, and track list.
+3. Your copy: choose direct location, box set, or Set location later; optionally add a note, rating, and favourite.
+4. Save: Add Album creates the confirmed catalogue draft and opens the resulting album.
+
+Use at most one main sheet/window; candidate selection and review should not require a stack of modal sheets. The step labels may be combined on wide screens, but the state machine must remain explicit.
+
+Review defaults:
+
+- Import the selected release's provided fields and cover only after the user's selection; preserve user edits when returning from a different step.
+- Changing to a different release shows which edited fields will change. Do not blend residual values from two releases silently.
+- Provide an optional “Include track listing” control, enabled only when complete structured media/track detail is available.
+- Keep remote lookup user-triggered. Retain the shared request timeout, caching, rate limit, and generation/cancellation protection.
+- Clearly distinguish search results, loading selected release detail, no results, unavailable cover, offline service, and saving.
+
+Implementation details:
+
+- Current ExternalReleasePreview.trackTitles is flattened. Add a structured medium/track preview model before saving track lists: medium position/title/format, track position/display position/title/duration, optional credits/IDs where reliably supplied.
+- Decode missing/irregular provider fields defensively; preserve catalogue numeric ordering separately from original display positions.
+- Extend the atomic create use case to optionally create discs/tracks with credits and selected artwork. No digital assets are created; those tracks remain unplayable.
+- Keep the old no-track manual-entry path valid. Provider failure must not prevent manual entry.
+- Validate pasted URLs as MusicBrainz release identifiers using a fixed trusted API origin. Do not fetch arbitrary pasted URLs or interpret release-group links as exact pressings.
+- Barcode search is typed/pasted text in this phase. Camera scanning and OCR are deferred.
+- Preserve leading zeros in barcode/catalogue fields; encode provider queries safely.
+- Duplicate suggestions prioritize exact external release ID when stored, then barcode/catalogue plus artist/title. Explain the evidence. Title alone must not block saving another pressing.
+- Offer Open existing album or Add separate edition. Do not merge automatically or overwrite existing metadata.
+- Persist external IDs/provenance only through an appropriate existing table/use case, or add a reviewed migration if needed; do not hide them in notes.
+- Offer inline location creation with clear persistence semantics: either stage it until album Save, or explicitly label that Create Location saves it immediately and survives cancelling the album. Prefer staged creation if safely supported by the transaction.
+
+### 12.10 Digital import and review
+
+Entry: Add Album → Import Music Folder, or Imports → Scan Folder.
+
+Flow:
+
+1. Choose an existing registered folder or authorize a new folder. Reuse compatible existing registration rather than creating duplicate roots.
+2. Scan and read metadata under one visible progress experience, with Cancel and clear completion/error counts.
+3. Review album candidates, grouped into Needs Review, Ready, Added, and Skipped presentation categories mapped to existing persisted states.
+4. For each candidate, choose Add new album, Link to existing album, or Skip.
+5. On success, offer Open album and continue with the next pending candidate.
+
+Import workspace: compact candidate list at left, selected album review at right on wide screens; single-page navigation at narrow widths. Show cover/title/artist and a concise pressing summary. Raw tags, paths, scan logs, and batch IDs belong in Details.
+
+MusicBrainz matching belongs within the selected candidate review workspace. Use a shared candidate/detail component with physical entry, but preserve different save semantics: physical entry creates a new draft; digital review applies explicitly selected proposal fields before final import.
+
+Attachment:
+
+- From an existing album, Attach digital files opens this workflow with that album as the intended target.
+- Still show file-to-track pairing and existing compatibility failures.
+- Revalidate compatibility and root-relative path uniqueness transactionally.
+- Preserve existing catalogue titles, credits, and artwork unless the user separately approves specific corrections.
+- A mismatch offers Review matching or Add separate edition, not an unsafe Force attach.
+
+Resume: persisted candidates survive closing/reopening; selection/filter restoration is device-local. Keep retry idempotent. If batch actions are added, report per-album results and allow retry of failures; never claim the whole selection succeeded after partial failure.
+
+Do not perform online searches for every scanned album automatically. “Ready” means ready for explicit review/save, not authority for unattended import.
+
+### 12.11 Player, queue, and lyrics
+
+Compact player has cover/title/artist at left, transport/progress centrally, volume and Queue at right. Click identity to open its album or expanded player. At compact widths, move volume and secondary repeat/shuffle controls into an accessible popover. Stop may be secondary; Pause stays prominent.
+
+Expanded player provides large cover, title/artist/album, transport, queue, lyrics, and Audio Details. It is presentation around the existing PlaybackController, not a new audio engine.
+
+Queue:
+
+- Display actual playback order and current index.
+- Selecting an entry uses the existing resolved playback pipeline.
+- Implement Play Next/Add to Queue/reorder only with explicit queue semantics and meaningful queue tests; do not draw enabled commands without behavior.
+- Preserve repeat/shuffle selection, restored queue, no autoplay on relaunch, and latest-selection-wins behavior.
+- Resolve artwork/artist through a batched/cacheable catalogue summary keyed by current track ID, not stale view selection.
+
+Loading retains existing DSF percentage/estimate and NAS opening feedback. Show “Preparing playback” as the main message, with conversion/audio details available when useful. An older cancelled request must not replace the newest title, cover, progress, or error.
+
+Lyrics use existing manual/plain/LRC storage. Empty state offers Add lyrics on Mac; instrumental works do not produce a warning. No internet lyrics provider is part of this redesign.
+
+### 12.12 Contributors, locations, box sets, and playlists
+
+Artists & Contributors:
+
+- Searchable names with role filters; use initials/placeholders where no portraits exist rather than adding an unsolicited image service.
+- Detail shows name, roles, album count, and credited album covers.
+- Role-filtered album navigation supports classical collections.
+- Shared-name edits explain their scope; do not merge people on fuzzy name similarity.
+
+Locations:
+
+- Tree or breadcrumb navigation, full hierarchical names, album/box counts, and covers in the selected location.
+- Move a selection through a labelled Move action and location picker; drag-and-drop can be an enhancement.
+- Preserve cycle prevention, inherited box location, and deletion guards.
+- Direct albums and albums inside a box must be distinguishable to avoid double-counting.
+
+Box sets:
+
+- Header with title, edition, inherited location, member count, and optional available artwork.
+- Members are ordered cover rows/cards that open album pages.
+- Organize mode supports reorder and remove; retain keyboard-accessible movement commands alongside dragging.
+- Removing a member opens the existing placement decision and never deletes its album.
+
+Playlists:
+
+- Header uses a collage of existing album covers, count, duration when known, Play and Shuffle.
+- Add Tracks opens a searchable picker inside the playlist workflow; selected tracks are added without navigating away.
+- Rows show track, artist, album, duration and availability, with one secondary menu.
+- Reorder by drag and keyboard commands; removal is clearly “Remove from playlist.”
+- Empty state includes Add Tracks. Any duration total based on incomplete data must be labelled accordingly.
+
+### 12.13 Settings, issues, onboarding, and recovery
+
+Settings has functional selection routing:
+
+| Category | Content |
+|---|---|
+| General | Appearance/display preferences and catalogue export |
+| Playback | DSF cache usage/limit/clear and supported player preferences |
+| Music Folders | Named roots, access status, authorize/reconnect, scope, scan |
+| iPad Sharing | Publication destination, last successful update, update/retry, advanced revision details |
+| Backup & Restore | Complete archive as the primary recovery route; existing database-only backup clearly distinguished |
+| Advanced | Safe cleanup, diagnostics, history, Recently Deleted, guarded reset |
+
+Use ordinary descriptions such as “Update shared library” with an explanation that the catalogue is shared and source audio is not copied. Preserve the distinction between publication snapshots, complete recovery archives, database-only backups, and audio files.
+
+Library Issues is an actionable page linked from badges/errors: group unavailable folders, missing files, potential duplicates, and artwork suggestions. Each issue explains the affected music and offers the existing appropriate repair workflow. No automatic relinking or deletion.
+
+First-run empty library offers Add physical album and Import music folder. Explain folder permissions at the point of selection. Sharing and NAS configuration are optional until needed.
+
+Errors stay near the task, preserve input, and provide Retry/Choose another folder/etc. Reserve blocking alerts for operations requiring immediate acknowledgement. Success should identify what was added and provide navigation, not just dismiss a sheet.
+
+Reset and destructive recovery keep current verified archive and exact typed confirmation requirements. Improving wording or placement must not weaken the service layer.
+
+### 12.14 iPad follow-on
+
+After the Mac milestones stabilize, apply the same album identity and browsing hierarchy to the companion while preserving read-only catalogue access.
+
+- Setup chooses a shared catalogue source and named audio-folder mappings.
+- On later launches, show the cached library promptly, with unobtrusive refresh status.
+- Root mapping UI selects published named roots instead of requiring a user to type UUIDs.
+- Move snapshot paths, revision numbers, root IDs, and local statistics into Settings/Details.
+- Keep local favourites, recent play, queue/preferences distinct from Mac catalogue data.
+- Audit snapshot payload availability before promising artist/cover parity. Add backward-compatible fields/capability handling and verified managed-artwork distribution if necessary; never expose Mac absolute paths or bookmarks.
+- iPad visual/device verification is a separate milestone. Do not mark it complete based on a Mac build.
+
+### 12.15 Implementation architecture and change boundaries
+
+The Mac UI currently lives mostly in MusicLibraryMacApp.swift. Avoid another large nested ViewBuilder change. Extract code incrementally around the feature being changed, keeping the composition root small and builds passing.
+
+Suggested files/modules (names may be adjusted to existing conventions):
+
+| Area | Suggested units |
+|---|---|
+| Navigation | LibraryNavigationState, LibrarySidebar, LibraryWorkspace |
+| Design primitives | LibrarySpacing, ArtworkView, AvailabilityLabel, EmptyStateView |
+| Albums | AlbumBrowserView, AlbumCardView, AlbumDetailView, AlbumIdentityHeader, AlbumTrackList, AlbumCreditsView |
+| Editing | AlbumEditDraft, AlbumEditorView, OtherTitlesEditor, ContributorDraftEditor, ArtworkViewer |
+| Add/review | AddAlbumCoordinator, PhysicalAlbumEntryView, ReleaseSearchView, ReleaseComparisonView, ImportReviewView |
+| Playback | MiniPlayerView, NowPlayingView, QueueView |
+| Organization | ContributorDetailView, LocationBrowserView, BoxSetDetailView, PlaylistDetailView, PlaylistTrackPicker |
+| Settings | SettingsNavigation, individual category views, LibraryIssuesView |
+
+Keep transient draft/navigation state in UI-specific observable models. Keep use cases in LibraryStore/application services; keep SQL and transactions in MusicDatabase. Do not spread database handles into the new views.
+
+Source map:
+
+- Sources/MusicLibraryMac/MusicLibraryMacApp.swift: existing shell, screens, editors, helpers.
+- Sources/MusicLibraryMac/PhysicalAlbumMusicBrainzLookupView.swift: existing physical release search/detail composition.
+- Sources/MusicApplication/LibraryStore.swift: catalogue use cases, managed artwork, import, publication, playback resolution.
+- Sources/MusicApplication/MusicBrainzMetadataProvider.swift: provider query/preview models.
+- Sources/MusicApplication/PlaybackController.swift: player lifecycle and queue integration.
+- Sources/MusicPersistence/SQLiteDatabase.swift: transactional catalogue access.
+- Sources/MusicDomain/Album.swift and CatalogueContent.swift: edition, aliases, credits, tracks, artwork.
+- Sources/MusicLibraryPadShell/PadLibraryView.swift and MusicReadOnlyClient: later companion changes.
+
+Required data work should be narrowly scoped:
+
+1. Add batched album/track display summaries rather than repeated per-row reads.
+2. Derive playable/FLAC candidate availability from catalogue assets and root state, with actual verification deferred to the action.
+3. Add typed structured release media before optional track creation.
+4. Audit existing alias update, cover selection, credits update, and queue APIs before introducing new ones.
+5. Prefer one transaction for Save of an album draft spanning identity/aliases/credits/location, avoiding partial saves on Cancel/failure.
+6. Reuse existing tables when possible; schema migrations require compatibility tests and documented snapshot implications.
+
+Existing safety protections to retain: Mac-only catalogue writing, local SQLite, root-relative assets, authorized security scopes, offline roots not treated as deleted, explicit matching, no automatic retagging, verified archive/restore/reset, FLAC backup/journal protections, latest-selection playback generation checks.
+
+### 12.16 Ordered milestones and completion gates
+
+Work on one milestone at a time. A passing build is necessary but does not demonstrate a beautiful or usable screen. Each milestone must show visual evidence and a completed user journey.
+
+| ID | Deliverable | Dependencies | Completion gate |
+|---|---|---|---|
+| R0 | Connected native design compositions with safe fixture data; token/layout definitions | Current baseline | Library → album → edit/add navigation demonstrated at compact/regular widths; long titles, sparse data, many credits and physical-only examples shown |
+| R1 | Extract focused components; two-column navigation and real Settings routing skeleton | R0 | Back/context restoration works across Albums, locations and contributors; no stale album when changing destinations; no service behavior regressions |
+| R2 | Album page, Other titles, readable credits/details, track reading/edit modes, artwork viewer | R1 | All identity information placed together; no duplicate cover controls; physical/offline/partial states correct; edits and cancellation work |
+| R3 | Album library/search, batched artist and availability summaries, filters | R1–R2 | Cards show artist; filters reflect actual ownership/source; large fixture library remains responsive; empty/no-match states actionable |
+| R4a | Unified physical workflow using current title/artist lookup and manual path | R2 | Find → review → location → save → open album; no nested modal maze; empty-row/validation behavior resolved |
+| R4b | Barcode/catalogue/release-URL lookup, duplicate suggestions, optional structured track creation | R4a | Exact-release parsing/query tests, multi-disc fixtures, transactional rollback, no digital assets for physical tracks, failed cover save recovery |
+| R5 | Import review workspace and attachment from an album | R2, shared R4 review components | Add/link/skip, mismatch explanation, resume/retry, existing metadata preservation, source file safety verified |
+| R6 | Player identity, expanded player, queue/lyrics routes | R3 display summaries | Correct cover/artist during rapid selections, compact controls usable, queue semantics tested, no playback lifecycle regression |
+| R7 | Contributor/location/box/playlist browsing and organize flows | R1–R3 | Albums navigable from each; playlist adds in place; reorder accessible; placement guards preserved |
+| R8 | Complete Settings categories, issues, onboarding, recovery wording | R1 | Every category/action works; publication vs backup distinctions clear; guards and recovery paths verified with disposable fixtures |
+| R9 | Whole-app visual/accessibility/performance pass and delivery | R2–R8 | Acceptance matrix below passed or explicitly reported blocked; sequential package verified; handoff records exact next boundary |
+| R10 | iPad follow-on design/implementation | Stable Mac; snapshot capability audit | Read-only behavior and cache/offline/connection flow verified; separate device validation status reported |
+
+R0 should use native previews or a dedicated fixture-backed showcase that never starts the live LibraryStore or reads personal Application Support. If a safe visual harness does not exist, make its isolation explicit before running it. Do not substitute an HTML imitation as proof of native layout.
+
+When a build is authorized, routine design choices follow this specification. Present R0 visual evidence and continue within the authorized scope; seek clarification only for a materially new product decision or a real ambiguity. Do not require repeated approvals for each spacing/label choice.
+
+### 12.17 Validation and acceptance matrix
+
+Use disposable fixture catalogues, generated/local test images, and stubbed provider responses. Do not use the user's live catalogue as a test fixture. Real NAS endurance, actual DAC behavior, and iPad device checks remain separately reported.
+
+Required fixture set:
+
+- Sparse physical-only album with no artwork/tracks.
+- Complete digital album and mixed physical/digital album.
+- Two editions with the same title/artist and different pressing details.
+- Chinese/Japanese title plus translated and romanized other titles.
+- Long classical title with composer, conductor, ensemble, many soloists, and multiple discs.
+- Compilation with explicitly recorded Various Artists.
+- Offline root, missing asset, partial album, unsupported write-back format.
+- Album in a box with inherited hierarchical location.
+- Empty and large playlist; large library around 1000 albums using synthetic metadata.
+- MusicBrainz zero results, incomplete media detail, unavailable cover, timeout, and stale response after selection changes.
+
+| Journey | Observable pass condition |
+|---|---|
+| Find by other title | Search returns correct album; variant is readable near title; no new album created |
+| Browse/back | Grid/list/filter/search/scroll context restored from album and contributor routes |
+| Edit identity | Main/other titles and credits editable together; Cancel writes nothing; invalid draft shows specific errors |
+| Physical save | Title/credit/location sufficient; extra blank row does not block; save opens new album |
+| Physical tracks | Structured multi-disc listing saved only if selected; zero digital assets/playable actions created |
+| Duplicate suggestion | Correct pressing evidence shown; user can open existing or intentionally add another edition |
+| Link files | Pairing reviewed; mismatch refused; successful attachment idempotent and metadata preserved |
+| Artwork | Change action obvious; chosen front persists; viewer source details accessible; originals unchanged |
+| Playback | Correct identity, progress and queue; no late request wins; offline failure understandable |
+| Organization | Add/reorder/remove works; box removal preserves album and requires correct placement |
+| Settings | Every category changes content; no dead category labels; reset/restore guards retained |
+| Resize/accessibility | No horizontal overflow/overlap; usable keyboard focus and screen-reader labels; no color-only status |
+| Safety | Browsing does not change catalogue revision; source checksums unchanged except explicit isolated FLAC-write tests |
+
+Automated tests should cover meaningful behavior: draft normalization, numeric validation, summary derivation, navigation restoration/stale-response handling when practical, provider parsing, transactions, duplicate suggestion evidence, queue semantics, and existing safety regressions. Do not add tests that simply assert view label strings or mirror trivial layout code.
+
+Run focused tests while implementing. At delivery, run repository-required swift build, swift test, swift test -c release, and git diff --check. Reuse successful results until relevant code changes. Capture native visual evidence at the three target sizes and note what was actually inspected. Include editor, menu, empty, loading, error, and success states, not just an attractive populated album.
+
+No release claim based solely on compilation or screenshots of old binaries. Package via Scripts/package-mac-app.sh, advance the next sequential version only for an actual app delivery, check plist/signature, and verify the installed executable matches the packaged executable if installing. Documentation-only planning does not bump a version.
+
+### 12.18 Handoff and execution instructions for Luna
+
+For each milestone, record in HANDOFF.md: completed behavior, actual files changed, tests/visual evidence, remaining limitations, and exactly which milestone comes next. Keep this section as the product specification; do not duplicate progress diaries here or in AGENTS.md.
+
+Suggested implementation prompt:
+
+> Implement the Music Library redesign in BUILD_PLAN.md section 12, beginning at the next unfinished milestone in HANDOFF.md. Read AGENTS.md and IMPLEMENTATION_SPEC.md first. The current app and its safe services are the baseline; do not restart the original project phases. Build connected native fixture compositions for R0, then implement the milestones in dependency order. Follow the specified navigation, title/other-title grouping, browsing/editing separation, physical entry and import flows. Preserve all catalogue, artwork, playback, and source-file safety invariants. Validate real native layouts at compact and wide sizes, use isolated fixtures, and report what was actually verified. Keep changes incremental, update the canonical handoff, and deliver a sequentially versioned app only after the applicable checks pass.
+
+If the user asks for only one milestone, stop after completing that milestone and its handoff. If the user asks for the whole Mac redesign, continue R0–R9 without treating each routine milestone as a new permission request. R10 and deferred provider/audio features do not become included automatically.
+
+Design references used for hierarchy and navigation principles:
+
+- [Apple Layout](https://developer.apple.com/design/human-interface-guidelines/layout)
+- [Apple Sidebars](https://developer.apple.com/design/human-interface-guidelines/sidebars)
+- [Apple Toolbars](https://developer.apple.com/design/human-interface-guidelines/toolbars)
+
+These are guidance, not evidence that the app already implements or has passed the proposed design.
