@@ -21,6 +21,50 @@ struct MusicLibraryMacApp: App {
     }
 }
 
+private enum LibrarySettingsCategory: String, CaseIterable, Identifiable {
+    case general
+    case playback
+    case musicFolders
+    case sharing
+    case backupRestore
+    case advanced
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .general: "General"
+        case .playback: "Playback"
+        case .musicFolders: "Music Folders"
+        case .sharing: "iPad Sharing"
+        case .backupRestore: "Backup & Restore"
+        case .advanced: "Advanced"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .general: "gearshape"
+        case .playback: "waveform"
+        case .musicFolders: "externaldrive.connected.to.line.below"
+        case .sharing: "ipad.and.iphone"
+        case .backupRestore: "externaldrive.badge.timemachine"
+        case .advanced: "wrench.and.screwdriver"
+        }
+    }
+
+    var summary: String {
+        switch self {
+        case .general: "Display preferences and portable catalogue exports"
+        case .playback: "DSF conversion cache and playback preferences"
+        case .musicFolders: "Authorized local and NAS music roots"
+        case .sharing: "Publish a read-only catalogue snapshot for iPad"
+        case .backupRestore: "Master backups and complete catalogue archives"
+        case .advanced: "Health, cleanup, history, and recovery safeguards"
+        }
+    }
+}
+
 private struct LibraryShellView: View {
     private enum AlbumSourceFilter: String, CaseIterable, Identifiable {
         case all, nas, local
@@ -75,6 +119,7 @@ private struct LibraryShellView: View {
     @ObservedObject var library: LibraryStore
     @StateObject private var playback = PlaybackController()
     @State private var section: NavigationSection? = .albums
+    @State private var settingsCategory: LibrarySettingsCategory = .general
     @State private var selectedAlbumID: AlbumID?
     @State private var selectedContributorID: ContributorID?
     @State private var selectedBoxSetID: BoxSetID?
@@ -118,12 +163,10 @@ private struct LibraryShellView: View {
             }
             .navigationTitle("Music Library")
             .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 260)
-        } content: {
-            content
-                .navigationTitle(section?.title ?? "Music Library")
-                .toolbar { toolbar }
         } detail: {
-            detail
+            workspace
+                .navigationTitle(workspaceTitle)
+                .toolbar { toolbar }
         }
         .navigationSplitViewStyle(.balanced)
         .overlay {
@@ -148,6 +191,13 @@ private struct LibraryShellView: View {
                       !current.contains(where: { $0.id == selectedImportBatchID }) {
                 self.selectedImportBatchID = latestImportBatchesByRoot.first?.id
             }
+        }
+        .onChange(of: section) { _, newSection in
+            if newSection != .albums { selectedAlbumID = nil }
+            if newSection != .contributors { selectedContributorID = nil }
+            if newSection != .boxSets { selectedBoxSetID = nil }
+            if newSection != .importInbox { selectedImportBatchID = nil }
+            if newSection != .playlists { selectedPlaylistID = nil }
         }
         .sheet(isPresented: $showsAlbumEditor) { AlbumEditor(library: library) }
         .sheet(isPresented: $showsLocationEditor) { LocationEditor(library: library) }
@@ -225,6 +275,37 @@ private struct LibraryShellView: View {
         case .one: nextMode = .off
         }
         playback.setRepeatMode(nextMode)
+    }
+
+    @ViewBuilder private var workspace: some View {
+        switch section {
+        case .albums:
+            if selectedAlbumID == nil { content } else { detail }
+        case .contributors:
+            if selectedContributorID == nil { content } else { detail }
+        case .boxSets:
+            if selectedBoxSetID == nil { content } else { detail }
+        case .importInbox:
+            if selectedImportBatchID == nil { content } else { detail }
+        case .playlists:
+            if selectedPlaylistID == nil { content } else { detail }
+        case .settings:
+            SettingsWorkspace(
+                library: library,
+                playback: playback,
+                category: $settingsCategory,
+                onShowAlbum: { albumID in
+                    selectedAlbumID = albumID
+                    section = .albums
+                },
+                onShowImportBatch: { batchID in
+                    selectedImportBatchID = batchID
+                    section = .importInbox
+                }
+            )
+        case .locations, .none:
+            content
+        }
     }
 
     @ViewBuilder private var content: some View {
@@ -313,14 +394,18 @@ private struct LibraryShellView: View {
             }
             .overlay { if library.isReady && library.playlists.isEmpty { ContentUnavailableView("No playlists", systemImage: "music.note.list", description: Text("Create a playlist, then add tracks from an album.")) } }
         case .settings:
-            List {
-                Label("Overview", systemImage: "rectangle.grid.2x2")
-                Label("Publishing and Backup", systemImage: "externaldrive.badge.timemachine")
-                Label("Music Folders", systemImage: "externaldrive.connected.to.line.below")
-                Label("Library Health", systemImage: "checkmark.shield")
-                Label("Recovery and Activity", systemImage: "clock.arrow.circlepath")
+            List(LibrarySettingsCategory.allCases, selection: $settingsCategory) { category in
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(category.title)
+                        Text(category.summary).font(.caption).foregroundStyle(.secondary)
+                    }
+                } icon: {
+                    Image(systemName: category.symbol)
+                }
+                .tag(category)
             }
-            .foregroundStyle(.secondary)
+            .listStyle(.sidebar)
         default:
             ContentUnavailableView(section?.title ?? "Music Library", systemImage: section?.symbol ?? "music.note")
         }
@@ -441,7 +526,7 @@ private struct LibraryShellView: View {
     }
 
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
-        if section == .albums {
+        if section == .albums && selectedAlbumID == nil {
             ToolbarItemGroup(placement: .automatic) {
                 Picker("View", selection: $albumPresentation) {
                     ForEach(AlbumPresentation.allCases) { presentation in
@@ -467,33 +552,111 @@ private struct LibraryShellView: View {
                 .help("Filter and sort albums")
             }
         }
-        ToolbarItem(placement: .primaryAction) {
-            if section == .albums {
-                Button("Add Physical Album", systemImage: "plus") {
-                    showsAlbumEditor = true
+        if let backDestination = backDestination {
+            ToolbarItem(placement: .navigation) {
+                Button(backDestination.title, systemImage: "chevron.left") {
+                    backDestination.clear()
                 }
-                .help("Add a physical album to the catalogue")
-            } else {
-                Button(section == .locations ? "Add Location" : section == .boxSets ? "Add Box Set" : section == .settings ? "Add Music Folder" : section == .importInbox ? "Rescan Music Folder" : section == .playlists ? "Add Playlist" : "Add Album", systemImage: "plus") {
-                    switch section {
-                    case .locations: showsLocationEditor = true
-                    case .boxSets: showsBoxSetEditor = true
-                    case .settings: showsStorageRootPicker = true
-                    case .importInbox: showsScanRootPicker = true
-                    case .playlists: showsPlaylistEditor = true
-                    default: break
+                .help("Return to \(backDestination.title)")
+            }
+        } else {
+            ToolbarItem(placement: .primaryAction) {
+                if section == .albums {
+                    Button("Add Physical Album", systemImage: "plus") {
+                        showsAlbumEditor = true
+                    }
+                    .help("Add a physical album to the catalogue")
+                } else if section == .settings && settingsCategory == .musicFolders {
+                    Button("Add Music Folder", systemImage: "plus") { showsStorageRootPicker = true }
+                } else {
+                    Button(section == .locations ? "Add Location" : section == .boxSets ? "Add Box Set" : section == .importInbox ? "Rescan Music Folder" : section == .playlists ? "Add Playlist" : "Add Album", systemImage: "plus") {
+                        switch section {
+                        case .locations: showsLocationEditor = true
+                        case .boxSets: showsBoxSetEditor = true
+                        case .importInbox: showsScanRootPicker = true
+                        case .playlists: showsPlaylistEditor = true
+                        default: break
+                        }
                     }
                 }
             }
         }
     }
 
+    private var backDestination: (title: String, clear: () -> Void)? {
+        if selectedAlbumID != nil && section == .albums { return ("Albums", { selectedAlbumID = nil }) }
+        if selectedContributorID != nil && section == .contributors { return ("Contributors", { selectedContributorID = nil }) }
+        if selectedBoxSetID != nil && section == .boxSets { return ("Box Sets", { selectedBoxSetID = nil }) }
+        if selectedImportBatchID != nil && section == .importInbox { return ("Imports", { selectedImportBatchID = nil }) }
+        if selectedPlaylistID != nil && section == .playlists { return ("Playlists", { selectedPlaylistID = nil }) }
+        return nil
+    }
+
     private var activeAlbumFilter: Bool {
         albumSourceFilter != .all || showsFavouriteAlbumsOnly || albumSort != .title
     }
+
+    private var workspaceTitle: String {
+        if section == .albums, let selectedAlbumID, let album = library.albums.first(where: { $0.id == selectedAlbumID }) {
+            return album.title
+        }
+        if section == .contributors, let selectedContributorID, let contributor = library.contributors.first(where: { $0.id == selectedContributorID }) {
+            return contributor.name
+        }
+        if section == .boxSets, let selectedBoxSetID, let boxSet = library.boxSets.first(where: { $0.id == selectedBoxSetID }) {
+            return boxSet.title
+        }
+        if section == .playlists, let selectedPlaylistID, let playlist = library.playlists.first(where: { $0.id == selectedPlaylistID }) {
+            return playlist.name
+        }
+        return section?.title ?? "Music Library"
+    }
 }
 
-private struct AlbumBrowser: View {
+private struct SettingsWorkspace: View {
+    @ObservedObject var library: LibraryStore
+    @ObservedObject var playback: PlaybackController
+    @Binding var category: LibrarySettingsCategory
+    let onShowAlbum: (AlbumID) -> Void
+    let onShowImportBatch: (ImportBatchID) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .center, spacing: 14) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(category.title)
+                        .font(.title2.weight(.semibold))
+                    Text(category.summary)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 12)
+                Picker("Settings category", selection: $category) {
+                    ForEach(LibrarySettingsCategory.allCases) { item in
+                        Label(item.title, systemImage: item.symbol).tag(item)
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(minWidth: 180, alignment: .trailing)
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 18)
+
+            Divider()
+
+            StorageRootList(
+                library: library,
+                playback: playback,
+                category: category,
+                onShowAlbum: onShowAlbum,
+                onShowImportBatch: onShowImportBatch
+            )
+        }
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+}
+
+struct AlbumBrowser: View {
     let albums: [Album]
     @Binding var selectedAlbumID: AlbumID?
     let usesGrid: Bool
@@ -927,6 +1090,7 @@ private func relinkConfirmationMessage(_ proposal: AssetRelinkProposal) -> Strin
 private struct StorageRootList: View {
     @ObservedObject var library: LibraryStore
     @ObservedObject var playback: PlaybackController
+    let category: LibrarySettingsCategory?
     let onShowAlbum: (AlbumID) -> Void
     let onShowImportBatch: (ImportBatchID) -> Void
     @State private var rootToRename: StorageRoot?
@@ -947,9 +1111,29 @@ private struct StorageRootList: View {
     @State private var showsCatalogueReset = false
     @State private var isRunningCatalogueMaintenance = false
 
+    init(
+        library: LibraryStore,
+        playback: PlaybackController,
+        category: LibrarySettingsCategory? = nil,
+        onShowAlbum: @escaping (AlbumID) -> Void,
+        onShowImportBatch: @escaping (ImportBatchID) -> Void
+    ) {
+        self.library = library
+        self.playback = playback
+        self.category = category
+        self.onShowAlbum = onShowAlbum
+        self.onShowImportBatch = onShowImportBatch
+    }
+
+    private func shows(_ categories: LibrarySettingsCategory...) -> Bool {
+        guard let category else { return true }
+        return categories.contains(category)
+    }
+
     var body: some View {
         List {
-            Section {
+            if shows(.general) {
+                Section {
                 HStack(spacing: 12) {
                     SettingsStatusCard(
                         symbol: "square.stack.3d.up",
@@ -974,9 +1158,11 @@ private struct StorageRootList: View {
                     )
                 }
                 .padding(.vertical, 8)
+                }
             }
 
-            Section {
+            if shows(.sharing) {
+                Section {
                 Text(library.snapshotPublishStatus).foregroundStyle(.secondary)
                 if let path = library.snapshotDestinationPath { Text(path).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
                 Text("Catalogue revision \(library.catalogueRevision) · last published \(library.lastPublishedRevision.map(String.init) ?? "never")\(library.isSnapshotPublishPending ? " · pending" : "")").font(.caption).foregroundStyle(.secondary)
@@ -989,26 +1175,49 @@ private struct StorageRootList: View {
                         catch { library.presentError(error) }
                     }
                 }.disabled(library.snapshotDestinationPath == nil)
-                Divider()
-                Text(library.masterBackupStatus).font(.caption).foregroundStyle(.secondary)
-                Button("Back Up Master Database") {
-                    Task {
-                        do { try await library.createMasterBackupNow() }
-                        catch { library.presentError(error) }
-                    }
-                }.disabled(library.snapshotDestinationPath == nil)
-                Button("Restore Master Backup…", role: .destructive) { showsMasterRestorePicker = true }
-            } header: {
-                Label("Publishing and Backup", systemImage: "externaldrive.badge.timemachine")
+                } header: {
+                Label("iPad Sharing", systemImage: "ipad.and.iphone")
+                }
             }
-            Section {
+
+            if shows(.backupRestore) {
+                Section {
+                    Text(library.masterBackupStatus).font(.caption).foregroundStyle(.secondary)
+                    Button("Back Up Master Database") {
+                        Task {
+                            do { try await library.createMasterBackupNow() }
+                            catch { library.presentError(error) }
+                        }
+                    }
+                    .disabled(library.snapshotDestinationPath == nil)
+                    Button("Restore Master Backup…", role: .destructive) { showsMasterRestorePicker = true }
+                    Divider()
+                    Button("Export Complete Catalogue Archive…", systemImage: "archivebox") {
+                        exportCompleteCatalogueArchive()
+                    }
+                    Button("Restore Complete Catalogue Archive…", systemImage: "arrow.counterclockwise.circle", role: .destructive) {
+                        chooseCompleteCatalogueArchive()
+                    }
+                    Text("Complete archives contain the verified database and managed artwork, but never source audio files.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } header: {
+                    Label("Backup & Restore", systemImage: "externaldrive.badge.timemachine")
+                }
+            }
+
+            if shows(.general) {
+                Section {
                 Text("Export a portable JSON view of the current catalogue. Source media files are never copied.").font(.caption).foregroundStyle(.secondary)
                 Button("Export Catalogue JSON…", systemImage: "square.and.arrow.up") { exportCatalogue() }
                 Button("Export Catalogue CSV…", systemImage: "tablecells") { exportCatalogueCSV() }
-            } header: {
+                } header: {
                 Label("Export", systemImage: "square.and.arrow.up")
+                }
             }
-            Section {
+
+            if shows(.advanced) {
+                Section {
                 if isRunningCatalogueMaintenance {
                     ProgressView("Working on catalogue recovery data…")
                         .controlSize(.small)
@@ -1019,24 +1228,20 @@ private struct StorageRootList: View {
                 Button("Review Safe Cleanup…", systemImage: "sparkles") {
                     loadCleanupPreview()
                 }
-                Button("Export Complete Catalogue Archive…", systemImage: "archivebox") {
-                    exportCompleteCatalogueArchive()
-                }
-                Button("Restore Complete Catalogue Archive…", systemImage: "arrow.counterclockwise.circle", role: .destructive) {
-                    chooseCompleteCatalogueArchive()
-                }
-                Divider()
                 Button("Reset Catalogue…", systemImage: "trash.slash", role: .destructive) {
                     showsCatalogueReset = true
                 }
-                Text("Safe Cleanup removes only superseded scan history and records that are not linked anywhere. Complete archives contain the database and app-managed artwork, but never source audio files. Reset preserves registered music folders.")
+                Text("Safe Cleanup removes only superseded scan history and records that are not linked anywhere. Reset preserves registered music folders and never changes source audio.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } header: {
                 Label("Catalogue Maintenance", systemImage: "wrench.and.screwdriver")
+                }
+                .disabled(isRunningCatalogueMaintenance)
             }
-            .disabled(isRunningCatalogueMaintenance)
-            Section {
+
+            if shows(.playback) {
+                Section {
                 Text("DSF files are converted to replaceable high-resolution PCM WAV files for playback. Original music files are never changed.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -1072,9 +1277,12 @@ private struct StorageRootList: View {
                     .foregroundStyle(.secondary)
             } header: {
                 Label("DSF Playback Cache", systemImage: "waveform.badge.magnifyingglass")
+                }
+                .disabled(isManagingDSFCache || playback.isLoading)
             }
-            .disabled(isManagingDSFCache || playback.isLoading)
-            Section {
+
+            if shows(.musicFolders) {
+                Section {
                 Button("Recheck Library Health", systemImage: "arrow.clockwise") {
                     Task {
                         do { try await library.recheckLibraryHealth() }
@@ -1138,8 +1346,10 @@ private struct StorageRootList: View {
                 }
             } header: {
                 Label("Music Folders", systemImage: "externaldrive.connected.to.line.below")
+                }
             }
-            if !library.deletedAlbums.isEmpty {
+
+            if shows(.advanced) && !library.deletedAlbums.isEmpty {
                 Section("Recently Deleted") {
                     ForEach(library.deletedAlbums) { album in
                         HStack {
@@ -1151,7 +1361,7 @@ private struct StorageRootList: View {
                     }
                 }
             }
-            if !library.deletedPlaylists.isEmpty {
+            if shows(.advanced) && !library.deletedPlaylists.isEmpty {
                 Section("Recently Deleted Playlists") {
                     ForEach(library.deletedPlaylists) { playlist in
                         HStack {
@@ -1163,7 +1373,7 @@ private struct StorageRootList: View {
                     }
                 }
             }
-            if !library.deletedBoxSets.isEmpty {
+            if shows(.advanced) && !library.deletedBoxSets.isEmpty {
                 Section("Recently Deleted Empty Box Sets") {
                     ForEach(library.deletedBoxSets) { box in
                         HStack {
@@ -1174,7 +1384,8 @@ private struct StorageRootList: View {
                     }
                 }
             }
-            Section {
+            if shows(.advanced) {
+                Section {
                 if library.libraryHealthIssues.isEmpty {
                     Label("No catalogue repair items are currently detected.", systemImage: "checkmark.circle.fill")
                         .foregroundStyle(.green)
@@ -1190,8 +1401,9 @@ private struct StorageRootList: View {
                 }
             } header: {
                 Label("Library Health", systemImage: "checkmark.shield")
+                }
             }
-            if !importBatchesNeedingAttention.isEmpty {
+            if shows(.advanced) && !importBatchesNeedingAttention.isEmpty {
                 Section("Import Inbox Attention") {
                     ForEach(importBatchesNeedingAttention) { batch in
                         VStack(alignment: .leading) {
@@ -1203,7 +1415,7 @@ private struct StorageRootList: View {
                     }
                 }
             }
-            if !library.duplicateAssets.isEmpty {
+            if shows(.advanced) && !library.duplicateAssets.isEmpty {
                 Section("Possible duplicate assets") {
                     ForEach(library.duplicateAssets, id: \.contentHash) { duplicate in
                         VStack(alignment: .leading) {
@@ -1213,7 +1425,7 @@ private struct StorageRootList: View {
                     }
                 }
             }
-            if !library.relinkProposals.isEmpty {
+            if shows(.advanced) && !library.relinkProposals.isEmpty {
                 Section("Relink proposals") {
                     ForEach(library.relinkProposals) { proposal in
                         VStack(alignment: .leading) {
@@ -1233,7 +1445,7 @@ private struct StorageRootList: View {
                     }
                 }
             }
-            if !library.recentCatalogueActivity.isEmpty {
+            if shows(.advanced) && !library.recentCatalogueActivity.isEmpty {
                 Section("Recent Catalogue Activity") {
                     Text("Each row records a committed catalogue revision. Edited fields show the previous and new value; older operations may show only the revision marker.")
                         .font(.caption).foregroundStyle(.secondary)
