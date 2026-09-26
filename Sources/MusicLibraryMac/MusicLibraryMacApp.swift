@@ -3162,6 +3162,9 @@ private struct AlbumDetail: View {
                 Button("Artwork Details…", systemImage: "info.circle") { showsArtworkManagement = true }
             }
             Menu("Album Actions", systemImage: "ellipsis.circle") {
+                if aliases.isEmpty {
+                    Button("Add Other Title…", systemImage: "text.badge.plus") { showsAddAlias = true }
+                }
                 if !discs.isEmpty {
                     Divider()
                     Button("Preview FLAC Tag Changes…", systemImage: "tag") { showsTagWritePreview = true }

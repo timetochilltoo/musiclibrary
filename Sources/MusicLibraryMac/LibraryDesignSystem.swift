@@ -188,19 +188,15 @@ struct AlbumIdentityHeader: View {
                 }
             }
 
-            VStack(alignment: .leading, spacing: 9) {
-                LibrarySectionHeader(
-                    "Other titles",
-                    subtitle: "Alternative, translated, and romanized names used for search",
-                    actionTitle: "Add title",
-                    actionSymbol: "plus",
-                    action: onAddOtherTitle
-                )
-                if aliases.isEmpty {
-                    Text("No other titles recorded.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                } else {
+            if !aliases.isEmpty {
+                VStack(alignment: .leading, spacing: 9) {
+                    LibrarySectionHeader(
+                        "Other titles",
+                        subtitle: "Alternative, translated, and romanized names used for search",
+                        actionTitle: "Add title",
+                        actionSymbol: "plus",
+                        action: onAddOtherTitle
+                    )
                     ForEach(aliases) { alias in
                         AlbumOtherTitleRow(alias: alias, onRemove: { onRemoveOtherTitle(alias) })
                     }

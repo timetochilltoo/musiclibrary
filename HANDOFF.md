@@ -227,7 +227,7 @@ This database is user data. Do not remove it during development. If a destructiv
 
 ## 8. Current tests and verification baseline
 
-The current debug baseline contains 102 tests in 9 suites. Delivery validation for version 0.13 (build 14) also runs the rebuilt release suite before commit. Run `swift test` and `swift test -c release`; do not rely on this handoff alone.
+The current debug baseline contains 102 tests in 9 suites. Delivery validation for version 0.14 (build 15) also runs the rebuilt release suite before commit. Run `swift test` and `swift test -c release`; do not rely on this handoff alone.
 
 Albums now expose **Move to Recently Deleted** in the Albums list context menu. Settings displays a **Recently Deleted** section and its Restore action. This uses the existing soft-delete records, preserves album relationships, and never deletes or changes source media files.
 
@@ -524,13 +524,19 @@ The first whole-app redesign slice is implemented. `Sources/MusicLibraryMac/Libr
 
 This slice changes presentation only. It does not change the schema, catalogue writer boundary, MusicBrainz request policy, artwork-copy safeguards, source-audio behavior, playback services, or tag-write authorization. `swift build`, `swift test`, and `swift test -c release` pass with 102 tests in 9 suites. `Scripts/package-mac-app.sh` produced `build/Music Library 0.13.app` (build 14); plist lint and strict deep code-signature verification pass. The Mac was locked during delivery, so the final interactive screenshot walkthrough remains pending and is not claimed as complete. The known non-blocking `AVMetadataItem.stringValue` deprecation remains.
 
+### 27 September 2026 alternative-title empty-state correction
+
+When an album has no alternative titles, Album Detail now omits the entire **Other titles** section rather than rendering an empty placeholder. The add action remains available from the **Album Actions** menu, while albums that already have variants keep the inline **Add title** action beside the identity information. This keeps the identity area quiet without making the workflow unavailable. The correction remains presentation-only and preserves the `album_alias` model and search behavior.
+
+`swift build`, `swift test`, and `swift test -c release` pass with 102 tests in 9 suites. `Scripts/package-mac-app.sh` produced `build/Music Library 0.14.app` (build 15); plist lint and strict deep code-signature verification pass. The Mac was locked during delivery, so the final interactive screenshot walkthrough remains pending and is not claimed as complete. The known non-blocking `AVMetadataItem.stringValue` deprecation remains.
+
 ### Next safe slice
 
 **BUILD_PLAN.md section 12 remains the controlling redesign specification.** The next implementation slice completes the remaining R0/R1 foundation: add a connected fixture-backed library browsing composition and a physical-entry composition for native compact/regular-size review, extract the shell into a stable two-column navigation/workspace structure, and route Settings categories to separate real destinations instead of a static label list. Preserve the existing Album Detail work, use fixture-only visual checks where live data is not required, and then proceed to R2's reading/edit modes and artwork viewer.
 
 The plan explicitly supersedes the old permanent three-column presentation and “UI implementation complete” gate. Do not restart Phase 0 or rebuild the existing persistence/player services. Barcode/release-URL lookup and optional MusicBrainz track creation are planned functional work, not existing capabilities. R10/iPad and deferred providers remain a separate boundary. No chat was created or messaged as part of preparing this plan.
 
-The preceding implementation was validated with 102 tests in debug and release. For the next slice, run the full debug/release tests, package 0.14 only after a successful runnable build, and perform the pending interactive visual walkthrough on an unlocked Mac.
+The preceding implementation was validated with 102 tests in debug and release. For the next slice, run the full debug/release tests, package 0.15 only after a successful runnable build, and perform the pending interactive visual walkthrough on an unlocked Mac.
 
 ### Existing real-library acceptance boundary
 
