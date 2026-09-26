@@ -227,7 +227,7 @@ This database is user data. Do not remove it during development. If a destructiv
 
 ## 8. Current tests and verification baseline
 
-The current debug baseline contains 102 tests in 9 suites. Delivery validation for version 0.12 (build 13) also runs the rebuilt release suite before commit. Run `swift test` and `swift test -c release`; do not rely on this handoff alone.
+The current debug baseline contains 102 tests in 9 suites. Delivery validation for version 0.13 (build 14) also runs the rebuilt release suite before commit. Run `swift test` and `swift test -c release`; do not rely on this handoff alone.
 
 Albums now expose **Move to Recently Deleted** in the Albums list context menu. Settings displays a **Recently Deleted** section and its Restore action. This uses the existing soft-delete records, preserves album relationships, and never deletes or changes source media files.
 
@@ -520,9 +520,9 @@ The former standalone **Source file tag write-back** section is removed from the
 
 ### 27 September 2026 R0 visual foundation and Album Detail checkpoint
 
-The first whole-app redesign slice is implemented. `Sources/MusicLibraryMac/LibraryDesignSystem.swift` adds reusable native Mac panels, section headers, metadata grids, status pills, and the connected `AlbumIdentityHeader`. `LibraryDesignPreviews.swift` contains isolated populated and sparse physical-only fixtures; the previews do not start `LibraryStore`, open Application Support, or read personal media. `AlbumDetail` now uses a reading-oriented `ScrollView`: album title, primary artist, Other titles, catalogue metadata, credits, availability, and one cover-change action are together at the top; tracks are grouped by disc; infrequent edit/remove/metadata controls are in contextual menus; collection notes have their own compact panel; artwork provenance and portability are in a separate Artwork workspace rather than a repeated bottom section. The sidebar labels now use Browse, Collection, and Imports.
+The first whole-app redesign slice is implemented. `Sources/MusicLibraryMac/LibraryDesignSystem.swift` adds reusable native Mac panels, section headers, metadata grids, status pills, and the connected `AlbumIdentityHeader`. `LibraryDesignPreviews.swift` contains isolated populated and sparse physical-only fixtures; the previews do not start `LibraryStore`, open Application Support, or read personal media. `AlbumDetail` now uses a reading-oriented `ScrollView`: album title, primary artist, the complete Other titles list and its add/remove actions, catalogue metadata, credits, availability, and one cover-change action are together at the top; the duplicate Other titles panel below Tracks has been removed; tracks are grouped by disc; infrequent edit/remove/metadata controls are in contextual menus; collection notes have their own compact panel; artwork provenance and portability are in a separate Artwork workspace rather than a repeated bottom section. The sidebar labels now use Browse, Collection, and Imports.
 
-This slice changes presentation only. It does not change the schema, catalogue writer boundary, MusicBrainz request policy, artwork-copy safeguards, source-audio behavior, playback services, or tag-write authorization. `swift build`, `swift test`, and `swift test -c release` pass with 102 tests in 9 suites. `Scripts/package-mac-app.sh` produced `build/Music Library 0.12.app` (build 13); plist lint and strict deep code-signature verification pass. The Mac was locked during delivery, so the final interactive screenshot walkthrough remains pending and is not claimed as complete. The known non-blocking `AVMetadataItem.stringValue` deprecation remains.
+This slice changes presentation only. It does not change the schema, catalogue writer boundary, MusicBrainz request policy, artwork-copy safeguards, source-audio behavior, playback services, or tag-write authorization. `swift build`, `swift test`, and `swift test -c release` pass with 102 tests in 9 suites. `Scripts/package-mac-app.sh` produced `build/Music Library 0.13.app` (build 14); plist lint and strict deep code-signature verification pass. The Mac was locked during delivery, so the final interactive screenshot walkthrough remains pending and is not claimed as complete. The known non-blocking `AVMetadataItem.stringValue` deprecation remains.
 
 ### Next safe slice
 
@@ -530,7 +530,7 @@ This slice changes presentation only. It does not change the schema, catalogue w
 
 The plan explicitly supersedes the old permanent three-column presentation and “UI implementation complete” gate. Do not restart Phase 0 or rebuild the existing persistence/player services. Barcode/release-URL lookup and optional MusicBrainz track creation are planned functional work, not existing capabilities. R10/iPad and deferred providers remain a separate boundary. No chat was created or messaged as part of preparing this plan.
 
-The preceding implementation was validated with 102 tests in debug and release. For the next slice, run the full debug/release tests, package 0.13 only after a successful runnable build, and perform the pending interactive visual walkthrough on an unlocked Mac.
+The preceding implementation was validated with 102 tests in debug and release. For the next slice, run the full debug/release tests, package 0.14 only after a successful runnable build, and perform the pending interactive visual walkthrough on an unlocked Mac.
 
 ### Existing real-library acceptance boundary
 

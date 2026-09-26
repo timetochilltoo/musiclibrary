@@ -55,7 +55,9 @@ private enum LibraryDesignPreviewFixtures {
             onAddContributor: {},
             onEditContributor: { _ in },
             onEditCreditedName: { _ in },
-            onRemoveContributor: { _ in }
+            onRemoveContributor: { _ in },
+            onAddOtherTitle: {},
+            onRemoveOtherTitle: { _ in }
         )
         .padding(24)
     }
@@ -83,7 +85,9 @@ private enum LibraryDesignPreviewFixtures {
             onAddContributor: {},
             onEditContributor: { _ in },
             onEditCreditedName: { _ in },
-            onRemoveContributor: { _ in }
+            onRemoveContributor: { _ in },
+            onAddOtherTitle: {},
+            onRemoveOtherTitle: { _ in }
         )
         .padding(24)
     }

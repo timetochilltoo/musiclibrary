@@ -128,6 +128,8 @@ struct AlbumIdentityHeader: View {
     let onEditContributor: (ContributorCredit) -> Void
     let onEditCreditedName: (ContributorCredit) -> Void
     let onRemoveContributor: (ContributorCredit) -> Void
+    let onAddOtherTitle: () -> Void
+    let onRemoveOtherTitle: (AlbumAlias) -> Void
 
     var body: some View {
         LibraryPanel {
@@ -186,20 +188,21 @@ struct AlbumIdentityHeader: View {
                 }
             }
 
-            if !aliases.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Other titles")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    Text(aliases.prefix(4).map(\.name).joined(separator: "  ·  "))
+            VStack(alignment: .leading, spacing: 9) {
+                LibrarySectionHeader(
+                    "Other titles",
+                    subtitle: "Alternative, translated, and romanized names used for search",
+                    actionTitle: "Add title",
+                    actionSymbol: "plus",
+                    action: onAddOtherTitle
+                )
+                if aliases.isEmpty {
+                    Text("No other titles recorded.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                        .textSelection(.enabled)
-                    if aliases.count > 4 {
-                        Text("+(aliases.count - 4) more")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
+                } else {
+                    ForEach(aliases) { alias in
+                        AlbumOtherTitleRow(alias: alias, onRemove: { onRemoveOtherTitle(alias) })
                     }
                 }
             }
@@ -296,12 +299,38 @@ struct AlbumIdentityHeader: View {
                     }
                 }
                 if credits.count > 3 {
-                    Text("+(credits.count - 3) more credits")
+                    Text("+\(credits.count - 3) more credits")
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                 }
             }
         }
         .padding(.top, 2)
+    }
+}
+
+struct AlbumOtherTitleRow: View {
+    let alias: AlbumAlias
+    let onRemove: () -> Void
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Image(systemName: "textformat")
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(alias.name)
+                    .textSelection(.enabled)
+                Text([alias.kind.rawValue.capitalized, alias.locale].compactMap { $0 }.joined(separator: " · "))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 8)
+            Menu {
+                Button("Remove Other Title", systemImage: "trash", role: .destructive, action: onRemove)
+            } label: {
+                Image(systemName: "ellipsis.circle")
+            }
+            .accessibilityLabel("Actions for \(alias.name)")
+        }
     }
 }

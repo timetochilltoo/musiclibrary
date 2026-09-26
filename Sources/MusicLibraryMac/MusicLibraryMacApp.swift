@@ -3098,7 +3098,9 @@ private struct AlbumDetail: View {
                     onAddContributor: { showsAddContributor = true },
                     onEditContributor: { contributorToEdit = $0.contributor },
                     onEditCreditedName: { albumCreditToEdit = $0 },
-                    onRemoveContributor: { removeAlbumContributor($0) }
+                    onRemoveContributor: { removeAlbumContributor($0) },
+                    onAddOtherTitle: { showsAddAlias = true },
+                    onRemoveOtherTitle: { removeAlias($0) }
                 )
 
                 LibraryPanel {
@@ -3124,27 +3126,6 @@ private struct AlbumDetail: View {
                                     .buttonStyle(.borderless)
                                     .font(.callout)
                                 if disc.id != discs.last?.id { Divider().padding(.vertical, 4) }
-                            }
-                        }
-                    }
-                }
-
-                LibraryPanel {
-                    VStack(alignment: .leading, spacing: 12) {
-                        LibrarySectionHeader(
-                            "Other titles",
-                            subtitle: "Alternate, translated, and romanized names for search",
-                            actionTitle: "Add title",
-                            actionSymbol: "plus",
-                            action: { showsAddAlias = true }
-                        )
-                        if aliases.isEmpty {
-                            Text("No other titles recorded.")
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
-                        } else {
-                            ForEach(aliases) { alias in
-                                albumAliasRow(alias)
                             }
                         }
                     }
@@ -3501,27 +3482,6 @@ private struct AlbumDetail: View {
             .accessibilityLabel("Actions for disc \(disc.number)")
         }
         .padding(.top, 3)
-    }
-
-    private func albumAliasRow(_ alias: AlbumAlias) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Image(systemName: "textformat")
-                .foregroundStyle(.secondary)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(alias.name)
-                    .textSelection(.enabled)
-                Text([alias.kind.rawValue.capitalized, alias.locale].compactMap { $0 }.joined(separator: " · "))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            Menu {
-                Button("Remove Other Title", systemImage: "trash", role: .destructive) { removeAlias(alias) }
-            } label: {
-                Image(systemName: "ellipsis.circle")
-            }
-            .accessibilityLabel("Actions for \(alias.name)")
-        }
     }
 
     private func trackDuration(_ milliseconds: Int) -> String {
