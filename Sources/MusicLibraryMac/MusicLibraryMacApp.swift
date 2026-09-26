@@ -36,7 +36,7 @@ private struct LibraryShellView: View {
             case .contributors: "Contributors"
             case .locations: "Locations"
             case .boxSets: "Box Sets"
-            case .importInbox: "Library Changes"
+            case .importInbox: "Imports"
             case .playlists: "Playlists"
             case .settings: "Settings"
             }
@@ -100,12 +100,12 @@ private struct LibraryShellView: View {
     var body: some View {
         NavigationSplitView {
             List(selection: $section) {
-                Section("Library") {
+                Section("Browse") {
                     sidebarRow(.albums)
                     sidebarRow(.contributors)
                     sidebarRow(.playlists)
                 }
-                Section("Organize") {
+                Section("Collection") {
                     sidebarRow(.locations)
                     sidebarRow(.boxSets)
                 }
@@ -628,7 +628,7 @@ private struct AlbumListRow: View {
     }
 }
 
-private struct AlbumArtworkImage: View {
+struct AlbumArtworkImage: View {
     let path: String?
     @State private var image: NSImage?
 
@@ -3081,15 +3081,16 @@ private struct AlbumDetail: View {
     @State private var showsArtworkManagement = false
 
     var body: some View {
-        Form {
-            Section {
-                AlbumHero(
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                AlbumIdentityHeader(
                     album: album,
                     artworkPath: artwork.first(where: { $0.role == .front && $0.isSelected })?.localPath,
                     isLocal: library.localAlbumIDs.contains(album.id),
                     isPublished: library.publishedAlbumIDs.contains(album.id),
                     locationName: album.hasCD ? locationName : nil,
                     credits: credits,
+                    aliases: aliases,
                     canPlay: !playableTracks.isEmpty,
                     onChangeArtwork: { showsArtworkPicker = true },
                     onPlay: { playAlbum(shuffled: false) },
@@ -3099,42 +3100,87 @@ private struct AlbumDetail: View {
                     onEditCreditedName: { albumCreditToEdit = $0 },
                     onRemoveContributor: { removeAlbumContributor($0) }
                 )
-                .padding(.vertical, 8)
-            }
-            .listRowBackground(Color.clear)
 
-            if !discs.isEmpty {
-                Section("Tracks") {
-                    ForEach(discs) { disc in
-                        discHeaderRow(disc)
-                        ForEach(tracksByDisc[disc.id] ?? []) { track in
-                            albumTrackRow(track)
+                LibraryPanel {
+                    VStack(alignment: .leading, spacing: 13) {
+                        LibrarySectionHeader(
+                            "Tracks",
+                            subtitle: trackSummary,
+                            actionTitle: "Add Disc",
+                            actionSymbol: "plus",
+                            action: { showsAddDisc = true }
+                        )
+                        if discs.isEmpty {
+                            Text("Create a disc to start building the catalogue track list. Digital files are never changed by these catalogue edits.")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ForEach(discs) { disc in
+                                discHeaderRow(disc)
+                                ForEach(tracksByDisc[disc.id] ?? []) { track in
+                                    albumTrackRow(track)
+                                }
+                                Button("Add track", systemImage: "plus") { discForTrack = disc }
+                                    .buttonStyle(.borderless)
+                                    .font(.callout)
+                                if disc.id != discs.last?.id { Divider().padding(.vertical, 4) }
+                            }
                         }
-                        Button("Add Track", systemImage: "plus") { discForTrack = disc }
                     }
                 }
-            } else {
-                Section("Tracks") { Button("Add Disc", systemImage: "plus") { showsAddDisc = true } }
-            }
-            Section("Aliases") {
-                ForEach(aliases) { alias in
-                    albumAliasRow(alias)
+
+                LibraryPanel {
+                    VStack(alignment: .leading, spacing: 12) {
+                        LibrarySectionHeader(
+                            "Other titles",
+                            subtitle: "Alternate, translated, and romanized names for search",
+                            actionTitle: "Add title",
+                            actionSymbol: "plus",
+                            action: { showsAddAlias = true }
+                        )
+                        if aliases.isEmpty {
+                            Text("No other titles recorded.")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ForEach(aliases) { alias in
+                                albumAliasRow(alias)
+                            }
+                        }
+                    }
                 }
-                Button("Add Alias", systemImage: "plus") { showsAddAlias = true }
-            }
-            Section {
-                DisclosureGroup("Artwork management", isExpanded: $showsArtworkManagement) {
-                    artworkManagementContent
+
+                if album.hasCD || album.notes != nil || album.physicalNote != nil {
+                    LibraryPanel {
+                        VStack(alignment: .leading, spacing: 12) {
+                            LibrarySectionHeader("Collection", subtitle: "Physical placement and catalogue notes")
+                            if album.hasCD {
+                                LabeledContent("Location", value: locationName)
+                                if let note = album.physicalNote, !note.isEmpty {
+                                    LabeledContent("Physical note", value: note)
+                                }
+                            }
+                            if let notes = album.notes, !notes.isEmpty {
+                                LabeledContent("Notes", value: notes)
+                                    .textSelection(.enabled)
+                            }
+                        }
+                    }
                 }
             }
+            .frame(maxWidth: 1_060, alignment: .leading)
+            .padding(24)
         }
-        .formStyle(.grouped)
+        .background(Color(nsColor: .windowBackgroundColor))
         .navigationTitle(album.title)
         .toolbar {
             Button("Edit Album", systemImage: "pencil", action: onEdit)
             Button("Add Disc", systemImage: "plus") { showsAddDisc = true }
+            Menu("Artwork", systemImage: "photo") {
+                Button("Change Cover…", systemImage: "photo.badge.plus") { showsArtworkPicker = true }
+                Button("Artwork Details…", systemImage: "info.circle") { showsArtworkManagement = true }
+            }
             Menu("Album Actions", systemImage: "ellipsis.circle") {
-                Button("Choose Artwork…", systemImage: "photo.badge.plus") { showsArtworkPicker = true }
                 if !discs.isEmpty {
                     Divider()
                     Button("Preview FLAC Tag Changes…", systemImage: "tag") { showsTagWritePreview = true }
@@ -3158,6 +3204,17 @@ private struct AlbumDetail: View {
         .sheet(item: $trackToEdit) { track in EditTrackEditor(library: library, track: track, onSaved: { await loadContent() }) }
         .sheet(item: $metadataSelection) { selection in TrackMetadataInspector(library: library, selection: selection) }
         .sheet(item: $trackForLyrics) { track in LyricsEditor(library: library, track: track) }
+        .sheet(isPresented: $showsArtworkManagement) {
+            ArtworkManagementSheet(
+                artwork: artwork,
+                library: library,
+                onChooseArtwork: {
+                    showsArtworkManagement = false
+                    showsArtworkPicker = true
+                },
+                onMigrate: { artworkToMigrate = $0 }
+            )
+        }
         .sheet(isPresented: $showsTagWritePreview) { TagWritePreviewSheet(library: library, album: album, discs: discs, tracksByDisc: tracksByDisc, albumCredits: credits, trackCredits: trackCredits) }
         .sheet(item: $contributorToEdit) { contributor in EditContributorEditor(library: library, contributor: contributor, onSaved: { await loadContent() }) }
         .sheet(item: $albumCreditToEdit) { credit in EditAlbumCreditedNameEditor(library: library, albumID: album.id, credit: credit, onSaved: { await loadContent() }) }
@@ -3209,6 +3266,13 @@ private struct AlbumDetail: View {
 
     private var playableTracks: [Track] {
         discs.flatMap { tracksByDisc[$0.id] ?? [] }
+    }
+
+    private var trackSummary: String {
+        guard !discs.isEmpty else { return "No catalogue tracks yet" }
+        let trackWord = playableTracks.count == 1 ? "track" : "tracks"
+        let discWord = discs.count == 1 ? "disc" : "discs"
+        return "\(playableTracks.count) \(trackWord) across \(discs.count) \(discWord)"
     }
 
     private func playAlbum(shuffled: Bool) {
@@ -3347,202 +3411,122 @@ private struct AlbumDetail: View {
     @ViewBuilder
     private func albumTrackRow(_ track: Track) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            HStack {
-                Text("\(track.number). \(track.title)")
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(String(format: "%02d", track.number))
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .frame(width: 26, alignment: .trailing)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(track.title)
+                        .font(.body)
+                        .lineLimit(2)
+                    if let duration = track.durationMilliseconds, duration > 0 {
+                        Text(trackDuration(duration))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 if let rating = track.rating {
                     Text("\(rating)★")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                Spacer()
-                Button("Edit", systemImage: "pencil") { trackToEdit = track }.labelStyle(.iconOnly)
-                Button("Play", systemImage: "play.fill") { play(track) }.labelStyle(.iconOnly)
-                Button("Show embedded metadata", systemImage: "info.circle") { metadataSelection = .init(trackID: track.id, title: track.title) }.labelStyle(.iconOnly)
-                Button("Lyrics", systemImage: "quote.bubble") { trackForLyrics = track }.labelStyle(.iconOnly)
-                Menu("Add to Playlist") {
-                    playlistMenuContent(for: track)
-                }.labelStyle(.iconOnly)
-                Button("Credit", systemImage: "person.badge.plus") { trackForContributor = track }
+                Button("Play", systemImage: "play.fill") { play(track) }
                     .labelStyle(.iconOnly)
-                Button("Remove", systemImage: "trash", role: .destructive) { trackPendingDeletion = track }
-                    .labelStyle(.iconOnly)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                Menu {
+                    Button("Edit Track", systemImage: "pencil") { trackToEdit = track }
+                    Button("Show Embedded Metadata", systemImage: "info.circle") { metadataSelection = .init(trackID: track.id, title: track.title) }
+                    Button("Lyrics", systemImage: "quote.bubble") { trackForLyrics = track }
+                    Menu("Add to Playlist", systemImage: "text.badge.plus") {
+                        playlistMenuContent(for: track)
+                    }
+                    Button("Add Credit", systemImage: "person.badge.plus") { trackForContributor = track }
+                    Divider()
+                    Button("Remove Track", systemImage: "trash", role: .destructive) { trackPendingDeletion = track }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+                .accessibilityLabel("Actions for \(track.title)")
             }
             if let credits = trackCredits[track.id], !credits.isEmpty {
                 ForEach(credits) { credit in
-                    HStack {
+                    HStack(spacing: 8) {
+                        Image(systemName: "person.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
                         Text("\(credit.creditedName ?? credit.contributor.name) — \(credit.role.rawValue)")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        Spacer()
-                        Button("Edit credited name", systemImage: "pencil") { trackCreditToEdit = .init(track: track, credit: credit) }
-                            .labelStyle(.iconOnly)
-                        Button("Remove credit", systemImage: "trash", role: .destructive) { removeTrackCredit(credit, from: track) }
-                            .labelStyle(.iconOnly)
+                        Spacer(minLength: 4)
+                        Menu {
+                            Button("Edit credited name", systemImage: "pencil") { trackCreditToEdit = .init(track: track, credit: credit) }
+                            Button("Remove credit", systemImage: "trash", role: .destructive) { removeTrackCredit(credit, from: track) }
+                        } label: {
+                            Image(systemName: "ellipsis")
+                        }
+                        .accessibilityLabel("Credit actions")
                     }
+                    .padding(.leading, 36)
                 }
             }
         }
+        .padding(.vertical, 3)
     }
 
     private func discHeaderRow(_ disc: Disc) -> some View {
         HStack {
-            Text(disc.title ?? "Disc \(disc.number)")
-                .font(.headline)
+            Image(systemName: "opticaldisc")
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(disc.title ?? "Disc \(disc.number)")
+                    .font(.headline)
+                Text("\(tracksByDisc[disc.id, default: []].count) track\(tracksByDisc[disc.id, default: []].count == 1 ? "" : "s")")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             Spacer()
-            Button("Move disc earlier", systemImage: "arrow.up") { moveDisc(disc, to: disc.number - 1) }
-                .labelStyle(.iconOnly)
-                .disabled(disc.number <= 1)
-            Button("Move disc later", systemImage: "arrow.down") { moveDisc(disc, to: disc.number + 1) }
-                .labelStyle(.iconOnly)
-                .disabled(disc.number >= discs.count)
-            Button("Remove disc", systemImage: "trash", role: .destructive) { discPendingDeletion = disc }
-                .labelStyle(.iconOnly)
+            Menu {
+                Button("Move Earlier", systemImage: "arrow.up") { moveDisc(disc, to: disc.number - 1) }
+                    .disabled(disc.number <= 1)
+                Button("Move Later", systemImage: "arrow.down") { moveDisc(disc, to: disc.number + 1) }
+                    .disabled(disc.number >= discs.count)
+                Divider()
+                Button("Remove Disc", systemImage: "trash", role: .destructive) { discPendingDeletion = disc }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+            }
+            .accessibilityLabel("Actions for disc \(disc.number)")
         }
+        .padding(.top, 3)
     }
 
     private func albumAliasRow(_ alias: AlbumAlias) -> some View {
-        HStack {
-            Text("\(alias.name) (\(alias.kind.rawValue))")
-            Spacer()
-            Button("Remove", systemImage: "trash", role: .destructive) { removeAlias(alias) }
-                .labelStyle(.iconOnly)
-        }
-    }
-}
-
-private struct AlbumHero: View {
-    let album: Album
-    let artworkPath: String?
-    let isLocal: Bool
-    let isPublished: Bool
-    let locationName: String?
-    let credits: [ContributorCredit]
-    let canPlay: Bool
-    let onChangeArtwork: () -> Void
-    let onPlay: () -> Void
-    let onShuffle: () -> Void
-    let onAddContributor: () -> Void
-    let onEditContributor: (ContributorCredit) -> Void
-    let onEditCreditedName: (ContributorCredit) -> Void
-    let onRemoveContributor: (ContributorCredit) -> Void
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 24) {
-            VStack(spacing: 6) {
-                ZStack(alignment: .bottomTrailing) {
-                    AlbumArtworkImage(path: artworkPath)
-                        .frame(width: 190, height: 190)
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        .shadow(color: .black.opacity(0.18), radius: 14, y: 7)
-                    Button("Change cover", systemImage: "photo.badge.plus", action: onChangeArtwork)
-                        .labelStyle(.iconOnly)
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
-                        .padding(8)
-                        .help("Choose album artwork")
-                }
-                Button("Change Cover…", systemImage: "photo.badge.plus", action: onChangeArtwork)
-                    .font(.caption)
-                    .buttonStyle(.borderless)
-            }
-
-            VStack(alignment: .leading, spacing: 12) {
-                Text(album.title)
-                    .font(.system(.largeTitle, design: .rounded, weight: .bold))
-                    .textSelection(.enabled)
-                if let edition = album.editionLabel, !edition.isEmpty {
-                    Text(edition).font(.title3).foregroundStyle(.secondary)
-                }
-                HStack(spacing: 10) {
-                    if let year = album.releaseYear { Text(String(year)) }
-                    if let label = album.labelName, !label.isEmpty { Text(label) }
-                    Text("\(album.discCount) disc\(album.discCount == 1 ? "" : "s")")
-                }
-                .font(.subheadline)
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Image(systemName: "textformat")
                 .foregroundStyle(.secondary)
-                HStack(alignment: .top, spacing: 18) {
-                    heroDetail("Country", value: album.countryCode)
-                    heroDetail("Catalogue", value: album.catalogueNumber)
-                    heroDetail("Barcode", value: album.barcode)
-                }
-                HStack(alignment: .top, spacing: 18) {
-                    heroDetail("Format", value: album.mediaFormat)
-                    heroDetail("Remaster", value: album.remasterYear.map(String.init))
-                    heroDetail("Rating", value: album.rating.map { "\($0) / 5" })
-                    heroDetail("Location", value: locationName)
-                }
-                HStack(spacing: 8) {
-                    AlbumSourceBadges(hasCD: album.hasCD, isLocal: isLocal, isPublished: isPublished)
-                    if album.isFavourite { Label("Favourite", systemImage: "heart.fill").foregroundStyle(.pink) }
-                }
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text("Contributors")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Button("Add contributor", systemImage: "plus", action: onAddContributor)
-                            .labelStyle(.iconOnly)
-                            .buttonStyle(.borderless)
-                            .help("Add contributor")
-                    }
-                    if credits.isEmpty {
-                        Text("None recorded")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(credits) { credit in
-                            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                                Text("\(credit.creditedName ?? credit.contributor.name) · \(credit.role.displayName)")
-                                    .font(.caption)
-                                    .lineLimit(1)
-                                    .textSelection(.enabled)
-                                Spacer(minLength: 4)
-                                Menu {
-                                    Button("Edit contributor name", systemImage: "pencil") { onEditContributor(credit) }
-                                    Button("Edit credited name", systemImage: "text.cursor") { onEditCreditedName(credit) }
-                                    Divider()
-                                    Button("Remove credit", systemImage: "trash", role: .destructive) { onRemoveContributor(credit) }
-                                } label: {
-                                    Image(systemName: "ellipsis.circle")
-                                }
-                                .accessibilityLabel("Contributor actions")
-                                .help("Contributor actions")
-                            }
-                        }
-                    }
-                }
-                .padding(10)
-                .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                HStack(spacing: 10) {
-                    Button("Play", systemImage: "play.fill", action: onPlay)
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.large)
-                        .disabled(!canPlay)
-                    Button("Shuffle", systemImage: "shuffle", action: onShuffle)
-                        .buttonStyle(.bordered)
-                        .controlSize(.large)
-                        .disabled(!canPlay)
-                }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(alias.name)
+                    .textSelection(.enabled)
+                Text([alias.kind.rawValue.capitalized, alias.locale].compactMap { $0 }.joined(separator: " · "))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            Spacer()
+            Menu {
+                Button("Remove Other Title", systemImage: "trash", role: .destructive) { removeAlias(alias) }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+            }
+            .accessibilityLabel("Actions for \(alias.name)")
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    @ViewBuilder
-    private func heroDetail(_ label: String, value: String?) -> some View {
-        if let value, !value.isEmpty {
-            VStack(alignment: .leading, spacing: 1) {
-                Text(label)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                Text(value)
-                    .font(.caption)
-                    .lineLimit(1)
-                    .textSelection(.enabled)
-            }
-        }
+    private func trackDuration(_ milliseconds: Int) -> String {
+        let totalSeconds = max(0, milliseconds / 1_000)
+        return String(format: "%d:%02d", totalSeconds / 60, totalSeconds % 60)
     }
 }
 
@@ -3578,6 +3562,80 @@ private struct ArtworkManagementRow: View {
         let selection = image.isSelected ? "Selected " : ""
         let filename = image.localPath.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "No local file"
         return selection + image.role.rawValue + ": " + filename
+    }
+}
+
+private struct ArtworkManagementSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let artwork: [Artwork]
+    @ObservedObject var library: LibraryStore
+    let onChooseArtwork: () -> Void
+    let onMigrate: (Artwork) -> Void
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    if let selected = artwork.first(where: { $0.role == .front && $0.isSelected }) {
+                        GroupBox("Current cover") {
+                            HStack(alignment: .top, spacing: 16) {
+                                ArtworkPreview(artwork: selected)
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("This is the artwork shown beside the album title.")
+                                        .font(.callout)
+                                    Text("The catalogue keeps a managed copy when artwork is imported. A legacy path can be made portable here without changing or deleting the original file.")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    if !library.isManagedArtwork(selected), selected.localPath != nil {
+                                        Button("Make Portable", systemImage: "archivebox") {
+                                            onMigrate(selected)
+                                            dismiss()
+                                        }
+                                    }
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                    } else {
+                        ContentUnavailableView("No cover selected", systemImage: "photo", description: Text("Choose a front image to display with this album."))
+                    }
+
+                    GroupBox("Artwork records") {
+                        if artwork.isEmpty {
+                            Text("No artwork records are stored for this album.")
+                                .foregroundStyle(.secondary)
+                        } else {
+                            VStack(alignment: .leading, spacing: 12) {
+                                ForEach(artwork) { image in
+                                    ArtworkManagementRow(
+                                        image: image,
+                                        isManaged: library.isManagedArtwork(image),
+                                        onMakePortable: {
+                                            onMigrate(image)
+                                            dismiss()
+                                        }
+                                    )
+                                    if image.id != artwork.last?.id { Divider() }
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(24)
+            }
+            .navigationTitle("Artwork")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Button("Choose Cover…", systemImage: "photo.badge.plus") {
+                        onChooseArtwork()
+                    }
+                }
+            }
+        }
+        .frame(minWidth: 640, idealWidth: 720, minHeight: 520, idealHeight: 620)
     }
 }
 
@@ -3680,9 +3738,18 @@ private struct AddAliasEditor: View {
     @State private var kind: AlbumAliasKind = .alternate
     @State private var locale = ""
     var body: some View {
-        Form { TextField("Alias", text: $name); Picker("Kind", selection: $kind) { ForEach(AlbumAliasKind.allCases, id: \.self) { Text($0.rawValue).tag($0) } }; TextField("Locale (optional)", text: $locale) }
+        Form {
+            Section("Other title") {
+                TextField("Title", text: $name)
+                Picker("Type", selection: $kind) { ForEach(AlbumAliasKind.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) } }
+                TextField("Language or locale (optional)", text: $locale)
+            }
+            Text("Other titles are catalogue names used for search and display. They do not replace the primary album title.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
             .padding().frame(width: 380)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button("Add") { add() }.disabled(name.nilIfBlank == nil) } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button("Add Other Title") { add() }.disabled(name.nilIfBlank == nil) } }
     }
     private func add() { Task { do { try await library.addAlbumAlias(albumID: albumID, name: name, kind: kind, locale: locale.nilIfBlank); await onAdded(); dismiss() } catch { library.presentError(error) } } }
 }
@@ -3935,7 +4002,7 @@ private struct ManualAlbumContributor: Identifiable {
     var creditedName = ""
 }
 
-private extension ContributorRole {
+extension ContributorRole {
     var displayName: String {
         switch self {
         case .albumArtist: "Album Artist"

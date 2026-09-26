@@ -1,6 +1,6 @@
 # Music Library — Project Handoff
 
-Last updated: 26 September 2026
+Last updated: 27 September 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
@@ -227,7 +227,7 @@ This database is user data. Do not remove it during development. If a destructiv
 
 ## 8. Current tests and verification baseline
 
-The current debug baseline contains 102 tests in 9 suites. Delivery validation for version 0.11 (build 12) also runs the rebuilt release suite before commit. Run `swift test` and `swift test -c release`; do not rely on this handoff alone.
+The current debug baseline contains 102 tests in 9 suites. Delivery validation for version 0.12 (build 13) also runs the rebuilt release suite before commit. Run `swift test` and `swift test -c release`; do not rely on this handoff alone.
 
 Albums now expose **Move to Recently Deleted** in the Albums list context menu. Settings displays a **Recently Deleted** section and its Restore action. This uses the existing soft-delete records, preserves album relationships, and never deletes or changes source media files.
 
@@ -518,13 +518,19 @@ The former standalone **Source file tag write-back** section is removed from the
 
 `swift build`, `swift test`, and `swift test -c release` pass with 102 tests in 9 suites. `Scripts/package-mac-app.sh` produced `build/Music Library 0.11.app` (build 12); its plist lint and strict deep code-signature verification pass. The known non-blocking `AVMetadataItem.stringValue` deprecation remains. Packaging and validation did not launch the app, open the live catalogue, or modify source audio.
 
+### 27 September 2026 R0 visual foundation and Album Detail checkpoint
+
+The first whole-app redesign slice is implemented. `Sources/MusicLibraryMac/LibraryDesignSystem.swift` adds reusable native Mac panels, section headers, metadata grids, status pills, and the connected `AlbumIdentityHeader`. `LibraryDesignPreviews.swift` contains isolated populated and sparse physical-only fixtures; the previews do not start `LibraryStore`, open Application Support, or read personal media. `AlbumDetail` now uses a reading-oriented `ScrollView`: album title, primary artist, Other titles, catalogue metadata, credits, availability, and one cover-change action are together at the top; tracks are grouped by disc; infrequent edit/remove/metadata controls are in contextual menus; collection notes have their own compact panel; artwork provenance and portability are in a separate Artwork workspace rather than a repeated bottom section. The sidebar labels now use Browse, Collection, and Imports.
+
+This slice changes presentation only. It does not change the schema, catalogue writer boundary, MusicBrainz request policy, artwork-copy safeguards, source-audio behavior, playback services, or tag-write authorization. `swift build`, `swift test`, and `swift test -c release` pass with 102 tests in 9 suites. `Scripts/package-mac-app.sh` produced `build/Music Library 0.12.app` (build 13); plist lint and strict deep code-signature verification pass. The Mac was locked during delivery, so the final interactive screenshot walkthrough remains pending and is not claimed as complete. The known non-blocking `AVMetadataItem.stringValue` deprecation remains.
+
 ### Next safe slice
 
-The user requested a detailed whole-app UI/workflow redesign plan after rejecting the current appearance. **BUILD_PLAN.md section 12 is now the controlling redesign specification**, covering navigation, albums/other titles, entry/import, playback, organization, settings, validation, and a later iPad milestone. This is a documentation-only planning checkpoint; version 0.11/build 12 remains the latest implemented app. No redesign milestone is complete yet.
+**BUILD_PLAN.md section 12 remains the controlling redesign specification.** The next implementation slice completes the remaining R0/R1 foundation: add a connected fixture-backed library browsing composition and a physical-entry composition for native compact/regular-size review, extract the shell into a stable two-column navigation/workspace structure, and route Settings categories to separate real destinations instead of a static label list. Preserve the existing Album Detail work, use fixture-only visual checks where live data is not required, and then proceed to R2's reading/edit modes and artwork viewer.
 
-When the user requests implementation (potentially by Luna), start **R0: connected native compositions with isolated fixture data**, then R1–R9 in dependency order for a whole-Mac request. The plan explicitly supersedes the old permanent three-column presentation and “UI implementation complete” gate. Do not restart Phase 0 or rebuild the existing persistence/player services. Barcode/release-URL lookup and optional MusicBrainz track creation are planned functional work, not existing capabilities. R10/iPad and deferred providers remain a separate boundary. No chat was created or messaged as part of preparing this plan.
+The plan explicitly supersedes the old permanent three-column presentation and “UI implementation complete” gate. Do not restart Phase 0 or rebuild the existing persistence/player services. Barcode/release-URL lookup and optional MusicBrainz track creation are planned functional work, not existing capabilities. R10/iPad and deferred providers remain a separate boundary. No chat was created or messaged as part of preparing this plan.
 
-The preceding implementation was validated with 102 tests in debug and release. For this documentation-only checkpoint, validate Markdown structure, references, and Git whitespace; do not claim new runtime or visual checks.
+The preceding implementation was validated with 102 tests in debug and release. For the next slice, run the full debug/release tests, package 0.13 only after a successful runnable build, and perform the pending interactive visual walkthrough on an unlocked Mac.
 
 ### Existing real-library acceptance boundary
 

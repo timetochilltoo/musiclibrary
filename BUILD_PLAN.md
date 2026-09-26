@@ -2,7 +2,7 @@
 
 Original plan date: 22 July 2026
 
-Last roadmap review: 26 September 2026
+Last roadmap review: 27 September 2026
 
 Detailed coding handoff: [IMPLEMENTATION_SPEC.md](IMPLEMENTATION_SPEC.md)
 
@@ -10,7 +10,7 @@ Operational continuation guide: [HANDOFF.md](HANDOFF.md)
 
 Implementation baseline (22 September 2026): the Mac catalogue, retained local/NAS authorization, safe scanner and review queue, explicit metadata comparison, digital assets, local playback and playlists, FLAC tag-write safety, manual lyrics, recovery/backup/export, snapshot publication, and the read-only companion foundation are implemented. The artwork-first Mac redesign is complete across Albums, the persistent player, Library Changes, playlists, and Settings. The current package is version 0.10 (build 11) and the rebuilt suite passes 102 automated tests in 9 suites. It includes a branded Dock icon, creates or attaches a reviewed release in one atomic action, keeps the UI responsive with a visible loading state while preparing slow NAS/DSF playback, provides a bounded user-configurable DSF PCM cache, one complete manual physical-album form with explicit MusicBrainz release prefill and optional managed cover import, preview-first catalogue cleanup, typed-confirm reset, and a checksummed complete catalogue archive containing SQLite plus managed artwork. Live NAS endurance and iPad device validation remain deliberately deferred. See [HANDOFF.md](HANDOFF.md) for the current Git baseline and next validation boundary.
 
-Current baseline: version 0.11 (build 12), commit `1801430` at the time of this review, with 102 tests passing in debug and release. Verify Git and test status when starting; these are recorded results, not a substitute for current checks. The earlier visual workstream is implemented but has not met the user's expectations for usability or appearance. The new controlling product direction is **section 12: Whole-app experience redesign**. It supersedes the older presentation instructions, permanent three-column layout, and closed UI implementation gate below. The existing architecture and data-safety invariants remain authoritative. This document specifies future work; it does not claim that the redesign has been built or visually verified.
+Current baseline (27 September 2026): version 0.12 (build 13), with the first R0 redesign slice implemented on top of the existing catalogue services. The slice adds shared native Mac visual primitives and isolated SwiftUI fixture previews, reworks Album Detail into a reading-oriented scroll layout, moves Other titles beside album identity, reduces track/disc/credit action clutter into contextual menus, and moves artwork provenance/portability into an Artwork workspace instead of repeating it at the bottom of the page. The sidebar now presents Browse, Collection, and Imports labels. Debug/release tests both pass 102 tests in 9 suites; the packaged bundle passes plist and strict signature checks. Interactive visual verification is still pending because the development Mac was locked during delivery. The earlier visual workstream remains superseded by **section 12: Whole-app experience redesign**, which continues to control the remaining work. The existing architecture and data-safety invariants remain authoritative.
 
 Real-library acceptance remains necessary for local/NAS playback endurance, slow DSF loading, offline/reconnect handling, and physical iPad behavior. Those checks cannot be proven by repository tests alone. They do not prevent isolated design and implementation work on section 12.
 
@@ -518,7 +518,11 @@ Start section 12, milestone R0, using the existing app and safe fixtures. Establ
 
 ## 12. Whole-app experience redesign — implementation specification
 
-Specification date: 26 September 2026. Status: planned, not implemented.
+Specification date: 26 September 2026. Status: active implementation; milestones remain.
+
+### 12.0 Implementation status — 27 September 2026
+
+The first R0 foundation slice is implemented in the Mac target. `LibraryDesignSystem.swift` contains reusable panels, section headers, metadata grids, status pills, and the connected album identity header. `LibraryDesignPreviews.swift` provides isolated populated and sparse physical-only fixtures; it never starts `LibraryStore` or reads the live catalogue. Album Detail now uses a native `ScrollView` reading layout with identity, artwork, primary artist, Other titles, catalogue metadata, credits, tracks, collection notes, and contextual action menus. The next unfinished work is the rest of R0/R1: a connected fixture composition for library browsing and physical entry, a two-column shell with real Settings category routing, and a compact/regular-size review on an unlocked Mac.
 
 ### 12.1 Purpose, authority, and scope
 
