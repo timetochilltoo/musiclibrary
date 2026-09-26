@@ -3078,7 +3078,7 @@ private struct AlbumDetail: View {
     @State private var artworkToMigrate: Artwork?
     @State private var discPendingDeletion: Disc?
     @State private var showsTagWritePreview = false
-    @State private var showsCatalogueDetails = false
+    @State private var showsArtworkManagement = false
 
     var body: some View {
         Form {
@@ -3088,77 +3088,27 @@ private struct AlbumDetail: View {
                     artworkPath: artwork.first(where: { $0.role == .front && $0.isSelected })?.localPath,
                     isLocal: library.localAlbumIDs.contains(album.id),
                     isPublished: library.publishedAlbumIDs.contains(album.id),
+                    locationName: album.hasCD ? locationName : nil,
+                    credits: credits,
                     canPlay: !playableTracks.isEmpty,
+                    onChangeArtwork: { showsArtworkPicker = true },
                     onPlay: { playAlbum(shuffled: false) },
-                    onShuffle: { playAlbum(shuffled: true) }
+                    onShuffle: { playAlbum(shuffled: true) },
+                    onAddContributor: { showsAddContributor = true },
+                    onEditContributor: { contributorToEdit = $0.contributor },
+                    onEditCreditedName: { albumCreditToEdit = $0 },
+                    onRemoveContributor: { removeAlbumContributor($0) }
                 )
                 .padding(.vertical, 8)
             }
             .listRowBackground(Color.clear)
 
-            Section {
-                DisclosureGroup("Catalogue details", isExpanded: $showsCatalogueDetails) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        if let year = album.releaseYear { LabeledContent("Release year", value: String(year)) }
-                        if let country = album.countryCode { LabeledContent("Country", value: country) }
-                        if let catalogueNumber = album.catalogueNumber { LabeledContent("Catalogue no.", value: catalogueNumber) }
-                        if let labelName = album.labelName { LabeledContent("Label", value: labelName) }
-                        LabeledContent("Discs", value: String(album.discCount))
-                        if let rating = album.rating { LabeledContent("Rating", value: "\(rating) / 5") }
-                        if album.hasCD { LabeledContent("Physical location", value: locationName) }
-                    }
-                    .padding(.top, 8)
-                }
-            }
             if !discs.isEmpty {
                 Section("Tracks") {
                     ForEach(discs) { disc in
-                        HStack {
-                            Text(disc.title ?? "Disc \(disc.number)").font(.headline)
-                            Spacer()
-                            Button("Move disc earlier", systemImage: "arrow.up") { Task { do { try await library.reorderDisc(disc.id, in: album.id, to: disc.number - 1); await loadContent() } catch { library.presentError(error) } } }
-                                .labelStyle(.iconOnly).disabled(disc.number <= 1)
-                            Button("Move disc later", systemImage: "arrow.down") { Task { do { try await library.reorderDisc(disc.id, in: album.id, to: disc.number + 1); await loadContent() } catch { library.presentError(error) } } }
-                                .labelStyle(.iconOnly).disabled(disc.number >= discs.count)
-                            Button("Remove disc", systemImage: "trash", role: .destructive) { discPendingDeletion = disc }
-                                .labelStyle(.iconOnly)
-                        }
+                        discHeaderRow(disc)
                         ForEach(tracksByDisc[disc.id] ?? []) { track in
-                            VStack(alignment: .leading, spacing: 3) {
-                                HStack {
-                                    Text("\(track.number). \(track.title)")
-                                    if let rating = track.rating { Text("\(rating)★").font(.caption).foregroundStyle(.secondary) }
-                                    Spacer()
-                                    Button("Edit", systemImage: "pencil") { trackToEdit = track }.labelStyle(.iconOnly)
-                                    Button("Play", systemImage: "play.fill") { play(track) }.labelStyle(.iconOnly)
-                                    Button("Show embedded metadata", systemImage: "info.circle") { metadataSelection = .init(trackID: track.id, title: track.title) }.labelStyle(.iconOnly)
-                                    Button("Lyrics", systemImage: "quote.bubble") { trackForLyrics = track }.labelStyle(.iconOnly)
-                                    Menu("Add to Playlist") {
-                                        if library.playlists.isEmpty {
-                                            Text("Create a playlist from the Playlists sidebar first.")
-                                        } else {
-                                            ForEach(library.playlists) { playlist in Button(playlist.name) { Task { do { try await library.addTrack(track.id, toPlaylist: playlist.id) } catch { library.presentError(error) } } } }
-                                        }
-                                    }.labelStyle(.iconOnly)
-                                    Button("Credit", systemImage: "person.badge.plus") { trackForContributor = track }
-                                        .labelStyle(.iconOnly)
-                                    Button("Remove", systemImage: "trash", role: .destructive) { trackPendingDeletion = track }
-                                        .labelStyle(.iconOnly)
-                                }
-                                if let credits = trackCredits[track.id], !credits.isEmpty {
-                                    ForEach(credits) { credit in
-                                        HStack {
-                                            Text("\(credit.creditedName ?? credit.contributor.name) — \(credit.role.rawValue)")
-                                                .font(.caption).foregroundStyle(.secondary)
-                                            Spacer()
-                                            Button("Edit credited name", systemImage: "pencil") { trackCreditToEdit = .init(track: track, credit: credit) }
-                                                .labelStyle(.iconOnly)
-                                            Button("Remove credit", systemImage: "trash", role: .destructive) { Task { do { try await library.deleteTrackContributor(credit, from: track.id); await loadContent() } catch { library.presentError(error) } } }
-                                                .labelStyle(.iconOnly)
-                                        }
-                                    }
-                                }
-                            }
+                            albumTrackRow(track)
                         }
                         Button("Add Track", systemImage: "plus") { discForTrack = disc }
                     }
@@ -3166,57 +3116,16 @@ private struct AlbumDetail: View {
             } else {
                 Section("Tracks") { Button("Add Disc", systemImage: "plus") { showsAddDisc = true } }
             }
-            Section("Source file tag write-back") {
-                Text("Phase 4 supports FLAC Vorbis comments only. WAV/CUE, DSF, and other formats remain catalogue-only and are never changed.")
-                    .font(.caption).foregroundStyle(.secondary)
-                Button("Preview FLAC Tag Changes…", systemImage: "tag") { showsTagWritePreview = true }
-                    .disabled(discs.isEmpty)
-            }
-            Section("Contributors") {
-                ForEach(credits) { credit in
-                    HStack {
-                        Text("\(credit.creditedName ?? credit.contributor.name) — \(credit.role.rawValue)")
-                        Spacer()
-                        Button("Edit name", systemImage: "pencil") { contributorToEdit = credit.contributor }.labelStyle(.iconOnly)
-                        Button("Edit credited name", systemImage: "text.cursor") { albumCreditToEdit = credit }.labelStyle(.iconOnly)
-                        Button("Remove credit", systemImage: "trash", role: .destructive) { Task { do { try await library.deleteAlbumContributor(credit, from: album.id); await loadContent() } catch { library.presentError(error) } } }.labelStyle(.iconOnly)
-                    }
-                }
-                Button("Add Contributor", systemImage: "plus") { showsAddContributor = true }
-            }
             Section("Aliases") {
                 ForEach(aliases) { alias in
-                    HStack { Text("\(alias.name) (\(alias.kind.rawValue))"); Spacer(); Button("Remove", systemImage: "trash", role: .destructive) { Task { do { try await library.deleteAlbumAlias(alias.id); await loadContent() } catch { library.presentError(error) } } }.labelStyle(.iconOnly) }
+                    albumAliasRow(alias)
                 }
                 Button("Add Alias", systemImage: "plus") { showsAddAlias = true }
             }
-            Section("Artwork") {
-                if let selectedArtwork = artwork.first(where: { $0.role == .front && $0.isSelected }) {
-                    ArtworkPreview(artwork: selectedArtwork)
-                } else {
-                    Text("No front artwork selected").foregroundStyle(.secondary)
+            Section {
+                DisclosureGroup("Artwork management", isExpanded: $showsArtworkManagement) {
+                    artworkManagementContent
                 }
-                ForEach(artwork) { image in
-                    HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("\(image.isSelected ? "Selected " : "")\(image.role.rawValue): \(image.localPath.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "No local file")")
-                                .font(.caption)
-                            Text(image.source.isEmpty ? "No provenance recorded" : image.source)
-                                .font(.caption2).foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        if image.localPath != nil {
-                            if library.isManagedArtwork(image) {
-                                Label("Managed", systemImage: "checkmark.circle.fill")
-                                    .font(.caption2).foregroundStyle(.secondary)
-                            } else {
-                                Button("Make Portable", systemImage: "archivebox") { artworkToMigrate = image }
-                                    .font(.caption)
-                            }
-                        }
-                    }
-                }
-                Button("Choose Artwork…", systemImage: "photo.badge.plus") { showsArtworkPicker = true }
             }
         }
         .formStyle(.grouped)
@@ -3224,6 +3133,14 @@ private struct AlbumDetail: View {
         .toolbar {
             Button("Edit Album", systemImage: "pencil", action: onEdit)
             Button("Add Disc", systemImage: "plus") { showsAddDisc = true }
+            Menu("Album Actions", systemImage: "ellipsis.circle") {
+                Button("Choose Artwork…", systemImage: "photo.badge.plus") { showsArtworkPicker = true }
+                if !discs.isEmpty {
+                    Divider()
+                    Button("Preview FLAC Tag Changes…", systemImage: "tag") { showsTagWritePreview = true }
+                    Text("FLAC only; preview and backup are required before writing.")
+                }
+            }
         }
         .task(id: album.id) {
             do {
@@ -3310,6 +3227,66 @@ private struct AlbumDetail: View {
         }
     }
 
+    private func moveDisc(_ disc: Disc, to position: Int) {
+        Task {
+            do {
+                try await library.reorderDisc(disc.id, in: album.id, to: position)
+                await loadContent()
+            } catch {
+                library.presentError(error)
+            }
+        }
+    }
+
+    private func removeAlbumContributor(_ credit: ContributorCredit) {
+        Task {
+            do {
+                try await library.deleteAlbumContributor(credit, from: album.id)
+                await loadContent()
+            } catch {
+                library.presentError(error)
+            }
+        }
+    }
+
+    private func removeTrackCredit(_ credit: ContributorCredit, from track: Track) {
+        Task {
+            do {
+                try await library.deleteTrackContributor(credit, from: track.id)
+                await loadContent()
+            } catch {
+                library.presentError(error)
+            }
+        }
+    }
+
+    private func removeAlias(_ alias: AlbumAlias) {
+        Task {
+            do {
+                try await library.deleteAlbumAlias(alias.id)
+                await loadContent()
+            } catch {
+                library.presentError(error)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var artworkManagementContent: some View {
+        if artwork.isEmpty {
+            Text("No front artwork selected")
+                .foregroundStyle(.secondary)
+        }
+        ForEach(artwork) { image in
+            ArtworkManagementRow(
+                image: image,
+                isManaged: library.isManagedArtwork(image),
+                onMakePortable: { artworkToMigrate = image }
+            )
+        }
+        Button("Choose Artwork…", systemImage: "photo.badge.plus") { showsArtworkPicker = true }
+    }
+
     private func loadContent() async {
         do {
             let loadedDiscs = try await library.discs(albumID: album.id)
@@ -3347,6 +3324,90 @@ private struct AlbumDetail: View {
             }
         }
     }
+
+    @ViewBuilder
+    private func playlistMenuContent(for track: Track) -> some View {
+        if library.playlists.isEmpty {
+            Text("Create a playlist from the Playlists sidebar first.")
+        } else {
+            ForEach(library.playlists) { playlist in
+                Button(playlist.name) {
+                    Task {
+                        do {
+                            try await library.addTrack(track.id, toPlaylist: playlist.id)
+                        } catch {
+                            library.presentError(error)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func albumTrackRow(_ track: Track) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack {
+                Text("\(track.number). \(track.title)")
+                if let rating = track.rating {
+                    Text("\(rating)★")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Edit", systemImage: "pencil") { trackToEdit = track }.labelStyle(.iconOnly)
+                Button("Play", systemImage: "play.fill") { play(track) }.labelStyle(.iconOnly)
+                Button("Show embedded metadata", systemImage: "info.circle") { metadataSelection = .init(trackID: track.id, title: track.title) }.labelStyle(.iconOnly)
+                Button("Lyrics", systemImage: "quote.bubble") { trackForLyrics = track }.labelStyle(.iconOnly)
+                Menu("Add to Playlist") {
+                    playlistMenuContent(for: track)
+                }.labelStyle(.iconOnly)
+                Button("Credit", systemImage: "person.badge.plus") { trackForContributor = track }
+                    .labelStyle(.iconOnly)
+                Button("Remove", systemImage: "trash", role: .destructive) { trackPendingDeletion = track }
+                    .labelStyle(.iconOnly)
+            }
+            if let credits = trackCredits[track.id], !credits.isEmpty {
+                ForEach(credits) { credit in
+                    HStack {
+                        Text("\(credit.creditedName ?? credit.contributor.name) — \(credit.role.rawValue)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Edit credited name", systemImage: "pencil") { trackCreditToEdit = .init(track: track, credit: credit) }
+                            .labelStyle(.iconOnly)
+                        Button("Remove credit", systemImage: "trash", role: .destructive) { removeTrackCredit(credit, from: track) }
+                            .labelStyle(.iconOnly)
+                    }
+                }
+            }
+        }
+    }
+
+    private func discHeaderRow(_ disc: Disc) -> some View {
+        HStack {
+            Text(disc.title ?? "Disc \(disc.number)")
+                .font(.headline)
+            Spacer()
+            Button("Move disc earlier", systemImage: "arrow.up") { moveDisc(disc, to: disc.number - 1) }
+                .labelStyle(.iconOnly)
+                .disabled(disc.number <= 1)
+            Button("Move disc later", systemImage: "arrow.down") { moveDisc(disc, to: disc.number + 1) }
+                .labelStyle(.iconOnly)
+                .disabled(disc.number >= discs.count)
+            Button("Remove disc", systemImage: "trash", role: .destructive) { discPendingDeletion = disc }
+                .labelStyle(.iconOnly)
+        }
+    }
+
+    private func albumAliasRow(_ alias: AlbumAlias) -> some View {
+        HStack {
+            Text("\(alias.name) (\(alias.kind.rawValue))")
+            Spacer()
+            Button("Remove", systemImage: "trash", role: .destructive) { removeAlias(alias) }
+                .labelStyle(.iconOnly)
+        }
+    }
 }
 
 private struct AlbumHero: View {
@@ -3354,16 +3415,36 @@ private struct AlbumHero: View {
     let artworkPath: String?
     let isLocal: Bool
     let isPublished: Bool
+    let locationName: String?
+    let credits: [ContributorCredit]
     let canPlay: Bool
+    let onChangeArtwork: () -> Void
     let onPlay: () -> Void
     let onShuffle: () -> Void
+    let onAddContributor: () -> Void
+    let onEditContributor: (ContributorCredit) -> Void
+    let onEditCreditedName: (ContributorCredit) -> Void
+    let onRemoveContributor: (ContributorCredit) -> Void
 
     var body: some View {
-        HStack(alignment: .bottom, spacing: 24) {
-            AlbumArtworkImage(path: artworkPath)
-                .frame(width: 190, height: 190)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .shadow(color: .black.opacity(0.18), radius: 14, y: 7)
+        HStack(alignment: .top, spacing: 24) {
+            VStack(spacing: 6) {
+                ZStack(alignment: .bottomTrailing) {
+                    AlbumArtworkImage(path: artworkPath)
+                        .frame(width: 190, height: 190)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .shadow(color: .black.opacity(0.18), radius: 14, y: 7)
+                    Button("Change cover", systemImage: "photo.badge.plus", action: onChangeArtwork)
+                        .labelStyle(.iconOnly)
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .padding(8)
+                        .help("Choose album artwork")
+                }
+                Button("Change Cover…", systemImage: "photo.badge.plus", action: onChangeArtwork)
+                    .font(.caption)
+                    .buttonStyle(.borderless)
+            }
 
             VStack(alignment: .leading, spacing: 12) {
                 Text(album.title)
@@ -3379,10 +3460,60 @@ private struct AlbumHero: View {
                 }
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
+                HStack(alignment: .top, spacing: 18) {
+                    heroDetail("Country", value: album.countryCode)
+                    heroDetail("Catalogue", value: album.catalogueNumber)
+                    heroDetail("Barcode", value: album.barcode)
+                }
+                HStack(alignment: .top, spacing: 18) {
+                    heroDetail("Format", value: album.mediaFormat)
+                    heroDetail("Remaster", value: album.remasterYear.map(String.init))
+                    heroDetail("Rating", value: album.rating.map { "\($0) / 5" })
+                    heroDetail("Location", value: locationName)
+                }
                 HStack(spacing: 8) {
                     AlbumSourceBadges(hasCD: album.hasCD, isLocal: isLocal, isPublished: isPublished)
                     if album.isFavourite { Label("Favourite", systemImage: "heart.fill").foregroundStyle(.pink) }
                 }
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("Contributors")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Add contributor", systemImage: "plus", action: onAddContributor)
+                            .labelStyle(.iconOnly)
+                            .buttonStyle(.borderless)
+                            .help("Add contributor")
+                    }
+                    if credits.isEmpty {
+                        Text("None recorded")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(credits) { credit in
+                            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                Text("\(credit.creditedName ?? credit.contributor.name) · \(credit.role.displayName)")
+                                    .font(.caption)
+                                    .lineLimit(1)
+                                    .textSelection(.enabled)
+                                Spacer(minLength: 4)
+                                Menu {
+                                    Button("Edit contributor name", systemImage: "pencil") { onEditContributor(credit) }
+                                    Button("Edit credited name", systemImage: "text.cursor") { onEditCreditedName(credit) }
+                                    Divider()
+                                    Button("Remove credit", systemImage: "trash", role: .destructive) { onRemoveContributor(credit) }
+                                } label: {
+                                    Image(systemName: "ellipsis.circle")
+                                }
+                                .accessibilityLabel("Contributor actions")
+                                .help("Contributor actions")
+                            }
+                        }
+                    }
+                }
+                .padding(10)
+                .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 HStack(spacing: 10) {
                     Button("Play", systemImage: "play.fill", action: onPlay)
                         .buttonStyle(.borderedProminent)
@@ -3397,6 +3528,56 @@ private struct AlbumHero: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func heroDetail(_ label: String, value: String?) -> some View {
+        if let value, !value.isEmpty {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(label)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text(value)
+                    .font(.caption)
+                    .lineLimit(1)
+                    .textSelection(.enabled)
+            }
+        }
+    }
+}
+
+private struct ArtworkManagementRow: View {
+    let image: Artwork
+    let isManaged: Bool
+    let onMakePortable: () -> Void
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(artworkLabel)
+                    .font(.caption)
+                Text(image.source.isEmpty ? "No provenance recorded" : image.source)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            if image.localPath != nil {
+                if isManaged {
+                    Label("Managed", systemImage: "checkmark.circle.fill")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Button("Make Portable", systemImage: "archivebox", action: onMakePortable)
+                        .font(.caption)
+                }
+            }
+        }
+    }
+
+    private var artworkLabel: String {
+        let selection = image.isSelected ? "Selected " : ""
+        let filename = image.localPath.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "No local file"
+        return selection + image.role.rawValue + ": " + filename
     }
 }
 

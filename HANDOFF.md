@@ -1,6 +1,6 @@
 # Music Library — Project Handoff
 
-Last updated: 22 September 2026
+Last updated: 26 September 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
@@ -227,7 +227,7 @@ This database is user data. Do not remove it during development. If a destructiv
 
 ## 8. Current tests and verification baseline
 
-The current debug baseline contains 102 tests in 9 suites. Delivery validation for version 0.10 (build 11) also runs the rebuilt release suite before commit. Run `swift test` and `swift test -c release`; do not rely on this handoff alone.
+The current debug baseline contains 102 tests in 9 suites. Delivery validation for version 0.11 (build 12) also runs the rebuilt release suite before commit. Run `swift test` and `swift test -c release`; do not rely on this handoff alone.
 
 Albums now expose **Move to Recently Deleted** in the Albums list context menu. Settings displays a **Recently Deleted** section and its Restore action. This uses the existing soft-delete records, preserves album relationships, and never deletes or changes source media files.
 
@@ -510,9 +510,17 @@ The **Add Physical Album** form now has an explicit **Find on MusicBrainz…** a
 
 `ExternalReleasePreview` now decodes the physical-edition fields returned by MusicBrainz. The Mac application downloads the selected Cover Art Archive front image only when the user leaves **Save cover with album** enabled and submits the form, copies it into managed artwork storage, and cleans it up if the atomic catalogue write fails. The focused provider and persistence regressions cover label, barcode, format, release year, track-list decoding, and atomic front-artwork attachment. The rebuilt debug and release suites pass **102 tests in 9 suites**. `Scripts/package-mac-app.sh` produced and ad-hoc-signed `build/Music Library 0.10.app` (build 11); its plist and strict signature checks pass, and the same executable is installed at `/Applications/Music Library.app`. Packaging did not launch the app, open the live catalogue, or modify source media.
 
+### 26 September 2026 Album detail information hierarchy checkpoint
+
+Album Detail in `Sources/MusicLibraryMac/MusicLibraryMacApp.swift` now uses the open hero area below the title for the catalogue summary: country, catalogue number, barcode, format, remaster year, rating, and physical location. Contributor credits and their edit/credited-name/remove actions are also presented there, with an inline add action; the former full-width Contributors section is no longer repeated below the tracks. The selected cover has a visible **Change Cover…** action beside it, using the existing explicit image importer and managed-artwork workflow.
+
+The former standalone **Source file tag write-back** section is removed from the album page. Its explicit **Preview FLAC Tag Changes…** action remains in the **Album Actions** menu for albums with catalogue discs, and the existing preview, backup, verification, and journal safeguards are unchanged. Artwork provenance and **Make Portable** remain available under a collapsed **Artwork management** disclosure so the cover is not duplicated at the bottom by default. This is a presentation-only Mac change: it does not alter catalogue schema, source audio, artwork safety, or write-back authorization semantics.
+
+`swift build`, `swift test`, and `swift test -c release` pass with 102 tests in 9 suites. `Scripts/package-mac-app.sh` produced `build/Music Library 0.11.app` (build 12); its plist lint and strict deep code-signature verification pass. The known non-blocking `AVMetadataItem.stringValue` deprecation remains. Packaging and validation did not launch the app, open the live catalogue, or modify source audio.
+
 ### Next safe slice
 
-The local/NAS folder workflow, safe scanning/reconciliation workflow, one-step new-versus-existing-edition import decision, MusicBrainz-assisted and manual physical-album entry, safe catalogue cleanup/reset, portable complete archive/restore, legacy-artwork migration, field-level catalogue activity history, audit hardening, branded Mac packaging, responsive slow-file loading, configurable DSF PCM caching, and the artwork-first Mac presentation workstream are implemented. The next safe boundary is user acceptance of `MAC_AND_NAS_TESTING.md` sections **A0. Manual physical album** and **3.0 Catalogue cleanup and complete archive**, especially MusicBrainz field prefill, export, restore with covers, tamper refusal, and optional reset/root preservation. Do not perform those destructive live-catalogue checks automatically. Automatic hash-based relinking, snapshot-to-master reconstruction, WAV/DSF/other non-FLAC tag write-back, internet lyrics providers, AI modules, live NAS endurance, and iPad device validation remain deferred; the provider/format choices in the Open Decisions section still require the user.
+The local/NAS folder workflow, safe scanning/reconciliation workflow, one-step new-versus-existing-edition import decision, MusicBrainz-assisted and manual physical-album entry, safe catalogue cleanup/reset, portable complete archive/restore, legacy-artwork migration, field-level catalogue activity history, audit hardening, branded Mac packaging, responsive slow-file loading, configurable DSF PCM caching, and the artwork-first Mac presentation workstream are implemented. The next safe boundary is user acceptance of the Album Detail hierarchy/artwork actions plus `MAC_AND_NAS_TESTING.md` sections **A0. Manual physical album** and **3.0 Catalogue cleanup and complete archive**, especially MusicBrainz field prefill, export, restore with covers, tamper refusal, and optional reset/root preservation. Do not perform those destructive live-catalogue checks automatically. Automatic hash-based relinking, snapshot-to-master reconstruction, WAV/DSF/other non-FLAC tag write-back, internet lyrics providers, AI modules, live NAS endurance, and iPad device validation remain deferred; the provider/format choices in the Open Decisions section still require the user.
 
 ## 13. Planned implementation order after the next slice
 
