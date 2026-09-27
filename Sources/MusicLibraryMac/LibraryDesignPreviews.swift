@@ -43,6 +43,7 @@ private enum LibraryDesignPreviewFixtures {
         AlbumIdentityHeader(
             album: LibraryDesignPreviewFixtures.album,
             artworkPath: nil,
+            isEditing: true,
             isLocal: true,
             isPublished: true,
             locationName: "Pak Kee",
@@ -73,6 +74,7 @@ private enum LibraryDesignPreviewFixtures {
         AlbumIdentityHeader(
             album: album,
             artworkPath: nil,
+            isEditing: true,
             isLocal: false,
             isPublished: false,
             locationName: "Unknown",

@@ -2186,6 +2186,15 @@ private struct ImportBatchDetail: View {
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         VStack(alignment: .trailing, spacing: 8) {
+                            LibraryPill(
+                                title: proposal.status.rawValue.capitalized,
+                                symbol: proposal.createdAlbumID != nil
+                                    ? "checkmark.circle.fill"
+                                    : (proposal.status == .dismissed ? "xmark.circle" : "circle.dashed"),
+                                tint: proposal.createdAlbumID != nil
+                                    ? .green
+                                    : (proposal.status == .dismissed ? .secondary : .orange)
+                            )
                             Button("Search MusicBrainz…", systemImage: "magnifyingglass") { proposalToLookUp = proposal }
                             if let selection = selections[proposal.id] {
                                 Button("Review MusicBrainz Fields…", systemImage: "rectangle.and.pencil.and.ellipsis") { selectionToReview = selection }
@@ -2220,12 +2229,6 @@ private struct ImportBatchDetail: View {
                     }
                     .padding(12)
                     .background(.quaternary.opacity(0.65), in: RoundedRectangle(cornerRadius: 12))
-                    .overlay(alignment: .topTrailing) {
-                        Text(proposal.status.rawValue.capitalized)
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.secondary)
-                            .padding(8)
-                    }
                     .padding(.vertical, 4)
                 }
             }
@@ -3033,6 +3036,40 @@ private struct ArtworkPreview: View {
     }
 }
 
+private struct ArtworkViewer: View {
+    @Environment(\.dismiss) private var dismiss
+    let artwork: Artwork
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color.black
+                if let path = artwork.localPath, let image = NSImage(contentsOfFile: path) {
+                    Image(nsImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        .padding(28)
+                        .accessibilityLabel("Album cover artwork")
+                } else {
+                    ContentUnavailableView(
+                        "Artwork file unavailable",
+                        systemImage: "photo.badge.exclamationmark",
+                        description: Text("The selected catalogue artwork could not be read.")
+                    )
+                    .foregroundStyle(.white)
+                }
+            }
+            .navigationTitle("Cover artwork")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                }
+            }
+        }
+        .frame(minWidth: 620, idealWidth: 820, minHeight: 560, idealHeight: 720)
+    }
+}
+
 private struct TagWritePreviewSheet: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var library: LibraryStore
@@ -3291,6 +3328,8 @@ private struct AlbumDetail: View {
     @State private var discPendingDeletion: Disc?
     @State private var showsTagWritePreview = false
     @State private var showsArtworkManagement = false
+    @State private var artworkToView: Artwork?
+    @State private var isOrganizeMode = false
 
     var body: some View {
         ScrollView {
@@ -3298,6 +3337,7 @@ private struct AlbumDetail: View {
                 AlbumIdentityHeader(
                     album: album,
                     artworkPath: artwork.first(where: { $0.role == .front && $0.isSelected })?.localPath,
+                    isEditing: isOrganizeMode,
                     isLocal: library.localAlbumIDs.contains(album.id),
                     isPublished: library.publishedAlbumIDs.contains(album.id),
                     locationName: album.hasCD ? locationName : nil,
@@ -3320,9 +3360,9 @@ private struct AlbumDetail: View {
                         LibrarySectionHeader(
                             "Tracks",
                             subtitle: trackSummary,
-                            actionTitle: "Add Disc",
+                            actionTitle: isOrganizeMode ? "Add Disc" : nil,
                             actionSymbol: "plus",
-                            action: { showsAddDisc = true }
+                            action: isOrganizeMode ? { showsAddDisc = true } : nil
                         )
                         if discs.isEmpty {
                             Text("Create a disc to start building the catalogue track list. Digital files are never changed by these catalogue edits.")
@@ -3330,13 +3370,15 @@ private struct AlbumDetail: View {
                                 .foregroundStyle(.secondary)
                         } else {
                             ForEach(discs) { disc in
-                                discHeaderRow(disc)
+                                discHeaderRow(disc, allowsEditing: isOrganizeMode)
                                 ForEach(tracksByDisc[disc.id] ?? []) { track in
-                                    albumTrackRow(track)
+                                    albumTrackRow(track, allowsEditing: isOrganizeMode)
                                 }
-                                Button("Add track", systemImage: "plus") { discForTrack = disc }
-                                    .buttonStyle(.borderless)
-                                    .font(.callout)
+                                if isOrganizeMode {
+                                    Button("Add track", systemImage: "plus") { discForTrack = disc }
+                                        .buttonStyle(.borderless)
+                                        .font(.callout)
+                                }
                                 if disc.id != discs.last?.id { Divider().padding(.vertical, 4) }
                             }
                         }
@@ -3367,20 +3409,24 @@ private struct AlbumDetail: View {
         .background(Color(nsColor: .windowBackgroundColor))
         .navigationTitle(album.title)
         .toolbar {
-            Button("Edit Album", systemImage: "pencil", action: onEdit)
-            Button("Add Disc", systemImage: "plus") { showsAddDisc = true }
-            Menu("Artwork", systemImage: "photo") {
-                Button("Change Cover…", systemImage: "photo.badge.plus") { showsArtworkPicker = true }
-                Button("Artwork Details…", systemImage: "info.circle") { showsArtworkManagement = true }
+            if isOrganizeMode {
+                Button("Done", systemImage: "checkmark") { isOrganizeMode = false }
+                Button("Edit Album", systemImage: "pencil", action: onEdit)
+                Button("Add Disc", systemImage: "plus") { showsAddDisc = true }
+            } else {
+                Button("Organize", systemImage: "pencil") { isOrganizeMode = true }
             }
-            Menu("Album Actions", systemImage: "ellipsis.circle") {
-                if aliases.isEmpty {
-                    Button("Add Other Title…", systemImage: "text.badge.plus") { showsAddAlias = true }
-                }
-                if !discs.isEmpty {
-                    Divider()
-                    Button("Preview FLAC Tag Changes…", systemImage: "tag") { showsTagWritePreview = true }
-                    Text("FLAC only; preview and backup are required before writing.")
+            Menu("Artwork", systemImage: "photo") { artworkMenuContent() }
+            if isOrganizeMode {
+                Menu("Album Actions", systemImage: "ellipsis.circle") {
+                    if aliases.isEmpty {
+                        Button("Add Other Title…", systemImage: "text.badge.plus") { showsAddAlias = true }
+                    }
+                    if !discs.isEmpty {
+                        Divider()
+                        Button("Preview FLAC Tag Changes…", systemImage: "tag") { showsTagWritePreview = true }
+                        Text("FLAC only; preview and backup are required before writing.")
+                    }
                 }
             }
         }
@@ -3400,6 +3446,7 @@ private struct AlbumDetail: View {
         .sheet(item: $trackToEdit) { track in EditTrackEditor(library: library, track: track, onSaved: { await loadContent() }) }
         .sheet(item: $metadataSelection) { selection in TrackMetadataInspector(library: library, selection: selection) }
         .sheet(item: $trackForLyrics) { track in LyricsEditor(library: library, track: track) }
+        .sheet(item: $artworkToView) { image in ArtworkViewer(artwork: image) }
         .sheet(isPresented: $showsArtworkManagement) {
             ArtworkManagementSheet(
                 artwork: artwork,
@@ -3462,6 +3509,24 @@ private struct AlbumDetail: View {
 
     private var playableTracks: [Track] {
         discs.flatMap { tracksByDisc[$0.id] ?? [] }
+    }
+
+    private var selectedArtwork: Artwork? {
+        artwork.first(where: { $0.role == .front && $0.isSelected })
+    }
+
+    @ViewBuilder
+    private func artworkMenuContent() -> some View {
+        if let selectedArtwork {
+            Button("View Cover…", systemImage: "arrow.up.left.and.arrow.down.right") { artworkToView = selectedArtwork }
+        }
+        if isOrganizeMode {
+            Divider()
+            Button("Change Cover…", systemImage: "photo.badge.plus") { showsArtworkPicker = true }
+            Button("Artwork Details…", systemImage: "info.circle") { showsArtworkManagement = true }
+        } else if selectedArtwork == nil {
+            Text("No cover selected")
+        }
     }
 
     private var trackSummary: String {
@@ -3605,7 +3670,7 @@ private struct AlbumDetail: View {
     }
 
     @ViewBuilder
-    private func albumTrackRow(_ track: Track) -> some View {
+    private func albumTrackRow(_ track: Track, allowsEditing: Bool) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Text(String(format: "%02d", track.number))
@@ -3633,15 +3698,19 @@ private struct AlbumDetail: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
                 Menu {
-                    Button("Edit Track", systemImage: "pencil") { trackToEdit = track }
+                    if allowsEditing {
+                        Button("Edit Track", systemImage: "pencil") { trackToEdit = track }
+                    }
                     Button("Show Embedded Metadata", systemImage: "info.circle") { metadataSelection = .init(trackID: track.id, title: track.title) }
                     Button("Lyrics", systemImage: "quote.bubble") { trackForLyrics = track }
                     Menu("Add to Playlist", systemImage: "text.badge.plus") {
                         playlistMenuContent(for: track)
                     }
-                    Button("Add Credit", systemImage: "person.badge.plus") { trackForContributor = track }
-                    Divider()
-                    Button("Remove Track", systemImage: "trash", role: .destructive) { trackPendingDeletion = track }
+                    if allowsEditing {
+                        Button("Add Credit", systemImage: "person.badge.plus") { trackForContributor = track }
+                        Divider()
+                        Button("Remove Track", systemImage: "trash", role: .destructive) { trackPendingDeletion = track }
+                    }
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
@@ -3654,16 +3723,18 @@ private struct AlbumDetail: View {
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
                         Text("\(credit.creditedName ?? credit.contributor.name) — \(credit.role.rawValue)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                         Spacer(minLength: 4)
-                        Menu {
-                            Button("Edit credited name", systemImage: "pencil") { trackCreditToEdit = .init(track: track, credit: credit) }
-                            Button("Remove credit", systemImage: "trash", role: .destructive) { removeTrackCredit(credit, from: track) }
-                        } label: {
-                            Image(systemName: "ellipsis")
+                        if allowsEditing {
+                            Menu {
+                                Button("Edit credited name", systemImage: "pencil") { trackCreditToEdit = .init(track: track, credit: credit) }
+                                Button("Remove credit", systemImage: "trash", role: .destructive) { removeTrackCredit(credit, from: track) }
+                            } label: {
+                                Image(systemName: "ellipsis")
+                            }
+                            .accessibilityLabel("Credit actions")
                         }
-                        .accessibilityLabel("Credit actions")
                     }
                     .padding(.leading, 36)
                 }
@@ -3672,7 +3743,7 @@ private struct AlbumDetail: View {
         .padding(.vertical, 3)
     }
 
-    private func discHeaderRow(_ disc: Disc) -> some View {
+    private func discHeaderRow(_ disc: Disc, allowsEditing: Bool) -> some View {
         HStack {
             Image(systemName: "opticaldisc")
                 .foregroundStyle(.secondary)
@@ -3684,17 +3755,19 @@ private struct AlbumDetail: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Menu {
-                Button("Move Earlier", systemImage: "arrow.up") { moveDisc(disc, to: disc.number - 1) }
-                    .disabled(disc.number <= 1)
-                Button("Move Later", systemImage: "arrow.down") { moveDisc(disc, to: disc.number + 1) }
-                    .disabled(disc.number >= discs.count)
-                Divider()
-                Button("Remove Disc", systemImage: "trash", role: .destructive) { discPendingDeletion = disc }
-            } label: {
-                Image(systemName: "ellipsis.circle")
+            if allowsEditing {
+                Menu {
+                    Button("Move Earlier", systemImage: "arrow.up") { moveDisc(disc, to: disc.number - 1) }
+                        .disabled(disc.number <= 1)
+                    Button("Move Later", systemImage: "arrow.down") { moveDisc(disc, to: disc.number + 1) }
+                        .disabled(disc.number >= discs.count)
+                    Divider()
+                    Button("Remove Disc", systemImage: "trash", role: .destructive) { discPendingDeletion = disc }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+                .accessibilityLabel("Actions for disc \(disc.number)")
             }
-            .accessibilityLabel("Actions for disc \(disc.number)")
         }
         .padding(.top, 3)
     }

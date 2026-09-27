@@ -227,7 +227,7 @@ This database is user data. Do not remove it during development. If a destructiv
 
 ## 8. Current tests and verification baseline
 
-The current debug baseline contains 102 tests in 9 suites. Delivery validation for version 0.15 (build 16) also runs the rebuilt release suite before commit. Run `swift test` and `swift test -c release`; do not rely on this handoff alone.
+The current debug baseline contains 102 tests in 9 suites. Delivery validation for version 0.16 (build 17) also runs the rebuilt release suite before commit. Run `swift test` and `swift test -c release`; do not rely on this handoff alone.
 
 Albums now expose **Move to Recently Deleted** in the Albums list context menu. Settings displays a **Recently Deleted** section and its Restore action. This uses the existing soft-delete records, preserves album relationships, and never deletes or changes source media files.
 
@@ -538,13 +538,21 @@ The Mac shell now uses one sidebar and one main workspace. Albums, contributors,
 
 `swift build`, `swift test`, and `swift test -c release` pass with 102 tests in 9 suites. `Scripts/package-mac-app.sh` produced `build/Music Library 0.15.app` (build 16); plist lint and strict deep code-signature verification pass. The Mac was locked during delivery, so the final interactive screenshot walkthrough remains pending and is not claimed as complete. The known non-blocking `AVMetadataItem.stringValue` deprecation remains.
 
+### 27 September 2026 R2 Album Detail and import-card refinement checkpoint
+
+Release-proposal cards now place the status pill inside the trailing action stack above **Search MusicBrainz…**. The previous top-right overlay was removed, so the status cannot collide with the lookup control at narrow or wide card sizes. The status remains textual and icon-led, with created, dismissed, and pending states distinguishable without relying on colour alone.
+
+Album Detail now opens in a reading-oriented state. The toolbar's **Organize** action enters an explicit edit boundary; only there are album editing, cover selection/management, Other title add/remove, contributor edit/remove, disc reorder/remove, track edit/add/remove, credit changes, and FLAC tag-preview controls available. Read mode keeps playback and non-mutating track inspection actions available. The Artwork menu can open the selected cover in a focused viewer, while artwork management stays in Organize. This is a presentation and workflow change only: the Mac remains the sole catalogue writer, edits remain catalogue-only, managed artwork copy safeguards are unchanged, and source audio is never changed by these controls.
+
+`MusicLibraryMacApp.swift`, `LibraryDesignSystem.swift`, and the isolated identity previews implement this slice. `swift test`, `swift test -c release`, `swift build`, and `git diff --check` pass; both test configurations pass 102 tests in 9 suites. The user-facing bundle is advanced to `build/Music Library 0.16.app` (build 17); final plist/signature checks are performed after packaging. The known non-blocking `AVMetadataItem.stringValue` deprecation remains, and interactive visual verification is still pending until the Mac is unlocked.
+
 ### Next safe slice
 
-**BUILD_PLAN.md section 12 remains the controlling redesign specification.** The next implementation slice begins R2: make Album Detail's reading/edit boundary explicit, add the artwork viewer workflow, and reduce remaining track/credit editing clutter while preserving the new workspace/back behavior. Then proceed to R3's batched artist and availability summaries.
+**BUILD_PLAN.md section 12 remains the controlling redesign specification.** R2 is complete: Album Detail has an explicit reading/Organize boundary, a focused artwork viewer, and reduced track/credit editing clutter while preserving the new workspace/back behavior. The next implementation slice is R3's batched artist and availability summaries.
 
 The plan explicitly supersedes the old permanent three-column presentation and “UI implementation complete” gate. Do not restart Phase 0 or rebuild the existing persistence/player services. Barcode/release-URL lookup and optional MusicBrainz track creation are planned functional work, not existing capabilities. R10/iPad and deferred providers remain a separate boundary. No chat was created or messaged as part of preparing this plan.
 
-The preceding implementation was validated with 102 tests in debug and release. For the next slice, run the full debug/release tests, package 0.16 only after a successful runnable build, and perform the pending interactive visual walkthrough on an unlocked Mac.
+The preceding implementation was validated with 102 tests in debug and release. For the next slice, begin R3's batched artist and availability summaries, then perform the pending interactive visual walkthrough on an unlocked Mac. Do not expand into barcode/release-URL lookup or iPad work in this slice.
 
 ### Existing real-library acceptance boundary
 

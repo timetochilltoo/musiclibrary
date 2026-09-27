@@ -115,6 +115,7 @@ struct LibraryMetadataGrid: View {
 struct AlbumIdentityHeader: View {
     let album: Album
     let artworkPath: String?
+    let isEditing: Bool
     let isLocal: Bool
     let isPublished: Bool
     let locationName: String?
@@ -152,13 +153,15 @@ struct AlbumIdentityHeader: View {
                 .frame(width: 210, height: 210)
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .shadow(color: .black.opacity(0.18), radius: 14, y: 7)
-            Button("Change cover", systemImage: "photo.badge.plus", action: onChangeArtwork)
-                .labelStyle(.iconOnly)
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-                .padding(9)
-                .help("Choose a different front cover")
-                .accessibilityLabel("Change album cover")
+            if isEditing {
+                Button("Change cover", systemImage: "photo.badge.plus", action: onChangeArtwork)
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .padding(9)
+                    .help("Choose a different front cover")
+                    .accessibilityLabel("Change album cover")
+            }
         }
         .accessibilityElement(children: .contain)
     }
@@ -193,12 +196,12 @@ struct AlbumIdentityHeader: View {
                     LibrarySectionHeader(
                         "Other titles",
                         subtitle: "Alternative, translated, and romanized names used for search",
-                        actionTitle: "Add title",
+                        actionTitle: isEditing ? "Add title" : nil,
                         actionSymbol: "plus",
-                        action: onAddOtherTitle
+                        action: isEditing ? onAddOtherTitle : nil
                     )
                     ForEach(aliases) { alias in
-                        AlbumOtherTitleRow(alias: alias, onRemove: { onRemoveOtherTitle(alias) })
+                        AlbumOtherTitleRow(alias: alias, allowsEditing: isEditing, onRemove: { onRemoveOtherTitle(alias) })
                     }
                 }
             }
@@ -263,10 +266,12 @@ struct AlbumIdentityHeader: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                 Spacer()
-                Button("Manage", systemImage: "person.2", action: onAddContributor)
-                    .labelStyle(.titleAndIcon)
-                    .buttonStyle(.borderless)
-                    .font(.caption)
+                if isEditing {
+                    Button("Manage", systemImage: "person.2", action: onAddContributor)
+                        .labelStyle(.titleAndIcon)
+                        .buttonStyle(.borderless)
+                        .font(.caption)
+                }
             }
             if credits.isEmpty {
                 Text("No contributors recorded")
@@ -283,15 +288,17 @@ struct AlbumIdentityHeader: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         Spacer(minLength: 4)
-                        Menu {
-                            Button("Edit contributor name", systemImage: "pencil") { onEditContributor(credit) }
-                            Button("Edit credited name", systemImage: "text.cursor") { onEditCreditedName(credit) }
-                            Divider()
-                            Button("Remove credit", systemImage: "trash", role: .destructive) { onRemoveContributor(credit) }
-                        } label: {
-                            Image(systemName: "ellipsis.circle")
+                        if isEditing {
+                            Menu {
+                                Button("Edit contributor name", systemImage: "pencil") { onEditContributor(credit) }
+                                Button("Edit credited name", systemImage: "text.cursor") { onEditCreditedName(credit) }
+                                Divider()
+                                Button("Remove credit", systemImage: "trash", role: .destructive) { onRemoveContributor(credit) }
+                            } label: {
+                                Image(systemName: "ellipsis.circle")
+                            }
+                            .accessibilityLabel("Actions for \(credit.contributor.name)")
                         }
-                        .accessibilityLabel("Actions for \(credit.contributor.name)")
                     }
                 }
                 if credits.count > 3 {
@@ -307,6 +314,7 @@ struct AlbumIdentityHeader: View {
 
 struct AlbumOtherTitleRow: View {
     let alias: AlbumAlias
+    let allowsEditing: Bool
     let onRemove: () -> Void
 
     var body: some View {
@@ -321,12 +329,14 @@ struct AlbumOtherTitleRow: View {
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 8)
-            Menu {
-                Button("Remove Other Title", systemImage: "trash", role: .destructive, action: onRemove)
-            } label: {
-                Image(systemName: "ellipsis.circle")
+            if allowsEditing {
+                Menu {
+                    Button("Remove Other Title", systemImage: "trash", role: .destructive, action: onRemove)
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+                .accessibilityLabel("Actions for \(alias.name)")
             }
-            .accessibilityLabel("Actions for \(alias.name)")
         }
     }
 }
