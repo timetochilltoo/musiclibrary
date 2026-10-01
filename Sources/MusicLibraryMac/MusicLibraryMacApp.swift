@@ -214,7 +214,9 @@ private struct LibraryShellView: View {
             }
         }
         .onChange(of: section) { _, newSection in
-            if newSection != .albums { selectedAlbumID = nil }
+            // Album links stay inside their originating workspace. A sidebar
+            // change always closes that route, even when moving to Albums.
+            selectedAlbumID = nil
             if newSection != .contributors { selectedContributorID = nil }
             if newSection != .boxSets { selectedBoxSetID = nil }
             if newSection != .importInbox { selectedImportBatchID = nil }
@@ -307,27 +309,33 @@ private struct LibraryShellView: View {
                 detail
             }
         case .contributors:
-            if selectedContributorID == nil { content } else { detail }
+            RetainedBrowseWorkspace(showsDetail: selectedAlbumID != nil) {
+                Group { if selectedContributorID == nil { content } else { detail } }
+                    .disabled(selectedAlbumID != nil)
+            } detail: { albumDetail }
         case .boxSets:
-            if selectedBoxSetID == nil { content } else { detail }
+            RetainedBrowseWorkspace(showsDetail: selectedAlbumID != nil) {
+                Group { if selectedBoxSetID == nil { content } else { detail } }
+                    .disabled(selectedAlbumID != nil)
+            } detail: { albumDetail }
         case .importInbox:
             if selectedImportBatchID == nil { content } else { detail }
         case .playlists:
             if selectedPlaylistID == nil { content } else { detail }
         case .settings:
-            SettingsWorkspace(
-                library: library,
-                playback: playback,
-                category: $settingsCategory,
-                onShowAlbum: { albumID in
-                    selectedAlbumID = albumID
-                    section = .albums
-                },
-                onShowImportBatch: { batchID in
-                    selectedImportBatchID = batchID
-                    section = .importInbox
-                }
-            )
+            RetainedBrowseWorkspace(showsDetail: selectedAlbumID != nil) {
+                SettingsWorkspace(
+                    library: library,
+                    playback: playback,
+                    category: $settingsCategory,
+                    onShowAlbum: { selectedAlbumID = $0 },
+                    onShowImportBatch: { batchID in
+                        selectedImportBatchID = batchID
+                        section = .importInbox
+                    }
+                )
+                .disabled(selectedAlbumID != nil)
+            } detail: { albumDetail }
         case .locations, .none:
             content
         }
@@ -556,7 +564,6 @@ private struct LibraryShellView: View {
                 playback: playback,
                 onShowAlbum: { albumID in
                     selectedAlbumID = albumID
-                    section = .albums
                 },
                 onShowImportBatch: { batchID in
                     selectedImportBatchID = batchID
@@ -565,9 +572,9 @@ private struct LibraryShellView: View {
             )
             .navigationTitle("Settings")
         } else if section == .contributors, let selectedContributorID, let contributor = library.contributors.first(where: { $0.id == selectedContributorID }) {
-            ContributorDetail(library: library, contributor: contributor, onShowAlbum: { albumID in selectedAlbumID = albumID; section = .albums })
+            ContributorDetail(library: library, contributor: contributor, onShowAlbum: { selectedAlbumID = $0 })
         } else if section == .boxSets, let selectedBoxSetID, let box = library.boxSets.first(where: { $0.id == selectedBoxSetID }) {
-            BoxSetDetail(library: library, boxSet: box)
+            BoxSetDetail(library: library, boxSet: box, isActive: selectedAlbumID == nil, onShowAlbum: { selectedAlbumID = $0 })
         } else if section == .importInbox, let selectedImportBatchID, let batch = library.importBatches.first(where: { $0.id == selectedImportBatchID }) {
             ImportBatchDetail(
                 library: library,
@@ -583,8 +590,8 @@ private struct LibraryShellView: View {
             )
         } else if section == .playlists, let selectedPlaylistID, let playlist = library.playlists.first(where: { $0.id == selectedPlaylistID }) {
             PlaylistDetail(library: library, playback: playback, playlist: playlist)
-        } else if let selectedAlbumID, let album = library.catalogueAlbums.first(where: { $0.id == selectedAlbumID }) {
-            AlbumDetail(library: library, playback: playback, album: album, locations: library.locations, onEdit: { albumToEdit = album })
+        } else if section == .albums, selectedAlbumID != nil {
+            albumDetail
         } else if section == .importInbox {
             ContentUnavailableView("Select a music folder", systemImage: "tray", description: Text("Choose a registered folder to review its latest scan and proposed changes."))
         } else if section == .playlists {
@@ -595,6 +602,15 @@ private struct LibraryShellView: View {
             ContentUnavailableView("Select a box set", systemImage: "shippingbox", description: Text("Box-set members and placement will appear here."))
         } else {
             ContentUnavailableView("Select an album", systemImage: "opticaldisc", description: Text("Album details will appear here."))
+        }
+    }
+
+    @ViewBuilder private var albumDetail: some View {
+        if let selectedAlbumID, let album = library.catalogueAlbums.first(where: { $0.id == selectedAlbumID }) {
+            AlbumDetail(library: library, playback: playback, album: album, locations: library.locations, onEdit: { albumToEdit = album })
+                .id(selectedAlbumID)
+        } else {
+            ContentUnavailableView("Album unavailable", systemImage: "opticaldisc", description: Text("This album is no longer in the active catalogue. Use Back to return."))
         }
     }
 
@@ -669,7 +685,18 @@ private struct LibraryShellView: View {
     }
 
     private var backDestination: (title: String, clear: () -> Void)? {
-        if selectedAlbumID != nil && section == .albums { return ("Albums", { selectedAlbumID = nil }) }
+        if selectedAlbumID != nil {
+            let title: String
+            switch section {
+            case .contributors:
+                title = library.contributors.first(where: { $0.id == selectedContributorID })?.name ?? "Contributors"
+            case .boxSets:
+                title = library.boxSets.first(where: { $0.id == selectedBoxSetID })?.title ?? "Box Sets"
+            case .settings: title = settingsCategory.title
+            default: title = "Albums"
+            }
+            return (title, { selectedAlbumID = nil })
+        }
         if selectedContributorID != nil && section == .contributors { return ("Contributors", { selectedContributorID = nil }) }
         if selectedBoxSetID != nil && section == .boxSets { return ("Box Sets", { selectedBoxSetID = nil }) }
         if selectedImportBatchID != nil && section == .importInbox { return ("Imports", { selectedImportBatchID = nil }) }
@@ -700,7 +727,7 @@ private struct LibraryShellView: View {
     }
 
     private var workspaceTitle: String {
-        if section == .albums, let selectedAlbumID, let album = library.catalogueAlbums.first(where: { $0.id == selectedAlbumID }) {
+        if let selectedAlbumID, let album = library.catalogueAlbums.first(where: { $0.id == selectedAlbumID }) {
             return album.title
         }
         if section == .contributors, let selectedContributorID, let contributor = library.contributors.first(where: { $0.id == selectedContributorID }) {
@@ -1147,7 +1174,6 @@ private struct ContributorDetail: View {
                 }
             }
         }
-        .navigationTitle(contributor.name)
         .task(id: contributor.id) { await loadAlbums() }
     }
 
@@ -4998,6 +5024,8 @@ private struct EditAlbumEditor: View {
 private struct BoxSetDetail: View {
     @ObservedObject var library: LibraryStore
     let boxSet: BoxSet
+    let isActive: Bool
+    let onShowAlbum: (AlbumID) -> Void
     @State private var members: [BoxSetMembership] = []
     @State private var memberToRemove: BoxSetMembership?
     @State private var showsAddMember = false
@@ -5008,7 +5036,11 @@ private struct BoxSetDetail: View {
             Section("Albums") {
                 ForEach(members) { member in
                     HStack {
-                        Text("\(member.position). \(member.album.displayTitle)")
+                        Button { onShowAlbum(member.album.id) } label: {
+                            Text("\(member.position). \(member.album.displayTitle)")
+                        }
+                        .buttonStyle(.plain)
+                        .help("Open album")
                         Spacer()
                         Button("Up", systemImage: "arrow.up") { reorder(member, to: member.position - 1) }.disabled(member.position == 1)
                         Button("Down", systemImage: "arrow.down") { reorder(member, to: member.position + 1) }.disabled(member.position == members.count)
@@ -5017,8 +5049,9 @@ private struct BoxSetDetail: View {
                 }
             }
         }
-        .navigationTitle(boxSet.title)
-        .toolbar { Button("Add Existing Album", systemImage: "plus") { showsAddMember = true } }
+        .toolbar {
+            if isActive { Button("Add Existing Album", systemImage: "plus") { showsAddMember = true } }
+        }
         .task(id: boxSet.id) { await reloadMembers() }
         .sheet(isPresented: $showsAddMember) { AddBoxMemberEditor(library: library, boxSet: boxSet, onAdded: { await reloadMembers() }) }
         .sheet(item: $memberToRemove) { member in RemoveBoxMemberEditor(library: library, boxSet: boxSet, member: member, onRemoved: { await reloadMembers() }) }
