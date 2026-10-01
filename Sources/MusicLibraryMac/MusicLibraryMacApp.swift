@@ -364,7 +364,7 @@ private struct LibraryShellView: View {
                     ContentUnavailableView {
                         Label(activeAlbumFilter || !searchText.isEmpty ? "No matching albums" : "Add your first album", systemImage: "opticaldisc")
                     } description: {
-                        Text(activeAlbumFilter || !searchText.isEmpty ? "Try another search or clear your filters." : "Add a physical album or scan a registered music folder.")
+                        Text(albumRootFilter == "thisMac" ? "This Mac includes folders confirmed on a local volume. For offline or unverified folders, choose their name in the Music Folder filter." : (activeAlbumFilter || !searchText.isEmpty ? "Try another search or clear your filters." : "Add a physical album or scan a registered music folder."))
                     } actions: {
                         if activeAlbumFilter || !searchText.isEmpty {
                             Button("Clear Search and Filters") { clearAlbumFilters(); searchText = "" }
@@ -466,7 +466,8 @@ private struct LibraryShellView: View {
     }
 
     private var scopedAlbums: [Album] {
-        library.albums.filter { album in
+        let localRootIDs = library.localStorageRootIDs
+        return library.albums.filter { album in
             let summary = library.albumBrowseSummaries[album.id] ?? .init()
             switch albumOwnershipFilter {
             case .all: break
@@ -476,7 +477,9 @@ private struct LibraryShellView: View {
             }
             if albumAvailabilityFilter == .available && !summary.canPlay { return false }
             if albumAvailabilityFilter == .unavailable && summary.canPlay { return false }
-            if !albumRootFilter.isEmpty && !summary.storageRootIDs.contains(where: { $0.description == albumRootFilter }) { return false }
+            if albumRootFilter == "thisMac" {
+                if !AlbumBrowseSource.thisMac.matches(summary, localRootIDs: localRootIDs) { return false }
+            } else if !albumRootFilter.isEmpty && !summary.storageRootIDs.contains(where: { $0.description == albumRootFilter }) { return false }
             return true
         }
     }
@@ -606,8 +609,9 @@ private struct LibraryShellView: View {
                     }
                     Picker("Music Folder", selection: $albumRootFilter) {
                         Text("Any music folder").tag("")
+                        Text("This Mac (verified folders)").tag("thisMac")
                         ForEach(library.storageRoots) { root in Text(root.displayName).tag(root.id.description) }
-                        if !albumRootFilter.isEmpty && !library.storageRoots.contains(where: { $0.id.description == albumRootFilter }) {
+                        if !albumRootFilter.isEmpty && albumRootFilter != "thisMac" && !library.storageRoots.contains(where: { $0.id.description == albumRootFilter }) {
                             Text("Removed music folder").tag(albumRootFilter)
                         }
                     }
@@ -680,7 +684,7 @@ private struct LibraryShellView: View {
         if albumOwnershipFilter != .all { labels.append(albumOwnershipFilter.title) }
         if albumAvailabilityFilter != .any { labels.append(albumAvailabilityFilter.title) }
         if !albumRootFilter.isEmpty {
-            labels.append(library.storageRoots.first(where: { $0.id.description == albumRootFilter })?.displayName ?? "Removed music folder")
+            labels.append(albumRootFilter == "thisMac" ? "This Mac · verified folders" : (library.storageRoots.first(where: { $0.id.description == albumRootFilter })?.displayName ?? "Removed music folder"))
         }
         if showsFavouriteAlbumsOnly { labels.append("Favourites") }
         return labels.joined(separator: " · ")

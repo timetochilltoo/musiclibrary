@@ -24,6 +24,11 @@ public final class LibraryStore: ObservableObject {
     @Published public private(set) var boxSets: [BoxSet] = []
     @Published public private(set) var deletedBoxSets: [BoxSet] = []
     @Published public private(set) var storageRoots: [StorageRoot] = []
+    @Published public private(set) var storageRootLocalities: [StorageRootID: StorageRootLocality] = [:]
+
+    public var localStorageRootIDs: Set<StorageRootID> {
+        Set(storageRoots.filter { $0.status == .available && storageRootLocalities[$0.id] == .local }.map(\.id))
+    }
     @Published public private(set) var localAlbumIDs: Set<AlbumID> = []
     @Published public private(set) var publishedAlbumIDs: Set<AlbumID> = []
     @Published public private(set) var albumFrontArtworkPaths: [AlbumID: String] = [:]
@@ -143,6 +148,8 @@ public final class LibraryStore: ObservableObject {
         locations = nextLocations
         boxSets = nextBoxSets
         deletedBoxSets = nextDeletedBoxSets
+        // A restored/replaced root must be measured again, even if its ID survives.
+        storageRootLocalities = StorageRootLocalityProbe.retainUnchanged(storageRootLocalities, previousRoots: storageRoots, currentRoots: nextRoots)
         storageRoots = nextRoots
         localAlbumIDs = nextLocalIDs
         publishedAlbumIDs = nextPublishedIDs
@@ -310,6 +317,7 @@ public final class LibraryStore: ObservableObject {
         let scope: StorageRootScope = url.path.hasPrefix("/Volumes/") ? .nasPublished : .localOnly
         _ = try await database.createStorageRoot(.init(displayName: url.lastPathComponent, lastKnownPath: url.path, bookmarkData: bookmarkData, volumeIdentifier: values?.volumeUUIDString, status: .available, scope: scope))
         try await reload()
+        try await refreshStorageRootAccess()
     }
 
     public func renameStorageRoot(_ id: StorageRootID, to displayName: String) async throws {
@@ -327,20 +335,24 @@ public final class LibraryStore: ObservableObject {
     public func deleteStorageRoot(_ id: StorageRootID) async throws {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
         try await database.deleteStorageRoot(id)
+        storageRootLocalities.removeValue(forKey: id)
         try await reload()
     }
 
     public func refreshStorageRootAccess() async throws {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
         var didUpdateRoot = false
+        var measuredLocalities: [StorageRootID: StorageRootLocality] = [:]
         for root in storageRoots {
-            let state = resolveSecurityScopedBookmark(root)
+            let state = resolveSecurityScopedBookmark(root, measureLocality: true)
+            measuredLocalities[root.id] = state.locality
             if root.status != state.status || root.bookmarkNeedsRefresh != state.bookmarkNeedsRefresh || state.refreshedBookmarkData != nil || (state.status == .available && root.lastKnownPath != state.url?.path) {
                 try await database.updateStorageRootAccess(root.id, status: state.status, lastKnownPath: state.url?.path, bookmarkData: state.refreshedBookmarkData, bookmarkNeedsRefresh: state.bookmarkNeedsRefresh)
                 didUpdateRoot = true
             }
         }
         if didUpdateRoot { try await reload() }
+        storageRootLocalities = measuredLocalities
     }
 
     public func recheckLibraryHealth() async throws {
@@ -1226,25 +1238,27 @@ public final class LibraryStore: ObservableObject {
         return try url.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil)
     }
 
-    private func resolveSecurityScopedBookmark(_ root: StorageRoot) -> (status: StorageRootStatus, url: URL?, refreshedBookmarkData: Data?, bookmarkNeedsRefresh: Bool) {
-        guard let bookmarkData = root.bookmarkData else { return (.permissionRequired, nil, nil, false) }
+    private func resolveSecurityScopedBookmark(_ root: StorageRoot, measureLocality: Bool = false) -> (status: StorageRootStatus, url: URL?, refreshedBookmarkData: Data?, bookmarkNeedsRefresh: Bool, locality: StorageRootLocality) {
+        guard let bookmarkData = root.bookmarkData else { return (.permissionRequired, nil, nil, false, .unknown) }
         // Resolving a bookmark for an unmounted SMB volume makes macOS show its own
         // connection dialog. Check the volume mount point first so an offline NAS is
         // simply reported as offline and never blocks the application at launch.
         if isUnmountedVolumePath(root.lastKnownPath) {
-            return (.offline, nil, nil, false)
+            return (.offline, nil, nil, false, .unknown)
         }
         var isStale = false
         do {
             let url = try URL(resolvingBookmarkData: bookmarkData, options: [.withSecurityScope], relativeTo: nil, bookmarkDataIsStale: &isStale)
             let accessed = url.startAccessingSecurityScopedResource()
             defer { if accessed { url.stopAccessingSecurityScopedResource() } }
-            guard accessed else { return (.permissionRequired, nil, nil, isStale) }
-            guard FileManager.default.fileExists(atPath: url.path) else { return (.offline, url, nil, isStale) }
+            guard accessed else { return (.permissionRequired, nil, nil, isStale, .unknown) }
+            guard FileManager.default.fileExists(atPath: url.path) else { return (.offline, url, nil, isStale, .unknown) }
             let refreshed = isStale ? try? url.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil) : nil
-            return (.available, url, refreshed, isStale && refreshed == nil)
+            // Read the registered folder's volume only while its existing permission
+            // is active. Browsing cards never probes folders or individual media.
+            return (.available, url, refreshed, isStale && refreshed == nil, measureLocality ? StorageRootLocalityProbe.measure(at: url) : .unknown)
         } catch {
-            return (.permissionRequired, nil, nil, false)
+            return (.permissionRequired, nil, nil, false, .unknown)
         }
     }
 
