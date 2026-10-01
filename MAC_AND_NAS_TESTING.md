@@ -139,3 +139,10 @@ For every failed check, report:
 - whether the catalogue, existing snapshot cache, or media files changed unexpectedly.
 
 The expected safe outcome for any failure is: media files are untouched, the Mac catalogue remains intact, and the iPad retains its last verified local snapshot.
+## Isolated UI navigation checks
+
+For development, run `Scripts/run-navigation-fixture.sh` from the repository root. It explicitly builds Debug, resolves the current binary path, and launches a separately identified temporary app with `--navigation-fixture`. Never substitute a historical cached executable: old binaries can ignore fixture flags and start the normal catalogue. Current launch routing recognizes fixture bundle identifiers on argument-free reopen; Release refuses fixture bundles/flags. Regression tests cover both paths. Avoid asking UI tools to inspect a quit app unless explicitly testing relaunch: they may launch it again.
+
+The fixture runs the actual Mac shell over a newly generated temporary SQLite catalogue: 240 **Fixture Album** records, **Fixture Orchestra**, **Fixture collected editions**, and **Fixture shelf**. It contains no source-media roots or digital assets, and background publication/backup resolution is disabled. Verify these synthetic names before interacting. Its app identifier isolates browse/player preferences from the normal app. Do not select personal folders, contact providers, or use reset/restore/FLAC/cache-maintenance actions during these navigation checks.
+
+Check contributor → album → Back after scrolling; box-set → member → Back with the Add Existing Album toolbar restored; Settings Advanced → health album → Back with the same category; and sidebar changes during detail without stale album resurrection. Exercise grid/list, long-title search, no matches, and filter clearing at the 980-point minimum content width. Quit only the fixture when finished. Its database and app are temporary; this is not a live NAS, artwork-decode, or measured frame-time performance test.

@@ -10,18 +10,37 @@ struct MusicLibraryMacApp: App {
     @StateObject private var library = LibraryStore()
     @Environment(\.scenePhase) private var scenePhase
 
+    private var launchMode: LibraryLaunchMode {
+        #if DEBUG
+        let supportsFixtures = true
+        #else
+        let supportsFixtures = false
+        #endif
+        return .resolve(bundleIdentifier: Bundle.main.bundleIdentifier, arguments: ProcessInfo.processInfo.arguments, supportsFixtures: supportsFixtures)
+    }
+
     var body: some Scene {
         WindowGroup("Music Library") {
+            switch launchMode {
+            case .catalogue:
+                mainWorkspace
+            case .unavailableFixture:
+                ContentUnavailableView("Debug build required", systemImage: "exclamationmark.shield", description: Text("This fixture cannot run in Release. The personal catalogue has not been opened."))
+            case .navigationFixture:
             #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("--browse-fixture") {
+                LibraryNavigationFixtureWorkspace()
+                    .frame(minWidth: 980, minHeight: 640)
+            #else
+                EmptyView()
+            #endif
+            case .browseFixture:
+            #if DEBUG
                 LibraryBrowseFixture(usesLargeLibrary: ProcessInfo.processInfo.arguments.contains("--large-browse-fixture"))
                     .frame(minWidth: 700, minHeight: 520)
-            } else {
-                mainWorkspace
-            }
             #else
-            mainWorkspace
+                EmptyView()
             #endif
+            }
         }
     }
 
@@ -33,6 +52,30 @@ struct MusicLibraryMacApp: App {
                 }
     }
 }
+
+#if DEBUG
+private struct LibraryNavigationFixtureWorkspace: View {
+    @State private var store: LibraryStore?
+    @State private var failure: String?
+
+    var body: some View {
+        Group {
+            if let store {
+                LibraryShellView(library: store)
+            } else if let failure {
+                ContentUnavailableView("Fixture failed", systemImage: "exclamationmark.triangle", description: Text(failure))
+            } else {
+                ProgressView("Preparing disposable navigation fixture…")
+            }
+        }
+        .task {
+            guard store == nil, failure == nil else { return }
+            do { store = try await LibraryStore.makeNavigationFixture().store }
+            catch { failure = error.localizedDescription }
+        }
+    }
+}
+#endif
 
 private enum LibrarySettingsCategory: String, CaseIterable, Identifiable {
     case general
@@ -364,7 +407,7 @@ private struct LibraryShellView: View {
             }
             .safeAreaInset(edge: .top) {
                 HStack(spacing: 10) {
-                    Text("\(displayedAlbums.count) albums").font(.callout.weight(.medium))
+                    Text("\(displayedAlbums.count) \(displayedAlbums.count == 1 ? "album" : "albums")").font(.callout.weight(.medium))
                     if activeAlbumFilter {
                         Text(albumFilterDescription).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                         Spacer()
@@ -669,8 +712,8 @@ private struct LibraryShellView: View {
                     .help("Add a physical album to the catalogue")
                 } else if section == .settings && settingsCategory == .musicFolders {
                     Button("Add Music Folder", systemImage: "plus") { showsStorageRootPicker = true }
-                } else {
-                    Button(section == .locations ? "Add Location" : section == .boxSets ? "Add Box Set" : section == .importInbox ? "Rescan Music Folder" : section == .playlists ? "Add Playlist" : "Add Album", systemImage: "plus") {
+                } else if section == .locations || section == .boxSets || section == .importInbox || section == .playlists {
+                    Button(section == .locations ? "Add Location" : section == .boxSets ? "Add Box Set" : section == .importInbox ? "Rescan Music Folder" : "Add Playlist", systemImage: "plus") {
                         switch section {
                         case .locations: showsLocationEditor = true
                         case .boxSets: showsBoxSetEditor = true
@@ -1737,8 +1780,8 @@ private struct StorageRootList: View {
                 onReset: { confirmation in resetCatalogue(confirmation: confirmation) }
             )
         }
-        .task {
-            await refreshDSFCacheStatus()
+        .task(id: category) {
+            if shows(.playback) { await refreshDSFCacheStatus() }
         }
     }
 
