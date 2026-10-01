@@ -14,6 +14,8 @@ Current baseline: inspect `main` with `git log --oneline -5`; [HANDOFF.md](HANDO
 
 Completed and verified:
 
+- R3 results-only search: `LibraryStore.search` queries the existing database album-search API without loading other catalogue sections or scheduling background services. Empty queries use cached active albums. Catalogue reload and search have independent generation guards; reload re-applies the latest query after publishing its batched state. Isolated store fixtures disable live startup and background publication/backup resolution. Controlled async regressions cover overlapping refreshes, stale results/errors, and cancellation. No schema, search-index, or source-media change.
+
 - R3 catalogue browse summaries (1 October 2026): two batched persistence queries return ordered album-artist display names, digital ownership, distinct-track availability, and registered-root IDs for active albums. Reading summaries never probes media or increments revision. Physical-only track lists retain digital `none`; unavailable roots override stored asset eligibility. The Mac browser filters ownership, playable/unavailable state, and sources independently. This Mac uses session-only measured `volumeIsLocal` values from available, authorized roots during access refresh, never publication scope or path heuristics. Changed root identities invalidate the cache; unavailable/unmeasured roots remain selectable by name. No schema/snapshot changes or per-card media checks are introduced. Native fixture mode bypasses live catalogue startup. Exact validation is recorded in HANDOFF.md.
 
 - Swift package structure with macOS SwiftUI executable and separate Domain, Persistence, Application, and UI modules.

@@ -70,10 +70,27 @@ public final class LibraryStore: ObservableObject {
     private var catalogueURL: URL?
     private let metadataLookupProvider: any MetadataLookupProviding
     private var reloadGeneration = 0
+    private var searchGeneration = 0
     private var activeSearchTerm: String?
+    private var permitsBackgroundServices = true
+    private var albumSearch: @Sendable (MusicDatabase, String) async throws -> [Album] = { database, term in
+        try await database.albums(matching: term)
+    }
 
     public init(metadataLookupProvider: any MetadataLookupProviding = MusicBrainzMetadataProvider()) {
         self.metadataLookupProvider = metadataLookupProvider
+    }
+
+    /// Isolated fixture composition: never starts Application Support or resolves
+    /// the user's snapshot destination. Production still uses `start()`.
+    init(database: MusicDatabase,
+         albumSearch: (@Sendable (MusicDatabase, String) async throws -> [Album])? = nil) {
+        self.database = database
+        self.metadataLookupProvider = MusicBrainzMetadataProvider()
+        if let albumSearch { self.albumSearch = albumSearch }
+        permitsBackgroundServices = false
+        startGate.succeed()
+        isReady = true
     }
 
     public func start() async {
@@ -98,12 +115,10 @@ public final class LibraryStore: ObservableObject {
         }
     }
 
-    public func reload(searchTerm: String? = nil) async throws {
+    public func reload() async throws {
         guard let database else { return }
         reloadGeneration += 1
         let generation = reloadGeneration
-        let effectiveSearchTerm = searchTerm ?? activeSearchTerm
-        async let loadedAlbums = database.albums(matching: effectiveSearchTerm)
         async let loadedCatalogueAlbums = database.albums()
         async let loadedDeletedAlbums = database.deletedAlbums()
         async let loadedContributors = database.contributors()
@@ -119,7 +134,6 @@ public final class LibraryStore: ObservableObject {
         async let loadedHealth = database.libraryHealthIssues()
         async let loadedPlaylists = database.playlists()
         async let loadedDeletedPlaylists = database.deletedPlaylists()
-        let nextAlbums = try await loadedAlbums
         let nextCatalogueAlbums = try await loadedCatalogueAlbums
         let nextSummaries = try await loadedBrowseSummaries
         let nextDeletedAlbums = try await loadedDeletedAlbums
@@ -140,7 +154,6 @@ public final class LibraryStore: ObservableObject {
         let nextActivity = try await database.recentCatalogueActivity()
         let revision = try await database.currentRevision()
         guard generation == reloadGeneration, !Task.isCancelled else { return }
-        albums = nextAlbums
         catalogueAlbums = nextCatalogueAlbums
         albumBrowseSummaries = nextSummaries
         deletedAlbums = nextDeletedAlbums
@@ -164,12 +177,29 @@ public final class LibraryStore: ObservableObject {
         catalogueRevision = revision
         if publicationSchedule.observe(revision) { scheduleSnapshotPublication() }
         scheduleDailyMasterBackupIfNeeded(for: revision)
+        // Searches cannot cancel a catalogue refresh or make it publish an older
+        // query. Refresh the latest query against the newly loaded catalogue.
+        await search(activeSearchTerm ?? "")
     }
 
     public func search(_ term: String) async {
+        guard !Task.isCancelled else { return }
         activeSearchTerm = term
-        do { try await reload(searchTerm: term) }
-        catch { errorMessage = error.localizedDescription }
+        searchGeneration += 1
+        let generation = searchGeneration
+        if term.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            albums = catalogueAlbums
+            return
+        }
+        guard let database else { return }
+        do {
+            let results = try await albumSearch(database, term)
+            guard generation == searchGeneration, !Task.isCancelled else { return }
+            albums = results
+        } catch {
+            guard generation == searchGeneration, !Task.isCancelled else { return }
+            errorMessage = error.localizedDescription
+        }
     }
 
     public func addAlbum(
@@ -1156,6 +1186,7 @@ public final class LibraryStore: ObservableObject {
     }
 
     private func scheduleSnapshotPublication() {
+        guard permitsBackgroundServices else { return }
         guard resolvedSnapshotDestination() != nil else { return }
         snapshotPublishTask?.cancel()
         isSnapshotPublishPending = true
@@ -1168,6 +1199,7 @@ public final class LibraryStore: ObservableObject {
     }
 
     private func scheduleDailyMasterBackupIfNeeded(for revision: Int64) {
+        guard permitsBackgroundServices else { return }
         guard resolvedSnapshotDestination() != nil else { return }
         let lastRevision = Int64(UserDefaults.standard.integer(forKey: lastMasterBackupRevisionKey))
         let lastBackup = UserDefaults.standard.object(forKey: lastMasterBackupAtKey) as? Date
