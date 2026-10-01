@@ -6,7 +6,9 @@ Primary branch: `main`
 
 ## Current resume — R3 responsive browsing
 
-The delivered release-configuration Mac artifact is **Music Library 0.22 (build 23)**, at `build/Music Library 0.22.app`; packaging, plist lint, version/build inspection, and strict deep signature verification pass.
+The delivered release-configuration Mac artifact is **Music Library 0.23 (build 24)**, at `build/Music Library 0.23.app`; packaging, plist lint, version/build inspection, and strict deep signature verification pass.
+
+Latest small fix: Album Detail reserves 32 points of bottom safe-area spacing inside its scroll view, separating visible tracks/content from the fixed mini-player. It retains the existing content padding and native scrolling; no track queries, import behaviour, playback, or catalogue data change. Debug/release tests, build, and packaging were checked; visual acceptance with the user's active player/32-track album remains pending. No app or personal catalogue was opened for this spacing-only fix. The fixture/startup incidents below are from the preceding slice.
 
 R3 browse summaries use two batched catalogue queries, never per-card media probes or revision changes. Recorded artist, artwork, availability, media format, and named sources feed independent filters, sorting, and locally saved preferences. Physical-only albums remain “No digital copy.” Playback verifies files only when invoked. “This Mac” uses session-only measured local-volume data from authorized available roots, not publication scope; changed identities/lost access invalidate that cache, and offline/unknown roots remain selectable by name.
 

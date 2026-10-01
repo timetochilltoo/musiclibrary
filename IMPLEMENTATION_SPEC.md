@@ -14,6 +14,8 @@ Current baseline: inspect `main` with `git log --oneline -5`; [HANDOFF.md](HANDO
 
 Completed and verified:
 
+- Album Detail player clearance: 32-point bottom safe-area padding separates the scrolling viewport from the fixed mini-player, including digital-only pages ending with tracks. Existing content padding and scroll behaviour remain; no persistence, import, or playback changes. User visual acceptance is pending; validation is recorded in HANDOFF.md.
+
 - Real-shell navigation acceptance fixture: DEBUG-only `LibraryStore.makeNavigationFixture()` creates a temporary synthetic catalogue and uses the existing isolated composition/start gate, with no roots/assets or background destinations. Its regression verifies startup retains the fixture and revision. `Scripts/run-navigation-fixture.sh` always builds/resolves current Debug before launching a separately identified app. Native Back/sidebar/search and compact/wide checks plus remaining limitations are recorded in HANDOFF.md. Settings cache status now loads only for Playback; no-op shell Add Album buttons are removed from Contributors/Settings. No schema/source-media changes.
 
 - Fixture launch routing fails closed: `LibraryLaunchMode` recognizes the navigation/browse fixture bundle identifiers even when tools reopen the app without arguments. Release refuses fixture IDs/flags instead of entering the normal workspace. Cross-configuration tests preserve production routing. This fixes the argument-free UI-reader relaunch incident recorded in HANDOFF.md; it does not audit that earlier live-startup event.

@@ -3611,6 +3611,9 @@ private struct AlbumDetail: View {
             .frame(maxWidth: 1_060, alignment: .leading)
             .padding(24)
         }
+        // Keep the scroll viewport clear of the fixed player, including when
+        // the final track is the last content on a digital-only album page.
+        .safeAreaPadding(.bottom, 32)
         .background(Color(nsColor: .windowBackgroundColor))
         .navigationTitle(album.title)
         .toolbar {
