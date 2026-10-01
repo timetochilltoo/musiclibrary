@@ -2109,8 +2109,63 @@ public actor MusicDatabase {
         return values
     }
 
-    /// Loads the selected front cover for every active album in one query.
-    /// Album grids call this instead of issuing one database request per card.
+    /// Two batched queries; no per-album query or filesystem access.
+    public func albumBrowseSummaries() throws -> [AlbumID: AlbumBrowseSummary] {
+        let artists = try Self.prepare("""
+            SELECT album.id, COALESCE(NULLIF(TRIM(ac.credited_name), ''), contributor.name)
+            FROM album
+            LEFT JOIN album_contributor ac ON ac.album_id = album.id AND ac.role = 'albumArtist'
+            LEFT JOIN contributor ON contributor.id = ac.contributor_id
+            WHERE album.deleted_at IS NULL
+            ORDER BY album.id, ac.position, contributor.name COLLATE NOCASE, contributor.id;
+            """, on: connection)
+        defer { sqlite3_finalize(artists) }
+        var values: [AlbumID: AlbumBrowseSummary] = [:]
+        var names: [AlbumID: [String]] = [:]
+        while sqlite3_step(artists) == SQLITE_ROW {
+            guard let raw = Self.text(at: 0, from: artists), let uuid = UUID(uuidString: raw) else { throw DatabaseError.invalidIdentifier("Browse album") }
+            let id = AlbumID(rawValue: uuid)
+            values[id] = .init()
+            if let name = Self.text(at: 1, from: artists), !names[id, default: []].contains(name) {
+                names[id, default: []].append(name)
+            }
+        }
+        for (id, artistNames) in names { values[id]?.artist = artistNames.joined(separator: ", ") }
+
+        let assets = try Self.prepare("""
+            SELECT disc.album_id, track.id, digital_asset.availability, storage_root.id, storage_root.status
+            FROM album JOIN disc ON disc.album_id = album.id JOIN track ON track.disc_id = disc.id
+            LEFT JOIN digital_asset ON digital_asset.track_id = track.id
+            LEFT JOIN storage_root ON storage_root.id = digital_asset.storage_root_id
+            WHERE album.deleted_at IS NULL;
+            """, on: connection)
+        defer { sqlite3_finalize(assets) }
+        var tracks: [AlbumID: [String: [DigitalAssetAvailability]]] = [:]
+        while sqlite3_step(assets) == SQLITE_ROW {
+            guard let raw = Self.text(at: 0, from: assets), let uuid = UUID(uuidString: raw),
+                  let track = Self.text(at: 1, from: assets) else { throw DatabaseError.invalidIdentifier("Browse track") }
+            let id = AlbumID(rawValue: uuid)
+            if tracks[id]?[track] == nil { tracks[id, default: [:]][track] = [] }
+            if let stored = Self.text(at: 2, from: assets).flatMap(DigitalAssetAvailability.init(rawValue:)) {
+                values[id]?.hasDigitalAssets = true
+                let status = Self.text(at: 4, from: assets).flatMap(StorageRootStatus.init(rawValue:))
+                let effective: DigitalAssetAvailability = status == .available ? stored
+                    : (status == .permissionRequired ? .permissionRequired : .rootOffline)
+                tracks[id, default: [:]][track, default: []].append(effective)
+            }
+            if let root = Self.text(at: 3, from: assets).flatMap(UUID.init(uuidString:)) {
+                values[id]?.storageRootIDs.insert(.init(rawValue: root))
+            }
+        }
+        for (id, trackAssets) in tracks {
+            if values[id]?.hasDigitalAssets == true {
+                values[id]?.availability = .derive(expectedTrackCount: trackAssets.count, assetsByTrack: Array(trackAssets.values))
+            }
+        }
+        return values
+    }
+
+    /// Loads selected front covers for active albums in one query.
     public func selectedFrontArtworkPaths() throws -> [AlbumID: String] {
         let statement = try Self.prepare(
             """

@@ -5,6 +5,29 @@ import Testing
 
 @Suite("Music database")
 struct MusicDatabaseTests {
+    @Test("Browse summaries prefer ordered album artists and distinguish physical track lists from digital copies")
+    func browseArtistsAndPhysicalTracks() async throws {
+        let database = try MusicDatabase(url: temporaryDatabaseURL())
+        try await database.migrate()
+        let album = try await database.createAlbum(.init(title: "Physical edition", hasCD: true, isPhysicalLocationUnknown: true), in: nil, contributors: [
+            .init(name: "Composer", role: .composer),
+            .init(name: "First artist", role: .albumArtist, creditedName: "Display artist"),
+            .init(name: "Second artist", role: .albumArtist)
+        ])
+        let disc = try await database.createDisc(albumID: album.id)
+        _ = try await database.createTrack(discID: disc.id, draft: .init(title: "Catalogue track"))
+        let sparse = try await database.createAlbum(.init(title: "No artist"))
+        let revision = try await database.currentRevision()
+        let summaries = try await database.albumBrowseSummaries()
+        #expect(summaries[album.id]?.artist == "Display artist, Second artist")
+        #expect(summaries[album.id]?.hasDigitalAssets == false)
+        #expect(summaries[album.id]?.availability.status == DigitalAvailability.none)
+        #expect(summaries[album.id]?.canPlay == false)
+        #expect(summaries[sparse.id]?.artistDisplayName == "Artist not recorded")
+        #expect(try await database.currentRevision() == revision)
+        try await database.softDeleteAlbum(sparse.id)
+        #expect(try await database.albumBrowseSummaries()[sparse.id] == nil)
+    }
     @Test("Migration creates the latest schema")
     func migrationCreatesSchema() async throws {
         let database = try MusicDatabase(url: temporaryDatabaseURL())
@@ -533,6 +556,24 @@ struct MusicDatabaseTests {
         #expect(firstAlbumID == secondAlbumID)
         #expect(try await database.albums().map(\.id) == [firstAlbumID])
         #expect(try await database.libraryHealthIssues().map(\.kind) == [.offline, .missingArtwork])
+        let offlineSummary = try #require(await database.albumBrowseSummaries()[firstAlbumID])
+        #expect(offlineSummary.artist == "Artist")
+        #expect(offlineSummary.hasDigitalAssets)
+        #expect(offlineSummary.storageRootIDs == [root.id])
+        #expect(offlineSummary.availability.status == .offline)
+        #expect(!offlineSummary.canPlay)
+        try await database.updateStorageRootAccess(root.id, status: .available)
+        // Reconnecting a root alone must not invent a verified usable asset.
+        let importedAsset = try #require(await database.digitalAssetIDs(albumID: firstAlbumID).first)
+        try await database.updateAssetAvailability(importedAsset, to: .available)
+        let availableSummary = try #require(await database.albumBrowseSummaries()[firstAlbumID])
+        #expect(availableSummary.availability.status == .complete)
+        #expect(availableSummary.canPlay)
+        let extraDisc = try await database.createDisc(albumID: firstAlbumID)
+        _ = try await database.createTrack(discID: extraDisc.id, draft: .init(title: "Unattached"))
+        #expect(try await database.albumBrowseSummaries()[firstAlbumID]?.availability.status == .partial)
+        try await database.updateStorageRootAccess(root.id, status: .permissionRequired)
+        #expect(try await database.albumBrowseSummaries()[firstAlbumID]?.availability.status == .broken)
         let disc = try #require(await database.discs(albumID: firstAlbumID).first)
         let track = try #require(await database.tracks(discID: disc.id).first)
         let metadata = try #require(await database.embeddedMetadata(trackID: track.id))

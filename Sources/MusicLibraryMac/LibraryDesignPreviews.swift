@@ -96,8 +96,9 @@ private enum LibraryDesignPreviewFixtures {
     .frame(width: 720, height: 600)
 }
 
-private struct LibraryBrowseFixture: View {
+struct LibraryBrowseFixture: View {
     @State private var selectedAlbumID: AlbumID?
+    @State private var usesGrid = true
 
     private let albums: [Album] = [
         LibraryDesignPreviewFixtures.album,
@@ -138,7 +139,7 @@ private struct LibraryBrowseFixture: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Picker("View", selection: .constant(true)) {
+                Picker("View", selection: $usesGrid) {
                     Label("Grid", systemImage: "square.grid.2x2").tag(true)
                     Label("List", systemImage: "list.bullet").tag(false)
                 }
@@ -150,10 +151,17 @@ private struct LibraryBrowseFixture: View {
             AlbumBrowser(
                 albums: albums,
                 selectedAlbumID: $selectedAlbumID,
-                usesGrid: true,
+                usesGrid: usesGrid,
                 artworkPaths: [:],
                 localAlbumIDs: Set(albums.prefix(1).map(\.id)),
                 publishedAlbumIDs: Set(albums.dropFirst().map(\.id)),
+                summaries: Dictionary(uniqueKeysWithValues: albums.enumerated().map { index, album in
+                    (album.id, AlbumBrowseSummary(
+                        artist: ["Michael Nyman", "Keith Jarrett", "Orchestra and soloists"][index],
+                        hasDigitalAssets: index != 2,
+                        availability: .init(status: index == 0 ? .complete : .offline, availableTrackCount: index == 0 ? 12 : 0, expectedTrackCount: 12)
+                    ))
+                }),
                 onDelete: { _ in }
             )
         }

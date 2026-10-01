@@ -1,8 +1,22 @@
 # Music Library — Project Handoff
 
-Last updated: 27 September 2026
+Last updated: 1 October 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
+
+## Current resume — R3 album browsing
+
+The delivered Mac artifact is **Music Library 0.17 (build 18)**, at `build/Music Library 0.17.app`; packaging, plist lint, and strict deep signature verification pass. The R3 browsing foundation now shows recorded album artists, digital availability, physical media format, and named music folders in both grid and list presentations. Album artists are ordered and use credited names; composer/conductor credits never imply “Various Artists.” Missing album artists display “Artist not recorded.”
+
+`MusicDatabase.albumBrowseSummaries()` uses two batched queries over active albums, album-artist credits, tracks, assets, and root access state. It does not query files or change catalogue revision. Physical-only catalogue tracks remain “No digital copy.” Availability counts distinct tracks with at least one recorded available asset; offline and permission-required roots suppress playback eligibility. “Available to Play” includes partially available albums with at least one usable track. Playback still performs its normal file verification when invoked.
+
+The browser has independent Ownership, Availability, and Music Folder filters, artist sorting, a visible result count/filter description, and actionable empty/no-match states. Grid/list, sort, filters, and favourite preferences persist locally. Search is debounced and superseded results are cancelled/guarded; refreshes preserve the active search. Named root IDs identify sources instead of treating publication scope as physical NAS location. A combined “This Mac” source filter remains pending until root locality has reliable metadata; do not infer it from local-only publication scope.
+
+Relevant files: `AlbumBrowseSummary.swift`, `SQLiteDatabase.swift`, `LibraryStore.swift`, `MusicLibraryMacApp.swift`, and `LibraryDesignPreviews.swift`. Debug and release suites pass **103 tests** using disposable fixtures, including artist ordering, physical track lists, deleted-album exclusion, offline/reconnect/partial/permission states, and unchanged revision on browse. Native synthetic grid/list views were inspected, switching modes was verified, and equal cover sizing was checked after the final layout adjustment compiled with `swift build`. The debug-only `--browse-fixture` launch bypasses `LibraryShellView` and catalogue startup. Full compact/wide, large-library performance, and real filter/search/back journeys remain pending. The personal catalogue and source files were not opened by validation. Temporary fixture processes were closed after review.
+
+Next: finish R3 acceptance with reliable This Mac locality, compact/wide and large-library fixtures, filter/search/back restoration; then proceed to R4a unified physical entry. R0/R1/R2 interactive acceptance still needs its outstanding walkthrough. See BUILD_PLAN.md section 12 for gates, and the historical sections below for safety details.
+
+Detail navigation uses the separately cached full active catalogue, so a retained search cannot hide an album opened from Library Health or an edited album whose new title no longer matches the search.
 
 This is the operational handoff document for a new agent or developer. Read it first when resuming the project after context loss. It describes what is currently implemented, how to verify it, what must not be changed casually, and the exact next slice of work.
 
@@ -227,7 +241,7 @@ This database is user data. Do not remove it during development. If a destructiv
 
 ## 8. Current tests and verification baseline
 
-The current debug baseline contains 102 tests in 9 suites. Delivery validation for version 0.16 (build 17) also runs the rebuilt release suite before commit. Run `swift test` and `swift test -c release`; do not rely on this handoff alone.
+The current debug/release baseline contains 103 tests in 9 suites, verified for version 0.17 (build 18). Run `swift test` and `swift test -c release`; do not rely on this handoff alone.
 
 Albums now expose **Move to Recently Deleted** in the Albums list context menu. Settings displays a **Recently Deleted** section and its Restore action. This uses the existing soft-delete records, preserves album relationships, and never deletes or changes source media files.
 

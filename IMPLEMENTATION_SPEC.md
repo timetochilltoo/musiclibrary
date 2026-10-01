@@ -14,6 +14,8 @@ Current baseline: inspect `main` with `git log --oneline -5`; [HANDOFF.md](HANDO
 
 Completed and verified:
 
+- R3 catalogue browse summaries (1 October 2026): two batched persistence queries return ordered album-artist display names, digital ownership, distinct-track availability, and registered-root IDs for active albums. Reading summaries never probes media or increments revision. Physical-only track lists retain digital `none`; unavailable roots override stored asset eligibility. The Mac browser filters ownership, playable/unavailable state, and named roots independently. The whole debug/release baseline now contains 103 tests. Native fixture mode bypasses live catalogue startup.
+
 - Swift package structure with macOS SwiftUI executable and separate Domain, Persistence, Application, and UI modules.
 - Domain identifiers, album/edition model, physical locations, box sets, contributor roles, and derived digital-availability logic.
 - SQLite schema migrations 1 through 16, foreign keys, catalogue revision tracking, and core repositories.

@@ -12,12 +12,24 @@ struct MusicLibraryMacApp: App {
 
     var body: some Scene {
         WindowGroup("Music Library") {
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("--browse-fixture") {
+                LibraryBrowseFixture().frame(minWidth: 700, minHeight: 520)
+            } else {
+                mainWorkspace
+            }
+            #else
+            mainWorkspace
+            #endif
+        }
+    }
+
+    private var mainWorkspace: some View {
             LibraryShellView(library: library)
                 .frame(minWidth: 980, minHeight: 640)
                 .onChange(of: scenePhase) { _, phase in
                     if phase == .background { Task { await library.flushPendingSnapshotPublication() } }
                 }
-        }
     }
 }
 
@@ -66,10 +78,15 @@ private enum LibrarySettingsCategory: String, CaseIterable, Identifiable {
 }
 
 private struct LibraryShellView: View {
-    private enum AlbumSourceFilter: String, CaseIterable, Identifiable {
-        case all, nas, local
+    private enum AlbumOwnershipFilter: String, CaseIterable, Identifiable {
+        case all, physical, digital, both
         var id: Self { self }
-        var title: String { switch self { case .all: "All Music"; case .nas: "NAS / iPad Music"; case .local: "This Mac Only" } }
+        var title: String { rawValue.capitalized }
+    }
+    private enum AlbumAvailabilityFilter: String, CaseIterable, Identifiable {
+        case any, available, unavailable
+        var id: Self { self }
+        var title: String { switch self { case .any: "Any availability"; case .available: "Available to Play"; case .unavailable: "Unavailable" } }
     }
     private enum NavigationSection: Hashable, CaseIterable, Identifiable {
         case albums, contributors, locations, boxSets, importInbox, playlists, settings
@@ -104,11 +121,12 @@ private struct LibraryShellView: View {
         var title: String { self == .grid ? "Grid" : "List" }
     }
     private enum AlbumSort: String, CaseIterable, Identifiable {
-        case title, newest, recentlyAdded, rating
+        case title, artist, newest, recentlyAdded, rating
         var id: Self { self }
         var title: String {
             switch self {
             case .title: "Title"
+            case .artist: "Artist"
             case .newest: "Release Year"
             case .recentlyAdded: "Recently Added"
             case .rating: "Rating"
@@ -127,10 +145,12 @@ private struct LibraryShellView: View {
     @State private var importBatchToAnalyzeAfterScan: ImportBatchID?
     @State private var selectedPlaylistID: PlaylistID?
     @State private var searchText = ""
-    @State private var albumSourceFilter: AlbumSourceFilter = .all
-    @State private var albumPresentation: AlbumPresentation = .grid
-    @State private var albumSort: AlbumSort = .title
-    @State private var showsFavouriteAlbumsOnly = false
+    @AppStorage("MusicLibrary.browse.ownership") private var albumOwnershipFilter: AlbumOwnershipFilter = .all
+    @AppStorage("MusicLibrary.browse.availability") private var albumAvailabilityFilter: AlbumAvailabilityFilter = .any
+    @AppStorage("MusicLibrary.browse.root") private var albumRootFilter = ""
+    @AppStorage("MusicLibrary.browse.presentation") private var albumPresentation: AlbumPresentation = .grid
+    @AppStorage("MusicLibrary.browse.sort") private var albumSort: AlbumSort = .title
+    @AppStorage("MusicLibrary.browse.favourites") private var showsFavouriteAlbumsOnly = false
     @State private var contributorSearchText = ""
     @State private var showsAlbumEditor = false
     @State private var showsLocationEditor = false
@@ -318,13 +338,41 @@ private struct LibraryShellView: View {
                 artworkPaths: library.albumFrontArtworkPaths,
                 localAlbumIDs: library.localAlbumIDs,
                 publishedAlbumIDs: library.publishedAlbumIDs,
+                summaries: library.albumBrowseSummaries,
+                storageRoots: library.storageRoots,
                 onDelete: deleteAlbum
             )
-            .searchable(text: $searchText, prompt: "Albums, editions, or catalogue numbers")
-            .onChange(of: searchText) { _, value in Task { await library.search(value) } }
+            .searchable(text: $searchText, prompt: "Titles, artists, tracks, or catalogue numbers")
+            .task(id: searchText) {
+                do { try await Task.sleep(for: .milliseconds(200)) } catch { return }
+                await library.search(searchText)
+            }
+            .safeAreaInset(edge: .top) {
+                HStack(spacing: 10) {
+                    Text("\(displayedAlbums.count) albums").font(.callout.weight(.medium))
+                    if activeAlbumFilter {
+                        Text(albumFilterDescription).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                        Spacer()
+                        Button("Clear Filters", action: clearAlbumFilters).controlSize(.small)
+                    } else { Spacer() }
+                }
+                .padding(.horizontal, 24).padding(.vertical, 10)
+                .background(.bar)
+            }
             .overlay {
                 if library.isReady && displayedAlbums.isEmpty {
-                    ContentUnavailableView("No matching albums", systemImage: "opticaldisc", description: Text("Change the music source filter or add an album."))
+                    ContentUnavailableView {
+                        Label(activeAlbumFilter || !searchText.isEmpty ? "No matching albums" : "Add your first album", systemImage: "opticaldisc")
+                    } description: {
+                        Text(activeAlbumFilter || !searchText.isEmpty ? "Try another search or clear your filters." : "Add a physical album or scan a registered music folder.")
+                    } actions: {
+                        if activeAlbumFilter || !searchText.isEmpty {
+                            Button("Clear Search and Filters") { clearAlbumFilters(); searchText = "" }
+                        } else {
+                            Button("Add Physical Album") { showsAlbumEditor = true }
+                            Button("Scan Music Folder") { showsScanRootPicker = true }
+                        }
+                    }
                 }
             }
         case .locations:
@@ -418,10 +466,18 @@ private struct LibraryShellView: View {
     }
 
     private var scopedAlbums: [Album] {
-        switch albumSourceFilter {
-        case .all: library.albums
-        case .nas: library.albums.filter { library.publishedAlbumIDs.contains($0.id) }
-        case .local: library.albums.filter { library.localAlbumIDs.contains($0.id) }
+        library.albums.filter { album in
+            let summary = library.albumBrowseSummaries[album.id] ?? .init()
+            switch albumOwnershipFilter {
+            case .all: break
+            case .physical: if !album.hasCD { return false }
+            case .digital: if !summary.hasDigitalAssets { return false }
+            case .both: if !album.hasCD || !summary.hasDigitalAssets { return false }
+            }
+            if albumAvailabilityFilter == .available && !summary.canPlay { return false }
+            if albumAvailabilityFilter == .unavailable && summary.canPlay { return false }
+            if !albumRootFilter.isEmpty && !summary.storageRootIDs.contains(where: { $0.description == albumRootFilter }) { return false }
+            return true
         }
     }
 
@@ -430,6 +486,11 @@ private struct LibraryShellView: View {
         return filtered.sorted { lhs, rhs in
             switch albumSort {
             case .title:
+                return lhs.displayTitle.localizedStandardCompare(rhs.displayTitle) == .orderedAscending
+            case .artist:
+                let left = library.albumBrowseSummaries[lhs.id]?.artistDisplayName ?? "Artist not recorded"
+                let right = library.albumBrowseSummaries[rhs.id]?.artistDisplayName ?? "Artist not recorded"
+                if left != right { return left.localizedStandardCompare(right) == .orderedAscending }
                 return lhs.displayTitle.localizedStandardCompare(rhs.displayTitle) == .orderedAscending
             case .newest:
                 if lhs.releaseYear != rhs.releaseYear { return (lhs.releaseYear ?? Int.min) > (rhs.releaseYear ?? Int.min) }
@@ -510,7 +571,7 @@ private struct LibraryShellView: View {
             )
         } else if section == .playlists, let selectedPlaylistID, let playlist = library.playlists.first(where: { $0.id == selectedPlaylistID }) {
             PlaylistDetail(library: library, playback: playback, playlist: playlist)
-        } else if let selectedAlbumID, let album = library.albums.first(where: { $0.id == selectedAlbumID }) {
+        } else if let selectedAlbumID, let album = library.catalogueAlbums.first(where: { $0.id == selectedAlbumID }) {
             AlbumDetail(library: library, playback: playback, album: album, locations: library.locations, onEdit: { albumToEdit = album })
         } else if section == .importInbox {
             ContentUnavailableView("Select a music folder", systemImage: "tray", description: Text("Choose a registered folder to review its latest scan and proposed changes."))
@@ -537,8 +598,18 @@ private struct LibraryShellView: View {
                 .labelsHidden()
 
                 Menu {
-                    Picker("Source", selection: $albumSourceFilter) {
-                        ForEach(AlbumSourceFilter.allCases) { filter in Text(filter.title).tag(filter) }
+                    Picker("Ownership", selection: $albumOwnershipFilter) {
+                        ForEach(AlbumOwnershipFilter.allCases) { filter in Text(filter.title).tag(filter) }
+                    }
+                    Picker("Availability", selection: $albumAvailabilityFilter) {
+                        ForEach(AlbumAvailabilityFilter.allCases) { filter in Text(filter.title).tag(filter) }
+                    }
+                    Picker("Music Folder", selection: $albumRootFilter) {
+                        Text("Any music folder").tag("")
+                        ForEach(library.storageRoots) { root in Text(root.displayName).tag(root.id.description) }
+                        if !albumRootFilter.isEmpty && !library.storageRoots.contains(where: { $0.id.description == albumRootFilter }) {
+                            Text("Removed music folder").tag(albumRootFilter)
+                        }
                     }
                     Divider()
                     Picker("Sort", selection: $albumSort) {
@@ -546,6 +617,7 @@ private struct LibraryShellView: View {
                     }
                     Divider()
                     Toggle("Favourites Only", isOn: $showsFavouriteAlbumsOnly)
+                    if activeAlbumFilter { Button("Clear Filters", action: clearAlbumFilters) }
                 } label: {
                     Label("Filter and Sort", systemImage: activeAlbumFilter ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
                 }
@@ -593,11 +665,29 @@ private struct LibraryShellView: View {
     }
 
     private var activeAlbumFilter: Bool {
-        albumSourceFilter != .all || showsFavouriteAlbumsOnly || albumSort != .title
+        albumOwnershipFilter != .all || albumAvailabilityFilter != .any || !albumRootFilter.isEmpty || showsFavouriteAlbumsOnly
+    }
+
+    private func clearAlbumFilters() {
+        albumOwnershipFilter = .all
+        albumAvailabilityFilter = .any
+        albumRootFilter = ""
+        showsFavouriteAlbumsOnly = false
+    }
+
+    private var albumFilterDescription: String {
+        var labels: [String] = []
+        if albumOwnershipFilter != .all { labels.append(albumOwnershipFilter.title) }
+        if albumAvailabilityFilter != .any { labels.append(albumAvailabilityFilter.title) }
+        if !albumRootFilter.isEmpty {
+            labels.append(library.storageRoots.first(where: { $0.id.description == albumRootFilter })?.displayName ?? "Removed music folder")
+        }
+        if showsFavouriteAlbumsOnly { labels.append("Favourites") }
+        return labels.joined(separator: " · ")
     }
 
     private var workspaceTitle: String {
-        if section == .albums, let selectedAlbumID, let album = library.albums.first(where: { $0.id == selectedAlbumID }) {
+        if section == .albums, let selectedAlbumID, let album = library.catalogueAlbums.first(where: { $0.id == selectedAlbumID }) {
             return album.title
         }
         if section == .contributors, let selectedContributorID, let contributor = library.contributors.first(where: { $0.id == selectedContributorID }) {
@@ -663,6 +753,8 @@ struct AlbumBrowser: View {
     let artworkPaths: [AlbumID: String]
     let localAlbumIDs: Set<AlbumID>
     let publishedAlbumIDs: Set<AlbumID>
+    var summaries: [AlbumID: AlbumBrowseSummary] = [:]
+    var storageRoots: [StorageRoot] = []
     let onDelete: (Album) -> Void
 
     var body: some View {
@@ -675,6 +767,8 @@ struct AlbumBrowser: View {
                             artworkPath: artworkPaths[album.id],
                             isLocal: localAlbumIDs.contains(album.id),
                             isPublished: publishedAlbumIDs.contains(album.id),
+                            summary: summaries[album.id] ?? .init(),
+                            sourceNames: sourceNames(for: album),
                             isSelected: selectedAlbumID == album.id
                         ) {
                             selectedAlbumID = album.id
@@ -691,7 +785,9 @@ struct AlbumBrowser: View {
                     album: album,
                     artworkPath: artworkPaths[album.id],
                     isLocal: localAlbumIDs.contains(album.id),
-                    isPublished: publishedAlbumIDs.contains(album.id)
+                    isPublished: publishedAlbumIDs.contains(album.id),
+                    summary: summaries[album.id] ?? .init(),
+                    sourceNames: sourceNames(for: album)
                 )
                 .tag(album.id)
                 .contextMenu { deleteButton(for: album) }
@@ -702,6 +798,11 @@ struct AlbumBrowser: View {
     @ViewBuilder private func deleteButton(for album: Album) -> some View {
         Button("Move to Recently Deleted", role: .destructive) { onDelete(album) }
     }
+
+    private func sourceNames(for album: Album) -> String {
+        let ids = summaries[album.id]?.storageRootIDs ?? []
+        return storageRoots.filter { ids.contains($0.id) }.map(\.displayName).joined(separator: ", ")
+    }
 }
 
 private struct AlbumCard: View {
@@ -709,6 +810,8 @@ private struct AlbumCard: View {
     let artworkPath: String?
     let isLocal: Bool
     let isPublished: Bool
+    let summary: AlbumBrowseSummary
+    let sourceNames: String
     let isSelected: Bool
     let action: () -> Void
 
@@ -717,7 +820,7 @@ private struct AlbumCard: View {
             VStack(alignment: .leading, spacing: 10) {
                 ZStack(alignment: .topTrailing) {
                     AlbumArtworkImage(path: artworkPath)
-                        .aspectRatio(1, contentMode: .fill)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .shadow(color: .black.opacity(0.14), radius: 8, y: 4)
                     if album.isFavourite {
@@ -729,23 +832,28 @@ private struct AlbumCard: View {
                             .accessibilityLabel("Favourite")
                     }
                 }
+                .aspectRatio(1, contentMode: .fit)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(album.title)
                         .font(.headline)
                         .lineLimit(2)
+                    Text(summary.artistDisplayName).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
                     if let edition = album.editionLabel, !edition.isEmpty {
                         Text(edition).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     }
                     HStack(spacing: 6) {
                         if let releaseYear = album.releaseYear { Text(String(releaseYear)) }
                         Spacer(minLength: 4)
-                        AlbumSourceBadges(hasCD: album.hasCD, isLocal: isLocal, isPublished: isPublished)
+                        if album.hasCD { Label(album.mediaFormat ?? "CD", systemImage: "opticaldisc") }
                     }
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+                    AlbumBrowseAvailability(summary: summary)
+                    if !sourceNames.isEmpty { Text(sourceNames).font(.caption2).foregroundStyle(.secondary).lineLimit(1).help(sourceNames) }
                 }
             }
             .contentShape(Rectangle())
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(8)
             .background(isSelected ? Color.accentColor.opacity(0.15) : .clear, in: RoundedRectangle(cornerRadius: 14))
             .overlay {
@@ -755,7 +863,7 @@ private struct AlbumCard: View {
             }
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(album.displayTitle)
+        .accessibilityLabel("\(album.displayTitle), \(summary.artistDisplayName), \(summary.availabilityLabel)")
         .accessibilityHint("Open album details")
     }
 }
@@ -765,6 +873,8 @@ private struct AlbumListRow: View {
     let artworkPath: String?
     let isLocal: Bool
     let isPublished: Bool
+    let summary: AlbumBrowseSummary
+    let sourceNames: String
 
     var body: some View {
         HStack(spacing: 12) {
@@ -776,18 +886,31 @@ private struct AlbumListRow: View {
                     Text(album.title).font(.headline).lineLimit(1)
                     if album.isFavourite { Image(systemName: "heart.fill").foregroundStyle(.pink) }
                 }
+                Text(summary.artistDisplayName).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
                 if let edition = album.editionLabel, !edition.isEmpty {
                     Text(edition).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
                 HStack(spacing: 8) {
                     if let releaseYear = album.releaseYear { Text(String(releaseYear)) }
-                    AlbumSourceBadges(hasCD: album.hasCD, isLocal: isLocal, isPublished: isPublished)
+                    if album.hasCD { Label(album.mediaFormat ?? "CD", systemImage: "opticaldisc") }
+                    AlbumBrowseAvailability(summary: summary)
                 }
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+                if !sourceNames.isEmpty { Text(sourceNames).font(.caption2).foregroundStyle(.secondary).lineLimit(1).help(sourceNames) }
             }
         }
         .padding(.vertical, 3)
+    }
+}
+
+private struct AlbumBrowseAvailability: View {
+    let summary: AlbumBrowseSummary
+    var body: some View {
+        Label(summary.availabilityLabel, systemImage: summary.canPlay ? "play.circle" : (summary.hasDigitalAssets ? "exclamationmark.circle" : "music.note"))
+            .font(.caption2)
+            .foregroundStyle(summary.hasDigitalAssets && summary.availability.status != .complete ? Color.orange : Color.secondary)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 

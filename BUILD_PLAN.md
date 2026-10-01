@@ -2,7 +2,9 @@
 
 Original plan date: 22 July 2026
 
-Last roadmap review: 27 September 2026
+Last roadmap review: 1 October 2026
+
+Current delivery (1 October 2026): R3's browsing foundation adds batched recorded-artist and asset/root availability summaries, artist sorting, independent ownership/availability/named-folder filters, locally retained browse preferences, debounced guarded search, and actionable empty states. Cards and list rows show artist, edition/year, physical format, digital state, and named sources. The verified package is 0.17/build 18; debug/release suites pass 103 tests. Native synthetic grid/list views and switching were inspected. Remaining R3 acceptance covers measured This Mac locality, compact/wide and large-library performance, and filter/search/back restoration. A publication scope is not evidence of physical storage location. HANDOFF.md's current resume is the operational source of truth.
 
 Detailed coding handoff: [IMPLEMENTATION_SPEC.md](IMPLEMENTATION_SPEC.md)
 
@@ -521,6 +523,8 @@ Start section 12, milestone R0, using the existing app and safe fixtures. Establ
 Specification date: 26 September 2026. Status: active implementation; milestones remain.
 
 ### 12.0 Implementation status — 27 September 2026
+
+R3 foundation implemented 1 October 2026. The batched catalogue display model, ownership/availability/named-root filters, artist sort, saved preferences, guarded search, and empty-state actions are available. Complete the remaining R3 acceptance described in the current handoff before marking the entire milestone complete. The earlier R0/R1/R2 implementation summary follows.
 
 The R0/R1 foundation and R2 refinement are implemented in the Mac target. `LibraryDesignSystem.swift` contains reusable panels, section headers, metadata grids, status pills, the connected album identity header, and the single identity-area Other titles editor. `LibraryDesignPreviews.swift` provides isolated populated, sparse physical-only, browse, and physical-entry fixtures at compact and regular widths; it never starts `LibraryStore` or reads the live catalogue. Album Detail uses a native `ScrollView` reading layout with identity, artwork, primary artist, recorded Other titles, catalogue metadata, credits, tracks, collection notes, and contextual action menus. Albums without variants have no empty Other titles section, with Add Other Title retained in Album Actions. The Mac shell now uses a sidebar plus one workspace with explicit Back actions, and Settings routes to functional category destinations while retaining the existing guarded service actions. R2 adds the explicit read/Organize boundary, hides identity and track mutations outside Organize, and presents selected cover art in a dedicated viewer. The follow-up correction also removed the duplicate Other titles panel below Tracks. The next unfinished work is R3 batched artist and availability summaries.
 

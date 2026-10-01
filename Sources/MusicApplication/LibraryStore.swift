@@ -17,6 +17,7 @@ public struct ImportProposalPreview: Sendable {
 @MainActor
 public final class LibraryStore: ObservableObject {
     @Published public private(set) var albums: [Album] = []
+    @Published public private(set) var catalogueAlbums: [Album] = []
     @Published public private(set) var deletedAlbums: [Album] = []
     @Published public private(set) var contributors: [Contributor] = []
     @Published public private(set) var locations: [PhysicalLocation] = []
@@ -26,6 +27,7 @@ public final class LibraryStore: ObservableObject {
     @Published public private(set) var localAlbumIDs: Set<AlbumID> = []
     @Published public private(set) var publishedAlbumIDs: Set<AlbumID> = []
     @Published public private(set) var albumFrontArtworkPaths: [AlbumID: String] = [:]
+    @Published public private(set) var albumBrowseSummaries: [AlbumID: AlbumBrowseSummary] = [:]
     @Published public private(set) var importBatches: [ImportBatch] = []
     @Published public private(set) var importScanProgress: [ImportBatchID: ImportScanProgress] = [:]
     @Published public private(set) var libraryHealthIssues: [LibraryHealthIssue] = []
@@ -62,6 +64,8 @@ public final class LibraryStore: ObservableObject {
     private var publicationSchedule = SnapshotPublicationSchedule()
     private var catalogueURL: URL?
     private let metadataLookupProvider: any MetadataLookupProviding
+    private var reloadGeneration = 0
+    private var activeSearchTerm: String?
 
     public init(metadataLookupProvider: any MetadataLookupProviding = MusicBrainzMetadataProvider()) {
         self.metadataLookupProvider = metadataLookupProvider
@@ -91,7 +95,11 @@ public final class LibraryStore: ObservableObject {
 
     public func reload(searchTerm: String? = nil) async throws {
         guard let database else { return }
-        async let loadedAlbums = database.albums(matching: searchTerm)
+        reloadGeneration += 1
+        let generation = reloadGeneration
+        let effectiveSearchTerm = searchTerm ?? activeSearchTerm
+        async let loadedAlbums = database.albums(matching: effectiveSearchTerm)
+        async let loadedCatalogueAlbums = database.albums()
         async let loadedDeletedAlbums = database.deletedAlbums()
         async let loadedContributors = database.contributors()
         async let loadedLocations = database.locations()
@@ -101,34 +109,58 @@ public final class LibraryStore: ObservableObject {
         async let loadedLocalAlbumIDs = database.albumIDs(withAssetsIn: .localOnly)
         async let loadedPublishedAlbumIDs = database.albumIDs(withAssetsIn: .nasPublished)
         async let loadedAlbumFrontArtworkPaths = database.selectedFrontArtworkPaths()
+        async let loadedBrowseSummaries = database.albumBrowseSummaries()
         async let loadedImportBatches = database.importBatches()
         async let loadedHealth = database.libraryHealthIssues()
         async let loadedPlaylists = database.playlists()
         async let loadedDeletedPlaylists = database.deletedPlaylists()
-        albums = try await loadedAlbums
-        deletedAlbums = try await loadedDeletedAlbums
-        contributors = try await loadedContributors
-        locations = try await loadedLocations
-        boxSets = try await loadedBoxSets
-        deletedBoxSets = try await loadedDeletedBoxSets
-        storageRoots = try await loadedStorageRoots
-        localAlbumIDs = try await loadedLocalAlbumIDs
-        publishedAlbumIDs = try await loadedPublishedAlbumIDs
-        albumFrontArtworkPaths = try await loadedAlbumFrontArtworkPaths
-        importBatches = try await loadedImportBatches
-        libraryHealthIssues = try await loadedHealth
-        playlists = try await loadedPlaylists
-        deletedPlaylists = try await loadedDeletedPlaylists
-        duplicateAssets = try await database.duplicateAssets()
-        relinkProposals = try await database.relinkProposals()
-        recentCatalogueActivity = try await database.recentCatalogueActivity()
+        let nextAlbums = try await loadedAlbums
+        let nextCatalogueAlbums = try await loadedCatalogueAlbums
+        let nextSummaries = try await loadedBrowseSummaries
+        let nextDeletedAlbums = try await loadedDeletedAlbums
+        let nextContributors = try await loadedContributors
+        let nextLocations = try await loadedLocations
+        let nextBoxSets = try await loadedBoxSets
+        let nextDeletedBoxSets = try await loadedDeletedBoxSets
+        let nextRoots = try await loadedStorageRoots
+        let nextLocalIDs = try await loadedLocalAlbumIDs
+        let nextPublishedIDs = try await loadedPublishedAlbumIDs
+        let nextArtwork = try await loadedAlbumFrontArtworkPaths
+        let nextBatches = try await loadedImportBatches
+        let nextHealth = try await loadedHealth
+        let nextPlaylists = try await loadedPlaylists
+        let nextDeletedPlaylists = try await loadedDeletedPlaylists
+        let nextDuplicates = try await database.duplicateAssets()
+        let nextRelinks = try await database.relinkProposals()
+        let nextActivity = try await database.recentCatalogueActivity()
         let revision = try await database.currentRevision()
+        guard generation == reloadGeneration, !Task.isCancelled else { return }
+        albums = nextAlbums
+        catalogueAlbums = nextCatalogueAlbums
+        albumBrowseSummaries = nextSummaries
+        deletedAlbums = nextDeletedAlbums
+        contributors = nextContributors
+        locations = nextLocations
+        boxSets = nextBoxSets
+        deletedBoxSets = nextDeletedBoxSets
+        storageRoots = nextRoots
+        localAlbumIDs = nextLocalIDs
+        publishedAlbumIDs = nextPublishedIDs
+        albumFrontArtworkPaths = nextArtwork
+        importBatches = nextBatches
+        libraryHealthIssues = nextHealth
+        playlists = nextPlaylists
+        deletedPlaylists = nextDeletedPlaylists
+        duplicateAssets = nextDuplicates
+        relinkProposals = nextRelinks
+        recentCatalogueActivity = nextActivity
         catalogueRevision = revision
         if publicationSchedule.observe(revision) { scheduleSnapshotPublication() }
         scheduleDailyMasterBackupIfNeeded(for: revision)
     }
 
     public func search(_ term: String) async {
+        activeSearchTerm = term
         do { try await reload(searchTerm: term) }
         catch { errorMessage = error.localizedDescription }
     }
