@@ -14,7 +14,8 @@ struct MusicLibraryMacApp: App {
         WindowGroup("Music Library") {
             #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("--browse-fixture") {
-                LibraryBrowseFixture().frame(minWidth: 700, minHeight: 520)
+                LibraryBrowseFixture(usesLargeLibrary: ProcessInfo.processInfo.arguments.contains("--large-browse-fixture"))
+                    .frame(minWidth: 700, minHeight: 520)
             } else {
                 mainWorkspace
             }
@@ -300,7 +301,11 @@ private struct LibraryShellView: View {
     @ViewBuilder private var workspace: some View {
         switch section {
         case .albums:
-            if selectedAlbumID == nil { content } else { detail }
+            RetainedBrowseWorkspace(showsDetail: selectedAlbumID != nil) {
+                content
+            } detail: {
+                detail
+            }
         case .contributors:
             if selectedContributorID == nil { content } else { detail }
         case .boxSets:
@@ -342,7 +347,9 @@ private struct LibraryShellView: View {
                 storageRoots: library.storageRoots,
                 onDelete: deleteAlbum
             )
+            .disabled(selectedAlbumID != nil)
             .searchable(text: $searchText, prompt: "Titles, artists, tracks, or catalogue numbers")
+            .onChange(of: searchText) { _, _ in selectedAlbumID = nil }
             .task(id: searchText) {
                 do { try await Task.sleep(for: .milliseconds(200)) } catch { return }
                 await library.search(searchText)
@@ -358,6 +365,7 @@ private struct LibraryShellView: View {
                 }
                 .padding(.horizontal, 24).padding(.vertical, 10)
                 .background(.bar)
+                .disabled(selectedAlbumID != nil)
             }
             .overlay {
                 if library.isReady && displayedAlbums.isEmpty {
@@ -373,6 +381,7 @@ private struct LibraryShellView: View {
                             Button("Scan Music Folder") { showsScanRootPicker = true }
                         }
                     }
+                    .disabled(selectedAlbumID != nil)
                 }
             }
         case .locations:

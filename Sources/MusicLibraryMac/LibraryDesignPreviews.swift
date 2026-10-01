@@ -99,8 +99,22 @@ private enum LibraryDesignPreviewFixtures {
 struct LibraryBrowseFixture: View {
     @State private var selectedAlbumID: AlbumID?
     @State private var usesGrid = true
+    @State private var searchText = ""
+    var usesLargeLibrary = false
 
-    private let albums: [Album] = [
+    private static let largeAlbums: [Album] = (1...240).map { index in
+        Album(id: .init(), from: .init(
+            title: String(format: "Fixture Album %03d", index) + (index.isMultiple(of: 20) ? " — A long classical title with several movements" : ""),
+            releaseYear: 1970 + index % 50, hasCD: true, isPhysicalLocationUnknown: true
+        ))
+    }
+
+    private var albums: [Album] { usesLargeLibrary ? Self.largeAlbums : sampleAlbums }
+    private var visibleAlbums: [Album] {
+        searchText.isEmpty ? albums : albums.filter { $0.title.localizedCaseInsensitiveContains(searchText) }
+    }
+
+    private let sampleAlbums: [Album] = [
         LibraryDesignPreviewFixtures.album,
         Album(
             id: .init(),
@@ -131,6 +145,10 @@ struct LibraryBrowseFixture: View {
     ]
 
     var body: some View {
+        NavigationStack { fixtureContent }
+    }
+
+    private var fixtureContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
@@ -148,22 +166,36 @@ struct LibraryBrowseFixture: View {
             }
             .padding(24)
             Divider()
-            AlbumBrowser(
-                albums: albums,
-                selectedAlbumID: $selectedAlbumID,
-                usesGrid: usesGrid,
-                artworkPaths: [:],
-                localAlbumIDs: Set(albums.prefix(1).map(\.id)),
-                publishedAlbumIDs: Set(albums.dropFirst().map(\.id)),
-                summaries: Dictionary(uniqueKeysWithValues: albums.enumerated().map { index, album in
-                    (album.id, AlbumBrowseSummary(
-                        artist: ["Michael Nyman", "Keith Jarrett", "Orchestra and soloists"][index],
-                        hasDigitalAssets: index != 2,
-                        availability: .init(status: index == 0 ? .complete : .offline, availableTrackCount: index == 0 ? 12 : 0, expectedTrackCount: 12)
-                    ))
-                }),
-                onDelete: { _ in }
-            )
+            RetainedBrowseWorkspace(showsDetail: selectedAlbumID != nil) {
+                AlbumBrowser(
+                    albums: visibleAlbums,
+                    selectedAlbumID: $selectedAlbumID,
+                    usesGrid: usesGrid,
+                    artworkPaths: [:],
+                    localAlbumIDs: Set(albums.prefix(1).map(\.id)),
+                    publishedAlbumIDs: Set(albums.dropFirst().map(\.id)),
+                    summaries: Dictionary(uniqueKeysWithValues: albums.enumerated().map { index, album in
+                        (album.id, AlbumBrowseSummary(
+                            artist: ["Michael Nyman", "Keith Jarrett", "Orchestra and soloists"][index % 3],
+                            hasDigitalAssets: index % 3 != 2,
+                            availability: .init(status: index % 3 == 0 ? .complete : .offline, availableTrackCount: index % 3 == 0 ? 12 : 0, expectedTrackCount: 12)
+                        ))
+                    }),
+                    onDelete: { _ in }
+                )
+                .disabled(selectedAlbumID != nil)
+                .searchable(text: $searchText, prompt: "Search synthetic albums")
+                .onChange(of: searchText) { _, _ in selectedAlbumID = nil }
+            } detail: {
+                VStack(alignment: .leading, spacing: 24) {
+                    Button("Back to Albums", systemImage: "chevron.left") { selectedAlbumID = nil }
+                    Text(albums.first(where: { $0.id == selectedAlbumID })?.title ?? "Album removed")
+                        .font(.largeTitle).accessibilityIdentifier("fixture-album-title")
+                    Text("Synthetic album detail. Back should restore the same visible rows and scroll position.")
+                    Spacer()
+                }
+                .padding(24)
+            }
         }
         .background(Color(nsColor: .windowBackgroundColor))
     }

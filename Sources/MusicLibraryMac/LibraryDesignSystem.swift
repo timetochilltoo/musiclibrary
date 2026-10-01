@@ -2,6 +2,35 @@ import AppKit
 import SwiftUI
 import MusicDomain
 
+/// Preserve the native scroller's identity while showing a selected album.
+/// Callers disable browse controls inside any outer/global search modifier.
+struct RetainedBrowseWorkspace<Browse: View, Detail: View>: View {
+    let showsDetail: Bool
+    let browse: Browse
+    let detail: Detail
+
+    init(showsDetail: Bool, @ViewBuilder browse: () -> Browse, @ViewBuilder detail: () -> Detail) {
+        self.showsDetail = showsDetail
+        self.browse = browse()
+        self.detail = detail()
+    }
+
+    var body: some View {
+        ZStack {
+            browse
+                .opacity(showsDetail ? 0 : 1)
+                .allowsHitTesting(!showsDetail)
+                .accessibilityHidden(showsDetail)
+            if showsDetail {
+                detail
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color(nsColor: .windowBackgroundColor))
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
 /// Shared visual primitives for the Mac catalogue. These keep the application
 /// screens visually related without making the domain or persistence layers
 /// depend on SwiftUI.
