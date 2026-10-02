@@ -1,10 +1,24 @@
 # Music Library — Project Handoff
 
-Last updated: 1 October 2026
+Last updated: 3 October 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — R3 responsive browsing
+## Current resume — R4a physical-entry workspace
+
+Delivered local release-configuration artifact: **Music Library 0.24 (build 25)** at `build/Music Library 0.24.app`. Canonical version is `Packaging/MusicLibraryMac-Info.plist`. This is a development delivery, not notarization/distribution.
+
+Physical entry is now one resizable Find → Review → Your Copy workspace. Find retains current title/artist lookup and has a visible Enter Manually path. Back preserves search and draft state. Review holds identity/edition and credits; Your Copy holds location/box/Set location later, notes, rating and favourite. Cancel confirms meaningful draft changes. Switching releases confirms replacement and clears missing release fields rather than mixing pressings; non-album-artist credits and copy fields survive. Remote-cover download can be retried or explicitly disabled before saving. Create Location is immediate, guarded against duplicate clicks, and visibly labelled as surviving album cancellation.
+
+`PhysicalAlbumEntryValidation` rejects invalid nonempty years (four ASCII digits, 1000…9999), normalizes blank default credit rows, rejects incomplete role/name overrides, and requires a named credit. Save shows progress and blocks duplicate submission. `LibraryStore.addAlbum` returns the committed album for detail navigation; post-commit refresh errors are reported separately to avoid inviting duplicate creation. Selected MusicBrainz detail responses are cancellation/selection guarded. No schema, source-media, background lookup, digital asset, or track-creation changes.
+
+Relevant files: `MusicLibraryMacApp.swift`, `PhysicalAlbumMusicBrainzLookupView.swift`, `PhysicalAlbumEntryValidation.swift`, `LibraryStore.swift`, and `PhysicalAlbumEntryTests.swift`. `swift test`: **121 tests across 15 suites**. `swift test -c release`: **120 across 14** (navigation fixture remains DEBUG-only). `swift build` passes. Packaging/version/plist/signature/whitespace checks are recorded with this delivery. Existing AVMetadataItem deprecation remains unrelated.
+
+Native UI acceptance is **pending**: the Mac was locked and UI automation could not inspect it. The current disposable fixture was launched with the hardened launcher at `/var/folders/r_/2bc_8v4j5rv59t4j5lfkts280000gp/T/musiclibrary-navigation.rtd6gd/Music Library Navigation Fixture.app`; it remains available for synthetic manual acceptance after unlock. No personal-catalogue launch or interaction was attempted this turn. The release artifact was not launched. Preserve the earlier incidents below; this statement does not erase them.
+
+Next: run the R4a acceptance checklist in `MAC_AND_NAS_TESTING.md` on disposable data (manual save/open, Back preservation, Cancel, minimum size, online lookup and failed-cover recovery), then R4b barcode/catalogue/release-URL queries, external-ID provenance, duplicate suggestions and optional structured tracks. R4 is not fully complete. R3 real-library/NAS performance and destructive/device acceptance remain pending; Locations album browsing stays R7. The user accepted the preceding 32-point player spacing fix.
+
+## Previous resume — R3 responsive browsing
 
 The delivered release-configuration Mac artifact is **Music Library 0.23 (build 24)**, at `build/Music Library 0.23.app`; packaging, plist lint, version/build inspection, and strict deep signature verification pass.
 

@@ -3,7 +3,6 @@ import SwiftUI
 import MusicApplication
 
 struct PhysicalAlbumMusicBrainzLookupView: View {
-    @Environment(\.dismiss) private var dismiss
     @ObservedObject var library: LibraryStore
     let onSelected: (ExternalReleasePreview) -> Void
 
@@ -31,7 +30,6 @@ struct PhysicalAlbumMusicBrainzLookupView: View {
     }
 
     var body: some View {
-        NavigationStack {
             VStack(spacing: 0) {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Search MusicBrainz").font(.headline)
@@ -51,7 +49,7 @@ struct PhysicalAlbumMusicBrainzLookupView: View {
 
                 HStack(spacing: 12) {
                     Button("Search MusicBrainz", systemImage: "magnifyingglass") { search() }
-                        .disabled(isSearching || trimmedTitle == nil)
+                        .disabled(isSearching || isApplying || trimmedTitle == nil)
                     Text("Only the title and artist are sent. Nothing is added until you use the selected release and save the album.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -93,6 +91,7 @@ struct PhysicalAlbumMusicBrainzLookupView: View {
                                 }
                             }
                             .frame(minWidth: 280, maxWidth: 340)
+                            .disabled(isApplying)
 
                             Divider()
 
@@ -109,24 +108,20 @@ struct PhysicalAlbumMusicBrainzLookupView: View {
                     }
                 }
             }
-            .navigationTitle("MusicBrainz Physical Release")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
+            .safeAreaInset(edge: .bottom) {
+                HStack {
+                    Spacer()
                     Button(isApplying ? "Applying…" : "Use Selected Release") { useSelectedRelease() }
                         .disabled(selectedResult == nil || isApplying)
+                        .buttonStyle(.borderedProminent)
                 }
+                .padding(16)
             }
             .alert("MusicBrainz search failed", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
                 Button("OK", role: .cancel) { errorMessage = nil }
             } message: {
                 Text(errorMessage ?? "")
             }
-        }
-        .frame(minWidth: 900, idealWidth: 1_100, maxWidth: 1_400, minHeight: 600, idealHeight: 720, maxHeight: 900)
-        .background(PhysicalAlbumMusicBrainzSheetResizability())
         .task(id: selectedResultID) { await loadSelectedReleaseDetail() }
     }
 
@@ -177,16 +172,19 @@ struct PhysicalAlbumMusicBrainzLookupView: View {
             return
         }
         isLoadingReleaseDetail = true
-        defer { isLoadingReleaseDetail = false }
+        defer { if self.selectedResultID == selectedResultID { isLoadingReleaseDetail = false } }
         do {
-            selectedReleaseDetail = try await library.musicBrainzReleaseDetails(id: selectedResultID)
+            let detail = try await library.musicBrainzReleaseDetails(id: selectedResultID)
+            guard !Task.isCancelled, self.selectedResultID == selectedResultID else { return }
+            selectedReleaseDetail = detail
         } catch {
+            guard !Task.isCancelled, self.selectedResultID == selectedResultID else { return }
             selectedReleaseDetail = nil
         }
     }
 
     private func useSelectedRelease() {
-        guard let selectedResult else { return }
+        guard let selectedResult, !isApplying else { return }
         isApplying = true
         Task {
             do {
@@ -194,7 +192,6 @@ struct PhysicalAlbumMusicBrainzLookupView: View {
                     ? selectedReleaseDetail!
                     : try await library.musicBrainzReleaseDetails(id: selectedResult.id)
                 onSelected(release)
-                dismiss()
             } catch {
                 errorMessage = error.localizedDescription
             }
@@ -224,7 +221,7 @@ private struct PhysicalAlbumMusicBrainzReleaseDetail: View {
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                                     .textSelection(.enabled)
-                                Text("Use Selected Release fills the album fields on the previous form. It does not create the catalogue record yet.")
+                                Text("Use Selected Release fills the Review step. Nothing is saved until Add Album.")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
@@ -312,14 +309,14 @@ private struct PhysicalAlbumMusicBrainzReleaseDetail: View {
     }
 }
 
-private struct PhysicalAlbumMusicBrainzSheetResizability: NSViewRepresentable {
+struct PhysicalAlbumMusicBrainzSheetResizability: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView { NSView() }
 
     func updateNSView(_ view: NSView, context: Context) {
         DispatchQueue.main.async {
             guard let window = view.window else { return }
             window.styleMask.insert(.resizable)
-            window.minSize = .init(width: 900, height: 600)
+            window.minSize = .init(width: 720, height: 560)
             window.maxSize = .init(width: 1_400, height: 900)
         }
     }

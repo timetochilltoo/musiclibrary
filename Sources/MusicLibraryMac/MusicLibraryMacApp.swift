@@ -265,7 +265,13 @@ private struct LibraryShellView: View {
             if newSection != .importInbox { selectedImportBatchID = nil }
             if newSection != .playlists { selectedPlaylistID = nil }
         }
-        .sheet(isPresented: $showsAlbumEditor) { AlbumEditor(library: library) }
+        .sheet(isPresented: $showsAlbumEditor) {
+            AlbumEditor(library: library) { album in
+                // Entry is offered only from Albums, so no sidebar transition
+                // should clear the newly saved route.
+                selectedAlbumID = album.id
+            }
+        }
         .sheet(isPresented: $showsLocationEditor) { LocationEditor(library: library) }
         .sheet(isPresented: $showsBoxSetEditor) { BoxSetEditor(library: library) }
         .sheet(isPresented: $showsScanRootPicker) { ScanRootPicker(library: library) }
@@ -4446,7 +4452,7 @@ private enum ManualAlbumPlacement: String, CaseIterable, Identifiable {
         switch self {
         case .location: "Location"
         case .boxSet: "Box Set"
-        case .unknown: "Unknown"
+        case .unknown: "Set location later"
         }
     }
 }
@@ -4476,8 +4482,13 @@ extension ContributorRole {
 }
 
 private struct AlbumEditor: View {
+    private enum Step: String, CaseIterable { case find = "Find", review = "Review", copy = "Your Copy" }
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var library: LibraryStore
+    var onAdded: (Album) -> Void = { _ in }
+    @State private var step: Step = .find
+    @State private var showsDiscardConfirmation = false
+    @State private var pendingRelease: ExternalReleasePreview?
     @State private var title = ""
     @State private var editionLabel = ""
     @State private var releaseYear = ""
@@ -4493,10 +4504,10 @@ private struct AlbumEditor: View {
     @State private var rating = 0
     @State private var isFavourite = false
     @State private var contributorDrafts = [ManualAlbumContributor()]
-    @State private var showsMusicBrainzLookup = false
     @State private var selectedMusicBrainzRelease: ExternalReleasePreview?
     @State private var saveMusicBrainzCover = false
     @State private var isAddingAlbum = false
+    @State private var isCreatingLocation = false
     @State private var placement: ManualAlbumPlacement = .location
     @State private var selectedLocationID: PhysicalLocationID?
     @State private var selectedBoxSetID: BoxSetID?
@@ -4506,16 +4517,88 @@ private struct AlbumEditor: View {
     @State private var errorMessage: String?
 
     var body: some View {
-        Form {
-            Section("Album") {
-                HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    Button("Find on MusicBrainz…", systemImage: "magnifyingglass") {
-                        showsMusicBrainzLookup = true
-                    }
-                    Text("Fill returned release details into this form; placement, notes, and extra credits stay unchanged.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+        VStack(spacing: 0) {
+            HStack {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Add Physical Album").font(.title2.bold())
+                    Text("Find a pressing, review its details, then record your copy.").foregroundStyle(.secondary)
                 }
+                Spacer()
+                ForEach(Step.allCases, id: \.self) { item in
+                    Text(item.rawValue)
+                        .font(.callout.weight(item == step ? .semibold : .regular))
+                        .foregroundStyle(item == step ? Color.accentColor : .secondary)
+                        .padding(8)
+                        .background(item == step ? Color.accentColor.opacity(0.1) : .clear, in: Capsule())
+                }
+            }.padding(20)
+            Divider()
+            RetainedBrowseWorkspace(showsDetail: step != .find) {
+                PhysicalAlbumMusicBrainzLookupView(library: library, title: title, artist: contributorDrafts.first?.name) { release in
+                    guard step == .find else { return }
+                    if hasReviewInput { pendingRelease = release }
+                    else { applyMusicBrainzRelease(release); step = .review }
+                }
+                .disabled(step != .find || isAddingAlbum)
+            } detail: { editorForm }
+            Divider()
+            VStack(alignment: .leading, spacing: 8) {
+                if step != .find, !validationMessages.isEmpty {
+                    Text(validationMessages.joined(separator: " · "))
+                        .font(.caption).foregroundStyle(.orange)
+                }
+                if let errorMessage {
+                    Label(errorMessage, systemImage: "exclamationmark.triangle")
+                        .font(.callout).foregroundStyle(.red)
+                }
+                HStack {
+                    Button("Cancel") {
+                        if isDirty { showsDiscardConfirmation = true } else { dismiss() }
+                    }
+                    .disabled(isAddingAlbum || isCreatingLocation)
+                    Spacer()
+                    if step == .find {
+                        Button("Enter Manually") { step = .review }
+                    } else {
+                        Button("Back") { step = step == .copy ? .review : .find }
+                            .disabled(isAddingAlbum || isCreatingLocation)
+                        if step == .review {
+                            Button("Continue to Your Copy") { step = .copy }
+                                .disabled(!identityMessages.isEmpty)
+                                .buttonStyle(.borderedProminent)
+                        } else {
+                            if isAddingAlbum { ProgressView().controlSize(.small) }
+                            Button(isAddingAlbum ? "Adding…" : "Add Album") { addAlbum() }
+                                .disabled(!canSubmit || isAddingAlbum || isCreatingLocation)
+                                .buttonStyle(.borderedProminent)
+                                .keyboardShortcut(.defaultAction)
+                        }
+                    }
+                }
+            }.padding(18)
+        }
+        .frame(minWidth: 720, idealWidth: 1_100, maxWidth: 1_400, minHeight: 560, idealHeight: 760, maxHeight: 900)
+        .background(PhysicalAlbumMusicBrainzSheetResizability())
+        .interactiveDismissDisabled(isDirty || isAddingAlbum || isCreatingLocation)
+        .confirmationDialog("Discard this album draft?", isPresented: $showsDiscardConfirmation, titleVisibility: .visible) {
+            Button("Discard Draft", role: .destructive) { dismiss() }
+            Button("Keep Editing", role: .cancel) {}
+        }
+        .confirmationDialog("Replace reviewed release fields?", isPresented: Binding(get: { pendingRelease != nil }, set: { if !$0 { pendingRelease = nil } }), titleVisibility: .visible) {
+            Button("Replace Release Fields") {
+                if let pendingRelease { applyMusicBrainzRelease(pendingRelease); step = .review }
+                pendingRelease = nil
+            }
+            Button("Keep Current Draft", role: .cancel) { pendingRelease = nil }
+        } message: {
+            Text("Title, edition, years, country, label, catalogue number, barcode, format, disc count, album artist and cover selection will be replaced. Fields missing from this release are cleared. Other credits, placement, rating and notes are kept.")
+        }
+    }
+
+    private var editorForm: some View {
+        Form {
+            if step == .review {
+            Section("Album") {
                 if let release = selectedMusicBrainzRelease {
                     HStack(alignment: .top, spacing: 12) {
                         AsyncImage(url: release.coverArtworkThumbnailURL) { phase in
@@ -4550,17 +4633,18 @@ private struct AlbumEditor: View {
                     }
                 }
                 TextField("Title", text: $title)
+                if title.nilIfBlank == nil { Text("An album title is required.").font(.caption).foregroundStyle(.orange) }
                 TextField("Edition label", text: $editionLabel, prompt: Text("Japan version, 2011 remaster…"))
                 TextField("Release year", text: $releaseYear)
+                if let message = yearMessage(releaseYear, field: "Release year") { Text(message).font(.caption).foregroundStyle(.orange) }
                 TextField("Country/region", text: $countryCode)
                 TextField("Record label", text: $labelName)
                 TextField("Catalogue number", text: $catalogueNumber)
                 TextField("Barcode", text: $barcode)
                 TextField("Remaster year", text: $remasterYear)
+                if let message = yearMessage(remasterYear, field: "Remaster year") { Text(message).font(.caption).foregroundStyle(.orange) }
                 TextField("Media format", text: $mediaFormat, prompt: Text("CD, SACD…"))
                 Stepper("Discs: \(discCount)", value: $discCount, in: 1...99)
-                Picker("Rating", selection: $rating) { Text("Not rated").tag(0); ForEach(1...5, id: \.self) { Text("\($0) star\($0 == 1 ? "" : "s")").tag($0) } }
-                Toggle("Favourite", isOn: $isFavourite)
             }
 
             Section("Contributors") {
@@ -4598,8 +4682,8 @@ private struct AlbumEditor: View {
                 Button("Add Contributor", systemImage: "person.badge.plus") {
                     contributorDrafts.append(.init())
                 }
-                if contributorDrafts.contains(where: { $0.name.nilIfBlank == nil }) {
-                    Label("Fill or remove every empty contributor row to enable Add Physical Album.", systemImage: "exclamationmark.triangle")
+                if let message = creditMessage {
+                    Label(message, systemImage: "exclamationmark.triangle")
                         .font(.caption)
                         .foregroundStyle(.orange)
                 }
@@ -4607,7 +4691,13 @@ private struct AlbumEditor: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-
+            }
+            if step == .copy {
+            Section("Your Copy") {
+                Text(title).font(.headline)
+                Picker("Rating", selection: $rating) { Text("Not rated").tag(0); ForEach(1...5, id: \.self) { Text("\($0) star\($0 == 1 ? "" : "s")").tag($0) } }
+                Toggle("Favourite", isOn: $isFavourite)
+            }
             Section("Physical Location") {
                 Picker("Stored in", selection: $placement) {
                     ForEach(ManualAlbumPlacement.allCases) { option in Text(option.title).tag(option) }
@@ -4632,6 +4722,8 @@ private struct AlbumEditor: View {
                         }
                         Button("Create and Select", systemImage: "plus") { createAndSelectLocation() }
                             .disabled(newLocationName.nilIfBlank == nil)
+                        Text("Creates this location immediately. It remains in the library if you cancel this album.")
+                            .font(.caption).foregroundStyle(.secondary)
                     }
                 case .boxSet:
                     Picker("Box set", selection: $selectedBoxSetID) {
@@ -4662,31 +4754,10 @@ private struct AlbumEditor: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            }
         }
         .formStyle(.grouped)
-        .frame(width: 620)
-        .frame(minHeight: 720)
-        .navigationTitle("Add Physical Album")
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-            ToolbarItem(placement: .confirmationAction) {
-                Button(isAddingAlbum ? "Adding…" : "Add Physical Album") { addAlbum() }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(!canSubmit || isAddingAlbum)
-            }
-        }
-        .alert("Unable to add album", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
-            Button("OK", role: .cancel) { errorMessage = nil }
-        } message: { Text(errorMessage ?? "") }
-        .sheet(isPresented: $showsMusicBrainzLookup) {
-            PhysicalAlbumMusicBrainzLookupView(library: library, title: title, artist: contributorDrafts.first?.name) { release in
-                applyMusicBrainzRelease(release)
-            }
-        }
-        .onChange(of: placement) { _, newPlacement in
-            if newPlacement != .location { selectedLocationID = nil }
-            if newPlacement != .boxSet { selectedBoxSetID = nil }
-        }
+        .disabled(isAddingAlbum || isCreatingLocation)
     }
 
     private var orderedLocations: [PhysicalLocation] {
@@ -4694,20 +4765,58 @@ private struct AlbumEditor: View {
     }
 
     private var canSubmit: Bool {
-        guard title.nilIfBlank != nil,
-              !contributorDrafts.isEmpty,
-              contributorDrafts.allSatisfy({ $0.name.nilIfBlank != nil }) else { return false }
+        validationMessages.isEmpty
+    }
+
+    private var rawCredits: [NewAlbumContributorCredit] {
+        contributorDrafts.map { .init(name: $0.name, role: $0.role, creditedName: $0.creditedName.nilIfBlank) }
+    }
+
+    private func yearMessage(_ text: String, field: String) -> String? {
+        do { _ = try PhysicalAlbumEntryValidation.year(text, field: field); return nil }
+        catch { return error.localizedDescription }
+    }
+
+    private var creditMessage: String? {
+        do { _ = try PhysicalAlbumEntryValidation.credits(rawCredits); return nil }
+        catch { return error.localizedDescription }
+    }
+
+    private var identityMessages: [String] {
+        [title.nilIfBlank == nil ? "Enter an album title." : nil,
+         yearMessage(releaseYear, field: "Release year"), yearMessage(remasterYear, field: "Remaster year"), creditMessage].compactMap { $0 }
+    }
+
+    private var validationMessages: [String] {
+        var messages = identityMessages
+        guard step == .copy else { return messages }
         switch placement {
-        case .location: return selectedLocationID != nil
-        case .boxSet: return selectedBoxSetID != nil
-        case .unknown: return true
+        case .location: if selectedLocationID == nil { messages.append("Choose a location, or set it later.") }
+        case .boxSet: if selectedBoxSetID == nil { messages.append("Choose a box set.") }
+        case .unknown: break
         }
+        return messages
+    }
+
+    private var hasReviewInput: Bool {
+        [title, editionLabel, releaseYear, countryCode, labelName, catalogueNumber, barcode, remasterYear].contains { $0.nilIfBlank != nil }
+            || mediaFormat != "CD" || discCount != 1 || selectedMusicBrainzRelease != nil
+            || contributorDrafts.contains { $0.name.nilIfBlank != nil || $0.creditedName.nilIfBlank != nil || $0.role != .albumArtist }
+    }
+
+    private var isDirty: Bool {
+        hasReviewInput || physicalNote.nilIfBlank != nil || notes.nilIfBlank != nil || rating != 0 || isFavourite
+            || selectedLocationID != nil || selectedBoxSetID != nil || placement != .location || newLocationName.nilIfBlank != nil
     }
 
     private func createAndSelectLocation() {
+        guard !isCreatingLocation, let name = newLocationName.nilIfBlank else { return }
+        isCreatingLocation = true
+        let parentID = newLocationParentID
         Task {
+            defer { isCreatingLocation = false }
             do {
-                let location = try await library.addLocation(.init(name: newLocationName, parentID: newLocationParentID))
+                let location = try await library.addLocation(.init(name: name, parentID: parentID))
                 selectedLocationID = location.id
                 newLocationName = ""
                 newLocationParentID = nil
@@ -4720,26 +4829,23 @@ private struct AlbumEditor: View {
         selectedMusicBrainzRelease = release
         saveMusicBrainzCover = release.coverArtworkURL != nil
         title = release.title
-        if let releaseYear = release.releaseYear { self.releaseYear = String(releaseYear) }
-        if let countryCode = release.countryCode?.nilIfBlank { self.countryCode = countryCode }
-        if let labelName = release.labelName?.nilIfBlank { self.labelName = labelName }
-        if let catalogueNumber = release.catalogueNumber?.nilIfBlank { self.catalogueNumber = catalogueNumber }
-        if let barcode = release.barcode?.nilIfBlank { self.barcode = barcode }
-        if let mediaFormat = release.mediaFormat?.nilIfBlank { self.mediaFormat = mediaFormat }
-        if release.mediaCount > 0 { discCount = release.mediaCount }
-
-        guard let artist = release.artist?.nilIfBlank else { return }
-        let normalizedArtist = artist.lowercased()
-        if let blankIndex = contributorDrafts.firstIndex(where: { $0.name.nilIfBlank == nil }) {
-            contributorDrafts[blankIndex].name = artist
-            contributorDrafts[blankIndex].role = .albumArtist
-        } else if !contributorDrafts.contains(where: { $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == normalizedArtist }) {
-            contributorDrafts.insert(.init(name: artist, role: .albumArtist), at: 0)
-        }
+        editionLabel = ""
+        releaseYear = release.releaseYear.map(String.init) ?? ""
+        remasterYear = ""
+        countryCode = release.countryCode ?? ""
+        labelName = release.labelName ?? ""
+        catalogueNumber = release.catalogueNumber ?? ""
+        barcode = release.barcode ?? ""
+        mediaFormat = release.mediaFormat?.nilIfBlank ?? "CD"
+        discCount = min(99, max(1, release.mediaCount))
+        contributorDrafts = [.init(name: release.artist ?? "", role: .albumArtist)]
+            + contributorDrafts.filter { $0.role != .albumArtist }
     }
 
     private func addAlbum() {
+        guard canSubmit, !isAddingAlbum else { return }
         isAddingAlbum = true
+        errorMessage = nil
         Task {
             defer { isAddingAlbum = false }
             do {
@@ -4748,12 +4854,12 @@ private struct AlbumEditor: View {
                 let draft = NewAlbum(
                     title: title,
                     editionLabel: editionLabel.nilIfBlank,
-                    releaseYear: Int(releaseYear),
+                    releaseYear: try PhysicalAlbumEntryValidation.year(releaseYear, field: "Release year"),
                     countryCode: countryCode.nilIfBlank,
                     labelName: labelName.nilIfBlank,
                     catalogueNumber: catalogueNumber.nilIfBlank,
                     barcode: barcode.nilIfBlank,
-                    remasterYear: Int(remasterYear),
+                    remasterYear: try PhysicalAlbumEntryValidation.year(remasterYear, field: "Remaster year"),
                     mediaFormat: mediaFormat.nilIfBlank,
                     discCount: discCount,
                     hasCD: true,
@@ -4764,15 +4870,14 @@ private struct AlbumEditor: View {
                     rating: rating == 0 ? nil : rating,
                     isFavourite: isFavourite
                 )
-                let credits = contributorDrafts.map {
-                    NewAlbumContributorCredit(name: $0.name, role: $0.role, creditedName: $0.creditedName.nilIfBlank)
-                }
-                try await library.addAlbum(
+                let credits = try PhysicalAlbumEntryValidation.credits(rawCredits)
+                let album = try await library.addAlbum(
                     draft,
                     toBoxSet: boxSetID,
                     contributors: credits,
                     musicBrainzArtworkURL: saveMusicBrainzCover ? selectedMusicBrainzRelease?.coverArtworkURL : nil
                 )
+                onAdded(album)
                 dismiss()
             } catch { errorMessage = error.localizedDescription }
         }

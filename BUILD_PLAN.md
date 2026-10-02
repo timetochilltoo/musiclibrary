@@ -790,6 +790,8 @@ Implementation details:
 
 ### 12.10 Digital import and review
 
+R4a implementation checkpoint (3 October 2026): physical entry now uses one resizable Find/Review/Your Copy workspace, retained lookup and draft state, visible manual fallback, inline year/credit requirements, blank-row normalization, guarded save progress, confirmed release replacement, explicit immediate-location semantics, and navigation to the saved album. Existing title/artist and cover services are reused; no schema/source-media changes. Automated validation is recorded in HANDOFF.md. Native visual/workflow acceptance is pending because the validation Mac was locked. R4b still owns barcode/catalogue/release-URL queries, external-ID provenance, duplicate suggestions and optional structured tracks; no claim of full R4 acceptance.
+
 Entry: Add Album → Import Music Folder, or Imports → Scan Folder.
 
 Flow:

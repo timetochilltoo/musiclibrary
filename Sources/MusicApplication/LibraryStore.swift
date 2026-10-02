@@ -202,12 +202,13 @@ public final class LibraryStore: ObservableObject {
         }
     }
 
+    @discardableResult
     public func addAlbum(
         _ draft: NewAlbum,
         toBoxSet boxSetID: BoxSetID? = nil,
         contributors: [NewAlbumContributorCredit] = [],
         musicBrainzArtworkURL: URL? = nil
-    ) async throws {
+    ) async throws -> Album {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
         let managedArtworkURL: URL?
         if let musicBrainzArtworkURL {
@@ -215,8 +216,9 @@ public final class LibraryStore: ObservableObject {
         } else {
             managedArtworkURL = nil
         }
+        let album: Album
         do {
-            _ = try await database.createAlbum(
+            album = try await database.createAlbum(
                 draft,
                 in: boxSetID,
                 contributors: contributors,
@@ -227,7 +229,10 @@ public final class LibraryStore: ObservableObject {
             if let managedArtworkURL { try? FileManager.default.removeItem(at: managedArtworkURL) }
             throw error
         }
-        try await reload()
+        // Creation has committed. A refresh failure must not invite a duplicate
+        // retry of the same album; report it separately and return the saved ID.
+        do { try await reload() } catch { presentError(error) }
+        return album
     }
 
     public func updateAlbum(_ id: AlbumID, with draft: NewAlbum) async throws {
