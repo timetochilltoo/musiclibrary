@@ -3,11 +3,18 @@ import SwiftUI
 import MusicApplication
 
 struct PhysicalAlbumMusicBrainzLookupView: View {
+    private enum SearchMode: String, CaseIterable { case title = "Title / Artist", barcode = "Barcode", catalogue = "Catalogue Number", url = "Release URL" }
     @ObservedObject var library: LibraryStore
     let onSelected: (ExternalReleasePreview) -> Void
 
     @State private var title: String
     @State private var artist: String
+    @State private var mode: SearchMode = .title
+    @State private var barcode = ""
+    @State private var catalogueNumber = ""
+    @State private var releaseURL = ""
+    @State private var searchGeneration = 0
+    @State private var searchTask: Task<Void, Never>?
     @State private var results: [ExternalReleasePreview] = []
     @State private var selectedResultID: String?
     @State private var selectedReleaseDetail: ExternalReleasePreview?
@@ -33,14 +40,24 @@ struct PhysicalAlbumMusicBrainzLookupView: View {
             VStack(spacing: 0) {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Search MusicBrainz").font(.headline)
+                    Picker("Find by", selection: $mode) {
+                        ForEach(SearchMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    }.pickerStyle(.segmented).disabled(isApplying)
                     Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
                         GridRow {
-                            Text("Album title").frame(width: 96, alignment: .trailing)
-                            TextField("Album title", text: $title)
+                            Text(inputLabel).frame(width: 110, alignment: .trailing)
+                            switch mode {
+                            case .title: TextField("Album title", text: $title)
+                            case .barcode: TextField("Barcode digits, including leading zeros", text: $barcode)
+                            case .catalogue: TextField("Catalogue number", text: $catalogueNumber)
+                            case .url: TextField("https://musicbrainz.org/release/…", text: $releaseURL)
+                            }
                         }
+                        if mode == .title || mode == .catalogue {
                         GridRow {
-                            Text("Artist (optional)").frame(width: 96, alignment: .trailing)
+                            Text("Artist (optional)").frame(width: 110, alignment: .trailing)
                             TextField("Artist", text: $artist)
+                        }
                         }
                     }
                 }
@@ -49,8 +66,8 @@ struct PhysicalAlbumMusicBrainzLookupView: View {
 
                 HStack(spacing: 12) {
                     Button("Search MusicBrainz", systemImage: "magnifyingglass") { search() }
-                        .disabled(isSearching || isApplying || trimmedTitle == nil)
-                    Text("Only the title and artist are sent. Nothing is added until you use the selected release and save the album.")
+                        .disabled(isSearching || isApplying || inputIsEmpty)
+                    Text("Only entered search text or the release ID is sent to MusicBrainz. Nothing is saved until Add Album.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Spacer()
@@ -67,7 +84,7 @@ struct PhysicalAlbumMusicBrainzLookupView: View {
                         Spacer()
                     } else if hasSearched && results.isEmpty {
                         Spacer()
-                        ContentUnavailableView("No matching releases", systemImage: "magnifyingglass", description: Text("Try a different album title or artist."))
+                        ContentUnavailableView("No matching releases", systemImage: "magnifyingglass", description: Text("Check the lookup value, or try Title / Artist to find another pressing."))
                         Spacer()
                     } else if !results.isEmpty {
                         HStack(spacing: 0) {
@@ -103,7 +120,7 @@ struct PhysicalAlbumMusicBrainzLookupView: View {
                         }
                     } else {
                         Spacer()
-                        ContentUnavailableView("Find a physical release", systemImage: "opticaldisc", description: Text("Search by album title and optionally artist, then choose the matching pressing to fill the physical-album form."))
+                        ContentUnavailableView("Find a physical release", systemImage: "opticaldisc", description: Text("Search by title, barcode or catalogue number, or paste a MusicBrainz release URL. Choose the matching pressing to fill Review."))
                         Spacer()
                     }
                 }
@@ -112,7 +129,7 @@ struct PhysicalAlbumMusicBrainzLookupView: View {
                 HStack {
                     Spacer()
                     Button(isApplying ? "Applying…" : "Use Selected Release") { useSelectedRelease() }
-                        .disabled(selectedResult == nil || isApplying)
+                        .disabled(selectedResult == nil || isApplying || isSearching)
                         .buttonStyle(.borderedProminent)
                 }
                 .padding(16)
@@ -123,11 +140,37 @@ struct PhysicalAlbumMusicBrainzLookupView: View {
                 Text(errorMessage ?? "")
             }
         .task(id: selectedResultID) { await loadSelectedReleaseDetail() }
+        .onChange(of: mode) { _, _ in
+            searchGeneration += 1
+            searchTask?.cancel()
+            isSearching = false
+            hasSearched = false
+            results = []
+            selectedResultID = nil
+            selectedReleaseDetail = nil
+            isLoadingReleaseDetail = false
+            errorMessage = nil
+        }
+        .onDisappear { searchTask?.cancel() }
     }
 
-    private var trimmedTitle: String? {
-        let value = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        return value.isEmpty ? nil : value
+    private var inputLabel: String {
+        switch mode { case .title: "Album title"; case .barcode: "Barcode"; case .catalogue: "Catalogue no."; case .url: "Release URL" }
+    }
+
+    private var inputIsEmpty: Bool {
+        let text: String
+        switch mode { case .title: text = title; case .barcode: text = barcode; case .catalogue: text = catalogueNumber; case .url: text = releaseURL }
+        return text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var lookup: MusicBrainzReleaseLookup {
+        switch mode {
+        case .title: .title(title, artist: artist)
+        case .barcode: .barcode(barcode)
+        case .catalogue: .catalogueNumber(catalogueNumber, artist: artist)
+        case .url: .releaseURL(releaseURL)
+        }
     }
 
     private var selectedResult: ExternalReleasePreview? {
@@ -149,20 +192,29 @@ struct PhysicalAlbumMusicBrainzLookupView: View {
     }
 
     private func search() {
-        guard let trimmedTitle else { return }
+        guard !inputIsEmpty, !isApplying else { return }
+        searchGeneration += 1
+        let generation = searchGeneration
+        let request = lookup
+        searchTask?.cancel()
         isSearching = true
         hasSearched = true
         results = []
         selectedResultID = nil
         selectedReleaseDetail = nil
-        Task {
+        searchTask = Task {
+            defer { if generation == searchGeneration { isSearching = false } }
             do {
-                results = try await library.searchMusicBrainz(title: trimmedTitle, artist: artist.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : artist)
+                let found = try await library.lookupMusicBrainz(request)
+                guard !Task.isCancelled, generation == searchGeneration else { return }
+                results = found
                 selectedResultID = results.first?.id
             } catch {
+                guard !Task.isCancelled, generation == searchGeneration else { return }
+                // A failed lookup is not a successful search with zero matches.
+                hasSearched = false
                 errorMessage = error.localizedDescription
             }
-            isSearching = false
         }
     }
 

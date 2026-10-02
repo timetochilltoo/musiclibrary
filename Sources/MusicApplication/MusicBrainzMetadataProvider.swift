@@ -25,14 +25,18 @@ public struct ExternalReleasePreview: Identifiable, Equatable, Sendable {
 
 public protocol MetadataLookupProviding: Sendable {
     func searchRelease(title: String, artist: String?) async throws -> [ExternalReleasePreview]
+    func lookupRelease(_ lookup: MusicBrainzReleaseLookup) async throws -> [ExternalReleasePreview]
     func releaseDetails(id: String) async throws -> ExternalReleasePreview
 }
 
 public enum MetadataLookupError: LocalizedError, Equatable, Sendable {
-    case missingTitle, invalidResponse, serviceStatus(Int)
+    case missingTitle, invalidResponse, serviceStatus(Int), invalidReleaseURL, invalidBarcode, missingCatalogueNumber
     public var errorDescription: String? {
         switch self {
         case .missingTitle: "Enter an album title before searching."
+        case .invalidReleaseURL: "Paste a MusicBrainz release URL, not an artist or release-group URL."
+        case .invalidBarcode: "Enter the barcode digits, including any leading zeros."
+        case .missingCatalogueNumber: "Enter a catalogue number before searching."
         case .invalidResponse: "The metadata service returned an unreadable response."
         case .serviceStatus(let status): "The metadata service returned HTTP \(status)."
         }
@@ -53,12 +57,16 @@ public struct MusicBrainzMetadataProvider: MetadataLookupProviding {
     }
 
     public func searchRelease(title: String, artist: String?) async throws -> [ExternalReleasePreview] {
-        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedTitle.isEmpty else { throw MetadataLookupError.missingTitle }
+        try await lookupRelease(.title(title, artist: artist))
+    }
+
+    public func lookupRelease(_ lookup: MusicBrainzReleaseLookup) async throws -> [ExternalReleasePreview] {
+        if case .releaseURL(let text) = lookup {
+            return [try await releaseDetails(id: MusicBrainzReleaseLookup.releaseID(from: text))]
+        }
         var components = URLComponents(string: "https://musicbrainz.org/ws/2/release/")!
-        let trimmedArtist = artist?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let query = trimmedArtist?.isEmpty == false ? "release:\"\(trimmedTitle)\" AND artist:\"\(trimmedArtist!)\"" : "release:\"\(trimmedTitle)\""
-        let cacheKey = "\(trimmedTitle.lowercased())|\(trimmedArtist?.lowercased() ?? "")"
+        let query = try lookup.query
+        let cacheKey = "search:" + query
         if let cached = await cache.value(for: cacheKey) { return cached }
         components.queryItems = [URLQueryItem(name: "query", value: query), URLQueryItem(name: "fmt", value: "json"), URLQueryItem(name: "limit", value: "12"), URLQueryItem(name: "inc", value: "recordings")]
         guard let url = components.url else { throw MetadataLookupError.invalidResponse }
@@ -68,14 +76,20 @@ public struct MusicBrainzMetadataProvider: MetadataLookupProviding {
     }
 
     public func releaseDetails(id: String) async throws -> ExternalReleasePreview {
-        guard !id.isEmpty, let url = URL(string: "https://musicbrainz.org/ws/2/release/\(id)?inc=recordings+artist-credits+labels+release-groups&fmt=json") else { throw MetadataLookupError.invalidResponse }
+        let id = try MusicBrainzReleaseLookup.validatedID(id)
+        let cacheKey = "detail:" + id
+        if let cached = await cache.value(for: cacheKey), let detail = cached.first { return detail }
+        let url = URL(string: "https://musicbrainz.org/ws/2/release/\(id)?inc=recordings+artist-credits+labels+release-groups&fmt=json")!
         try await rateLimiter.waitForTurn()
         var request = MusicNetworkRequestPolicy.request(url: url)
         request.setValue("MusicLibrary/0.1 (+https://github.com/timetochilltoo/musiclibrary)", forHTTPHeaderField: "User-Agent")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else { throw MetadataLookupError.invalidResponse }
-        return try Self.decodeReleaseDetail(from: data)
+        let detail = try Self.decodeReleaseDetail(from: data)
+        guard detail.id.lowercased() == id else { throw MetadataLookupError.invalidResponse }
+        await cache.store([detail], for: cacheKey)
+        return detail
     }
 
     private func fetch(url: URL) async throws -> [ExternalReleasePreview] {
@@ -149,9 +163,14 @@ public actor MusicBrainzRateLimiter {
     public init() {}
 
     public func waitForTurn() async throws {
-        let delay = nextAllowedRequest.timeIntervalSinceNow
+        // Reserve before suspending: actor reentrancy must not give concurrent
+        // detail/search requests the same slot.
+        let now = Date()
+        let slot = max(now, nextAllowedRequest)
+        nextAllowedRequest = slot.addingTimeInterval(1)
+        let delay = slot.timeIntervalSince(now)
         if delay > 0 { try await Task.sleep(for: .seconds(delay)) }
-        nextAllowedRequest = Date().addingTimeInterval(1)
+        try Task.checkCancellation()
     }
 }
 

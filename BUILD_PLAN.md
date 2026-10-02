@@ -792,6 +792,8 @@ Implementation details:
 
 R4a implementation checkpoint (3 October 2026): physical entry now uses one resizable Find/Review/Your Copy workspace, retained lookup and draft state, visible manual fallback, inline year/credit requirements, blank-row normalization, guarded save progress, confirmed release replacement, explicit immediate-location semantics, and navigation to the saved album. Existing title/artist and cover services are reused; no schema/source-media changes. Automated validation is recorded in HANDOFF.md. Native visual/workflow acceptance is pending because the validation Mac was locked. R4b still owns barcode/catalogue/release-URL queries, external-ID provenance, duplicate suggestions and optional structured tracks; no claim of full R4 acceptance.
 
+R4b lookup checkpoint (3 October 2026): Find now supports barcode, catalogue number with optional artist, and pasted exact MusicBrainz release URLs alongside title/artist/manual entry. Typed input/query/URL validation, distinct cache namespaces, fixed API origin, stale-response protection and concurrent rate-limit reservations are covered by offline tests. Disposable native checks verify lookup-mode layout and invalid-link recovery; the previously pending R4a manual save/open and Back/validation path also passed. Live provider results, failed-cover recovery, broader appearance/keyboard checks and full R4 acceptance remain pending. Next R4b slice: external-ID provenance and evidence-based duplicate suggestions, then optional structured track creation with atomic persistence.
+
 Entry: Add Album → Import Music Folder, or Imports → Scan Folder.
 
 Flow:

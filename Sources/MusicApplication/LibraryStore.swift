@@ -591,6 +591,10 @@ public final class LibraryStore: ObservableObject {
         try await metadataLookupProvider.searchRelease(title: title, artist: artist)
     }
 
+    public func lookupMusicBrainz(_ lookup: MusicBrainzReleaseLookup) async throws -> [ExternalReleasePreview] {
+        try await metadataLookupProvider.lookupRelease(lookup)
+    }
+
     private func downloadManagedMusicBrainzArtwork(from sourceURL: URL) async throws -> URL {
         guard let managedArtworkStore else { throw DatabaseError.notFound("Managed artwork storage") }
         var request = MusicNetworkRequestPolicy.request(url: sourceURL)

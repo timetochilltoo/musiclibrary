@@ -4,7 +4,21 @@ Last updated: 3 October 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — R4a physical-entry workspace
+## Current resume — R4b lookup modes
+
+Delivered local release-configuration app: **Music Library 0.25 (build 26)** at `build/Music Library 0.25.app`, versioned through `Packaging/MusicLibraryMac-Info.plist`. No distribution archive/notarization or personal-catalogue launch is part of this delivery.
+
+Find has four modes: Title / Artist, Barcode, Catalogue Number (optional artist), and Release URL. Lookup stays user-triggered; Enter Manually remains available. Per-mode input survives switching, while old results/selection are cleared and pending searches cancelled/invalidated. Results and errors are generation/cancellation guarded; failed lookup is not presented as a successful zero-match search.
+
+`MusicBrainzReleaseLookup` validates typed input, preserves leading-zero barcodes, and escapes quote/backslash literals before URL query encoding. Pasted links must be trusted MusicBrainz exact release URLs with UUIDs; artist/release-group links, arbitrary hosts, credentials, ports and malformed IDs are rejected. Only the extracted ID reaches the fixed HTTPS API; pasted addresses are never fetched. Search and detail caching use separate namespaces. The shared rate limiter now reserves slots before suspending so concurrent searches/details cannot reuse one slot. Existing timeout, search retries and provider policy are retained. No schema, source-media, external-ID persistence or track-creation changes.
+
+Relevant code: `MusicBrainzReleaseLookup.swift`, `MusicBrainzMetadataProvider.swift`, `LibraryStore.swift`, `PhysicalAlbumMusicBrainzLookupView.swift`; regressions in `MusicBrainzReleaseLookupTests.swift`. Offline transport fixtures verify encoded queries, trusted origin, exact detail dispatch, caching and bounded timeout. Parser/query tests cover unsafe links, malformed IDs, leading zeros and Lucene escaping; concurrency coverage protects rate-limit slots. `swift test`: **125 tests across 16 suites**; `swift test -c release`: **124 across 15** (DEBUG-only navigation fixture differs). Final Debug build, packaging, plist/version/signature and whitespace checks pass. Existing AVMetadataItem deprecation remains.
+
+Native validation used only a fresh hardened real-shell disposable fixture (`musiclibrary-navigation.VCEJNl`). Checked four-mode controls, barcode leading zeros, rejected untrusted URL, and 720-point lookup layout. R4a manual fallback, invalid-year error, blank added credit, Back-preserved review/copy fields, and physical-only save opening the resulting album passed. That fixture was quit; no personal-catalogue interaction occurred. The final small failed-search empty-state correction was compiled but not separately rechecked visually. Release artifact was not launched. Preserve earlier startup incidents below. User accepted 0.24 and requested this next slice; do not equate that with all planned acceptance.
+
+Next: R4b external-ID provenance and evidence-based duplicate suggestions (review persistence architecture before migration), then structured medium/track previews and atomic optional physical track creation. First carry forward live-provider results, release replacement, cover-failure/retry, Cancel, keyboard/appearance and broader responsive acceptance from `MAC_AND_NAS_TESTING.md`. Full R4, real-library/NAS performance, destructive acceptance and iPad-device validation remain pending. Locations browsing remains R7.
+
+## Previous resume — R4a physical-entry workspace
 
 Delivered local release-configuration artifact: **Music Library 0.24 (build 25)** at `build/Music Library 0.24.app`. Canonical version is `Packaging/MusicLibraryMac-Info.plist`. This is a development delivery, not notarization/distribution.
 
