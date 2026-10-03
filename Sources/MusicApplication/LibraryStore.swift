@@ -85,9 +85,10 @@ public final class LibraryStore: ObservableObject {
     /// Isolated fixture composition: never starts Application Support or resolves
     /// the user's snapshot destination. Production still uses `start()`.
     init(database: MusicDatabase,
-         albumSearch: (@Sendable (MusicDatabase, String) async throws -> [Album])? = nil) {
+         albumSearch: (@Sendable (MusicDatabase, String) async throws -> [Album])? = nil,
+         metadataLookupProvider: any MetadataLookupProviding = MusicBrainzMetadataProvider()) {
         self.database = database
-        self.metadataLookupProvider = MusicBrainzMetadataProvider()
+        self.metadataLookupProvider = metadataLookupProvider
         if let albumSearch { self.albumSearch = albumSearch }
         permitsBackgroundServices = false
         startGate.succeed()
@@ -212,7 +213,8 @@ public final class LibraryStore: ObservableObject {
         toBoxSet boxSetID: BoxSetID? = nil,
         contributors: [NewAlbumContributorCredit] = [],
         musicBrainzArtworkURL: URL? = nil,
-        musicBrainzReleaseID: String? = nil
+        musicBrainzReleaseID: String? = nil,
+        discs: [NewAlbumDisc] = []
     ) async throws -> Album {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
         let managedArtworkURL: URL?
@@ -229,7 +231,8 @@ public final class LibraryStore: ObservableObject {
                 contributors: contributors,
                 frontArtworkPath: managedArtworkURL?.path,
                 frontArtworkSource: "managed-musicbrainz-artwork",
-                musicBrainzReleaseID: musicBrainzReleaseID
+                musicBrainzReleaseID: musicBrainzReleaseID,
+                discs: discs
             )
         } catch {
             if let managedArtworkURL { try? FileManager.default.removeItem(at: managedArtworkURL) }
@@ -679,6 +682,11 @@ public final class LibraryStore: ObservableObject {
             _ = try await database.addAlbumArtwork(albumID: albumID, localPath: managedArtworkPath, role: .front, source: "managed-musicbrainz-artwork")
             try await reload()
         }
+    }
+
+    public func availableTrackIDs(albumID: AlbumID) async throws -> Set<TrackID> {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        return try await database.availableTrackIDs(albumID: albumID)
     }
 
     public func playbackURL(for trackID: TrackID) async throws -> (url: URL, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?) {

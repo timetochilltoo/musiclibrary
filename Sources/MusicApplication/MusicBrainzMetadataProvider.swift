@@ -1,4 +1,5 @@
 import Foundation
+import MusicDomain
 
 public struct ExternalReleasePreview: Identifiable, Equatable, Sendable {
     public let id: String
@@ -12,15 +13,89 @@ public struct ExternalReleasePreview: Identifiable, Equatable, Sendable {
     public let labelName: String?
     public let barcode: String?
     public let mediaFormat: String?
+    public let media: [ExternalMediumPreview]
 
-    public init(id: String, title: String, artist: String?, releaseDate: String?, countryCode: String?, catalogueNumber: String?, mediaCount: Int, trackTitles: [String] = [], labelName: String? = nil, barcode: String? = nil, mediaFormat: String? = nil) {
+    public init(id: String, title: String, artist: String?, releaseDate: String?, countryCode: String?, catalogueNumber: String?, mediaCount: Int, trackTitles: [String] = [], labelName: String? = nil, barcode: String? = nil, mediaFormat: String? = nil, media: [ExternalMediumPreview] = []) {
         self.id = id; self.title = title; self.artist = artist; self.releaseDate = releaseDate; self.countryCode = countryCode; self.catalogueNumber = catalogueNumber; self.mediaCount = mediaCount; self.trackTitles = trackTitles; self.labelName = labelName; self.barcode = barcode; self.mediaFormat = mediaFormat
+        self.media = media
+    }
+
+    /// Never manufacture positions or silently save a partial listing.
+    public var physicalDiscs: [NewAlbumDisc]? {
+        guard !media.isEmpty, media.count == mediaCount, mediaCount <= 99,
+              media.compactMap(\.position).sorted() == Array(1...mediaCount) else { return nil }
+        var result: [NewAlbumDisc] = []
+        for medium in media.sorted(by: { ($0.position ?? 0) < ($1.position ?? 0) }) {
+            guard !medium.hasUnsupportedContent, let position = medium.position, let count = medium.trackCount, count > 0,
+                  medium.tracks.count == count,
+                  medium.tracks.compactMap(\.position).sorted() == Array(1...count) else { return nil }
+            let tracks = medium.tracks + (medium.pregap.map { [$0] } ?? [])
+            if let pregap = medium.pregap, pregap.position != 0 { return nil }
+            var drafts: [NewAlbumTrack] = []
+            for track in tracks.sorted(by: { ($0.position ?? 0) < ($1.position ?? 0) }) {
+                guard let number = track.position, let title = track.title,
+                      !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                      track.durationMilliseconds.map({ $0 >= 0 }) ?? true else { return nil }
+                drafts.append(.init(number: number, draft: .init(title: title, displayPosition: track.displayPosition, durationMilliseconds: track.durationMilliseconds)))
+            }
+            result.append(.init(number: position, title: medium.title, mediaFormat: medium.format, tracks: drafts))
+        }
+        return result
     }
 
     public var coverArtworkURL: URL? { URL(string: "https://coverartarchive.org/release/\(id)/front") }
     /// A small derivative for responsive comparison previews. Downloads still use `coverArtworkURL`.
     public var coverArtworkThumbnailURL: URL? { URL(string: "https://coverartarchive.org/release/\(id)/front-250") }
     public var releaseYear: Int? { releaseDate.flatMap { Int($0.prefix(4)) } }
+}
+
+public struct ExternalMediumPreview: Equatable, Sendable, Decodable {
+    public let position: Int?
+    public let title: String?
+    public let format: String?
+    public let trackCount: Int?
+    public let tracks: [ExternalTrackPreview]
+    public let pregap: ExternalTrackPreview?
+    public let hasUnsupportedContent: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case position, title, format, tracks, pregap
+        case trackCount = "track-count", dataTracks = "data-tracks", dataTrackCount = "data-track-count"
+    }
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        position = try? values.decode(Int.self, forKey: .position)
+        title = try? values.decode(String.self, forKey: .title)
+        format = try? values.decode(String.self, forKey: .format)
+        trackCount = try? values.decode(Int.self, forKey: .trackCount)
+        tracks = (try? values.decode([ExternalTrackPreview].self, forKey: .tracks)) ?? []
+        pregap = try? values.decode(ExternalTrackPreview.self, forKey: .pregap)
+        let dataCount = try? values.decode(Int.self, forKey: .dataTrackCount)
+        let dataTracks = try? values.decode([ExternalTrackPreview].self, forKey: .dataTracks)
+        let hasPregap = values.contains(.pregap) && (try? values.decodeNil(forKey: .pregap)) != true
+        let hasDataCount = values.contains(.dataTrackCount) && (try? values.decodeNil(forKey: .dataTrackCount)) != true
+        let hasDataTracks = values.contains(.dataTracks) && (try? values.decodeNil(forKey: .dataTracks)) != true
+        hasUnsupportedContent = (dataCount ?? 0) != 0 || !(dataTracks ?? []).isEmpty
+            || (hasPregap && pregap == nil) || (hasDataCount && dataCount == nil) || (hasDataTracks && dataTracks == nil)
+    }
+}
+
+public struct ExternalTrackPreview: Equatable, Sendable, Decodable {
+    public let position: Int?
+    public let displayPosition: String?
+    public let title: String?
+    public let durationMilliseconds: Int?
+    enum CodingKeys: String, CodingKey { case position, number, title, length, recording }
+    private struct Recording: Decodable { let title: String? }
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        position = try? values.decode(Int.self, forKey: .position)
+        displayPosition = try? values.decode(String.self, forKey: .number)
+        let trackTitle = try? values.decode(String.self, forKey: .title)
+        title = trackTitle.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
+            ?? (try? values.decode(Recording.self, forKey: .recording))?.title
+        durationMilliseconds = try? values.decode(Int.self, forKey: .length)
+    }
 }
 
 public protocol MetadataLookupProviding: Sendable {
@@ -135,10 +210,11 @@ public struct MusicBrainzMetadataProvider: MetadataLookupProviding {
             countryCode: release.country ?? release.releaseEvents?.first?.area?.iso31661Codes?.first,
             catalogueNumber: release.labelInfo?.compactMap(\.catalogueNumber).first,
             mediaCount: release.media?.count ?? 0,
-            trackTitles: release.media?.flatMap { $0.tracks ?? [] }.map(\.title) ?? [],
+            trackTitles: release.media?.flatMap(\.tracks).compactMap(\.title) ?? [],
             labelName: release.labelInfo?.compactMap { $0.label?.name }.first,
             barcode: release.barcode,
-            mediaFormat: mediaFormats.isEmpty ? nil : mediaFormats.joined(separator: ", ")
+            mediaFormat: mediaFormats.isEmpty ? nil : mediaFormats.joined(separator: ", "),
+            media: release.media ?? []
         )
     }
 }
@@ -177,14 +253,12 @@ public actor MusicBrainzRateLimiter {
 private extension MusicBrainzMetadataProvider {
     struct Response: Decodable { let releases: [Release] }
     struct Release: Decodable {
-        let id: String; let title: String; let date: String?; let country: String?; let barcode: String?; let artistCredit: [ArtistCredit]?; let labelInfo: [LabelInfo]?; let media: [Media]?; let releaseEvents: [ReleaseEvent]?
+        let id: String; let title: String; let date: String?; let country: String?; let barcode: String?; let artistCredit: [ArtistCredit]?; let labelInfo: [LabelInfo]?; let media: [ExternalMediumPreview]?; let releaseEvents: [ReleaseEvent]?
         enum CodingKeys: String, CodingKey { case id, title, date, country, barcode, media; case artistCredit = "artist-credit"; case labelInfo = "label-info"; case releaseEvents = "release-events" }
     }
     struct ArtistCredit: Decodable { let name: String }
     struct LabelInfo: Decodable { let catalogueNumber: String?; let label: Label?; enum CodingKeys: String, CodingKey { case catalogueNumber = "catalog-number"; case label } }
     struct Label: Decodable { let name: String? }
-    struct Media: Decodable { let format: String?; let tracks: [Track]? }
-    struct Track: Decodable { let title: String }
     struct ReleaseEvent: Decodable { let area: Area? }
     struct Area: Decodable { let iso31661Codes: [String]?; enum CodingKeys: String, CodingKey { case iso31661Codes = "iso-3166-1-codes" } }
 }

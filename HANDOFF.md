@@ -4,7 +4,21 @@ Last updated: 3 October 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — R4b release references and duplicates
+## Current resume — R4b optional physical tracks
+
+This slice adds optional structured MusicBrainz disc/track creation. Delivered release-configuration local app: **Music Library 0.27 (build 28)** at `build/Music Library 0.27.app`, from `Packaging/MusicLibraryMac-Info.plist`. Schema remains **17**; source audio and the personal catalogue were not opened or changed by these development checks. No distribution archive/notarization or normal-app launch was performed.
+
+Find and Review share grouped medium/track previews, preserving medium titles/formats, numeric ordering, original printed numbers and known millisecond durations. Missing track titles fall back to recording titles. Include track listing is off by default and requires complete media positions/counts, unique complete track positions and usable titles/durations. Pregap position zero is supported; partial/ambiguous listings, malformed pregaps and unsupported data-track content cannot be silently included. Missing durations remain unknown. Back retains inclusion; replacing/clearing a release resets it. Included media determine the locked disc count; manual/no-track entry remains valid.
+
+`NewAlbumDisc`/`NewAlbumTrack` feed LibraryStore and the existing createAlbum transaction. Album, credits, placement, selected release ID/artwork and optional discs/tracks commit once; validation or a late insertion failure leaves no partial rows/revision. No digital assets are created. Track-specific credits/recording IDs are explicitly not imported in this slice. Album Detail now shows printed positions and uses one batched catalogue readiness query per content refresh for header/row Play controls, independent of the total catalogue track count. Physical-only, missing and offline tracks have no Play button; file verification remains explicit-playback-only.
+
+Relevant files: `NewAlbumDisc.swift`, `MusicBrainzMetadataProvider.swift`, `LibraryStore.swift`, `SQLiteDatabase.swift`, `MusicBrainzTrackListingView.swift`, `MusicLibraryMacApp.swift`, and new structured-track/application-save/persistence regression tests. `swift test` passes **136 across 20 suites**; `swift test -c release` passes **135 across 19** (DEBUG fixture differs). Final `swift build`, standard packaging, plist/version/signature and whitespace checks pass. Existing AVMetadataItem deprecation remains unrelated. Tests use temporary fixtures and cover multi-disc/pregap/display numbers, missing/irregular fields, no assets/playback, reopen, a late SQL failure rolling back all rows, and mixed/missing/offline readiness without file probes.
+
+The hardened Debug navigation fixture now injects deterministic synthetic two-disc metadata; Release/normal startup never uses this provider. Native inspection verified 240 synthetic albums and entry into Find with Synthetic input. Clicking Search lost the automation connection (`native pipe closed before response`); reconnect/reset also failed. The result, new Review layout and Save were not verified visually. Fixture `musiclibrary-navigation.FVpt4Z` may remain open; do not use its older executable for final-code checks. Retain previous startup incidents below. See the disposable acceptance procedure in `MAC_AND_NAS_TESTING.md`.
+
+Next: finish R4b native/live-provider acceptance, especially include on/off saves, compact layout, replacement/reset, failed-cover retry/save-without-cover, keyboard/appearance. Then begin **R5 import review workspace and attachment from an album**. Import-proposal release-ID association, track-specific credits/IDs, R3 real-library performance, NAS/destructive and iPad-device acceptance remain explicit follow-ups. Full R4 is not yet declared complete.
+
+## Previous resume — R4b release references and duplicates
 
 Delivered release-configuration local app: **Music Library 0.26 (build 27)** at `build/Music Library 0.26.app`, versioned through `Packaging/MusicLibraryMac-Info.plist`. Source audio remains untouched; no distribution archive/notarization or personal-catalogue launch was performed.
 

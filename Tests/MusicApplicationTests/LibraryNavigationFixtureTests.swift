@@ -30,6 +30,10 @@ struct LibraryNavigationFixtureTests {
         #expect(store.snapshotDestinationPath == nil)
         #expect(!store.isSnapshotPublishPending)
         #expect(store.errorMessage == nil)
+        let release = try #require(try await store.searchMusicBrainz(title: "Synthetic", artist: nil).first)
+        #expect(release.title == "Synthetic two-disc release")
+        #expect(release.physicalDiscs?.count == 2)
+        #expect(store.catalogueRevision == revision)
     }
 }
 #endif

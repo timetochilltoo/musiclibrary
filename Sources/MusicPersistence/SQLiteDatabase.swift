@@ -800,6 +800,22 @@ public actor MusicDatabase {
         }
     }
 
+    /// Catalogue-only readiness; never probes a source file while rendering UI.
+    public func availableTrackIDs(albumID: AlbumID) throws -> Set<TrackID> {
+        let statement = try Self.prepare("SELECT DISTINCT t.id FROM track t JOIN disc d ON d.id = t.disc_id JOIN digital_asset a ON a.track_id = t.id JOIN storage_root r ON r.id = a.storage_root_id WHERE d.album_id = ? AND a.availability = 'available' AND r.status = 'available';", on: connection)
+        defer { sqlite3_finalize(statement) }
+        try Self.bind(albumID.description, at: 1, to: statement)
+        var result: Set<TrackID> = []
+        var status = sqlite3_step(statement)
+        while status == SQLITE_ROW {
+            guard let raw = Self.text(at: 0, from: statement), let uuid = UUID(uuidString: raw) else { throw DatabaseError.invalidIdentifier("Track") }
+            result.insert(.init(rawValue: uuid))
+            status = sqlite3_step(statement)
+        }
+        guard status == SQLITE_DONE else { throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(connection))) }
+        return result
+    }
+
     public func playbackAsset(trackID: TrackID) throws -> PlaybackAssetReference? {
         let statement = try Self.prepare("SELECT track.title, digital_asset.storage_root_id, digital_asset.relative_path, digital_asset.availability, digital_asset.cue_start_ms, digital_asset.cue_end_ms FROM track JOIN digital_asset ON digital_asset.track_id = track.id WHERE track.id = ? ORDER BY digital_asset.id LIMIT 1;", on: connection)
         defer { sqlite3_finalize(statement) }; try Self.bind(trackID.description, at: 1, to: statement)
@@ -1392,10 +1408,24 @@ public actor MusicDatabase {
         contributors: [NewAlbumContributorCredit] = [],
         frontArtworkPath: String? = nil,
         frontArtworkSource: String = "managed-user-selected",
-        musicBrainzReleaseID: String? = nil
+        musicBrainzReleaseID: String? = nil,
+        discs: [NewAlbumDisc] = []
     ) throws -> Album {
         var valid = try draft.validated()
         let validContributors = try contributors.map { try $0.validated() }
+        if !discs.isEmpty {
+            guard discs.count == valid.discCount,
+                  discs.map(\.number).sorted() == Array(1...valid.discCount) else {
+                throw DatabaseError.invalidOperation("Track-list discs must match the album disc count and have unique positions starting at 1.")
+            }
+            for disc in discs {
+                let numbers = disc.tracks.map(\.number)
+                guard !numbers.isEmpty, numbers.allSatisfy({ $0 >= 0 }), Set(numbers).count == numbers.count else {
+                    throw DatabaseError.invalidOperation("Track positions must be nonnegative and unique within each disc.")
+                }
+                for track in disc.tracks { _ = try track.draft.validated() }
+            }
+        }
         let releaseID: String?
         if let musicBrainzReleaseID {
             guard musicBrainzReleaseID.count == 36, let uuid = UUID(uuidString: musicBrainzReleaseID) else { throw DatabaseError.invalidIdentifier("MusicBrainz release ID") }
@@ -1495,6 +1525,34 @@ public actor MusicDatabase {
                 try Self.stepDone(statement, connection: connection)
             }
 
+            for disc in discs {
+                let discID = DiscID()
+                let medium = try Self.prepare("INSERT INTO disc (id, album_id, number, title, media_format) VALUES (?, ?, ?, ?, ?);", on: connection)
+                defer { sqlite3_finalize(medium) }
+                try Self.bind(discID.description, at: 1, to: medium)
+                try Self.bind(id.description, at: 2, to: medium)
+                try Self.bind(Int64(disc.number), at: 3, to: medium)
+                try Self.bind(disc.title, at: 4, to: medium)
+                try Self.bind(disc.mediaFormat, at: 5, to: medium)
+                try Self.stepDone(medium, connection: connection)
+                for track in disc.tracks {
+                    let draft = track.draft
+                    let row = try Self.prepare("INSERT INTO track (id, disc_id, number, display_position, title, duration_ms, work_name, movement_number, movement_name, is_instrumental, rating) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);", on: connection)
+                    defer { sqlite3_finalize(row) }
+                    try Self.bind(TrackID().description, at: 1, to: row)
+                    try Self.bind(discID.description, at: 2, to: row)
+                    try Self.bind(Int64(track.number), at: 3, to: row)
+                    try Self.bind(draft.displayPosition, at: 4, to: row)
+                    try Self.bind(draft.title, at: 5, to: row)
+                    try Self.bind(draft.durationMilliseconds.map(Int64.init), at: 6, to: row)
+                    try Self.bind(draft.workName, at: 7, to: row)
+                    try Self.bind(draft.movementNumber.map(Int64.init), at: 8, to: row)
+                    try Self.bind(draft.movementName, at: 9, to: row)
+                    try Self.bind(draft.isInstrumental.map { Int64($0 ? 1 : 0) }, at: 10, to: row)
+                    try Self.bind(draft.rating.map(Int64.init), at: 11, to: row)
+                    try Self.stepDone(row, connection: connection)
+                }
+            }
             if let releaseID {
                 let identifier = try Self.prepare("INSERT INTO external_identifier (id, owner_type, owner_id, provider, kind, value) VALUES (?, 'album', ?, 'musicbrainz', 'release', ?);", on: connection)
                 defer { sqlite3_finalize(identifier) }

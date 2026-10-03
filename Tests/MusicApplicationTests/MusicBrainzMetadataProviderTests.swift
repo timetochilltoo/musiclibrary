@@ -19,7 +19,18 @@ struct MusicBrainzMetadataProviderTests {
         }] }
         """.utf8)
         let results = try MusicBrainzMetadataProvider.decodeReleases(from: data)
-        #expect(results == [.init(id: "e7a1", title: "Kind of Blue", artist: "Miles Davis", releaseDate: "1959-08-17", countryCode: "JP", catalogueNumber: "SRCS 9701", mediaCount: 2, trackTitles: ["So What", "Flamenco Sketches"])])
+        let result = try #require(results.first)
+        #expect(results.count == 1)
+        #expect(result.id == "e7a1")
+        #expect(result.title == "Kind of Blue")
+        #expect(result.artist == "Miles Davis")
+        #expect(result.releaseDate == "1959-08-17")
+        #expect(result.countryCode == "JP")
+        #expect(result.catalogueNumber == "SRCS 9701")
+        #expect(result.mediaCount == 2)
+        #expect(result.trackTitles == ["So What", "Flamenco Sketches"])
+        #expect(result.media.map { $0.tracks.compactMap(\.title) } == [["So What"], ["Flamenco Sketches"]])
+        #expect(result.physicalDiscs == nil)
     }
 
     @Test("A selected release detail supplies its real track list")

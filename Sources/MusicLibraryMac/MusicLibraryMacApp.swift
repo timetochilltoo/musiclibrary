@@ -3518,6 +3518,7 @@ private struct AlbumDetail: View {
     @State private var placement: AlbumBoxPlacement?
     @State private var discs: [Disc] = []
     @State private var tracksByDisc: [DiscID: [Track]] = [:]
+    @State private var availableTrackIDs: Set<TrackID> = []
     @State private var trackCredits: [TrackID: [ContributorCredit]] = [:]
     @State private var credits: [ContributorCredit] = []
     @State private var aliases: [AlbumAlias] = []
@@ -3730,7 +3731,7 @@ private struct AlbumDetail: View {
     }
 
     private var playableTracks: [Track] {
-        discs.flatMap { tracksByDisc[$0.id] ?? [] }
+        discs.flatMap { tracksByDisc[$0.id] ?? [] }.filter { availableTrackIDs.contains($0.id) }
     }
 
     private var selectedArtwork: Artwork? {
@@ -3753,9 +3754,10 @@ private struct AlbumDetail: View {
 
     private var trackSummary: String {
         guard !discs.isEmpty else { return "No catalogue tracks yet" }
-        let trackWord = playableTracks.count == 1 ? "track" : "tracks"
+        let trackCount = tracksByDisc.values.reduce(0) { $0 + $1.count }
+        let trackWord = trackCount == 1 ? "track" : "tracks"
         let discWord = discs.count == 1 ? "disc" : "discs"
-        return "\(playableTracks.count) \(trackWord) across \(discs.count) \(discWord)"
+        return "\(trackCount) \(trackWord) across \(discs.count) \(discWord)"
     }
 
     private func playAlbum(shuffled: Bool) {
@@ -3849,12 +3851,14 @@ private struct AlbumDetail: View {
             let loadedCredits = try await library.albumContributors(albumID: album.id)
             let loadedAliases = try await library.albumAliases(albumID: album.id)
             let loadedArtwork = try await library.albumArtwork(albumID: album.id)
+            let loadedAvailableTrackIDs = try await library.availableTrackIDs(albumID: album.id)
             discs = loadedDiscs
             tracksByDisc = mapped
             trackCredits = loadedTrackCredits
             credits = loadedCredits
             aliases = loadedAliases
             artwork = loadedArtwork
+            availableTrackIDs = loadedAvailableTrackIDs
         } catch {
             library.presentError(error)
         }
@@ -3895,10 +3899,10 @@ private struct AlbumDetail: View {
     private func albumTrackRow(_ track: Track, allowsEditing: Bool) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Text(String(format: "%02d", track.number))
+                Text(track.displayPosition?.nilIfBlank ?? String(format: "%02d", track.number))
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
-                    .frame(width: 26, alignment: .trailing)
+                    .frame(width: 40, alignment: .trailing)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(track.title)
                         .font(.body)
@@ -3915,10 +3919,12 @@ private struct AlbumDetail: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                Button("Play", systemImage: "play.fill") { play(track) }
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
+                if availableTrackIDs.contains(track.id) {
+                    Button("Play", systemImage: "play.fill") { play(track) }
+                        .labelStyle(.iconOnly)
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                }
                 Menu {
                     if allowsEditing {
                         Button("Edit Track", systemImage: "pencil") { trackToEdit = track }
@@ -4516,6 +4522,7 @@ private struct AlbumEditor: View {
     @State private var contributorDrafts = [ManualAlbumContributor()]
     @State private var selectedMusicBrainzRelease: ExternalReleasePreview?
     @State private var saveMusicBrainzCover = false
+    @State private var includeTrackListing = false
     @State private var isAddingAlbum = false
     @State private var isCreatingLocation = false
     @State private var placement: ManualAlbumPlacement = .location
@@ -4609,7 +4616,7 @@ private struct AlbumEditor: View {
             }
             Button("Keep Current Draft", role: .cancel) { pendingRelease = nil }
         } message: {
-            Text("Title, edition, years, country, label, catalogue number, barcode, format, disc count, album artist and cover selection will be replaced. Fields missing from this release are cleared. Other credits, placement, rating and notes are kept.")
+            Text("Title, edition, years, country, label, catalogue number, barcode, format, disc count, album artist and cover selection will be replaced. Include track listing will be reset to off. Fields missing from this release are cleared. Other credits, placement, rating and notes are kept.")
         }
     }
 
@@ -4647,6 +4654,7 @@ private struct AlbumEditor: View {
                             Button("Clear release and cover") {
                                 selectedMusicBrainzRelease = nil
                                 saveMusicBrainzCover = false
+                                includeTrackListing = false
                             }
                             .buttonStyle(.link)
                             .font(.caption)
@@ -4666,6 +4674,24 @@ private struct AlbumEditor: View {
                 if let message = yearMessage(remasterYear, field: "Remaster year") { Text(message).font(.caption).foregroundStyle(.orange) }
                 TextField("Media format", text: $mediaFormat, prompt: Text("CD, SACD…"))
                 Stepper("Discs: \(discCount)", value: $discCount, in: 1...99)
+                    .disabled(includeTrackListing)
+            }
+
+            if let release = selectedMusicBrainzRelease {
+                Section("Track listing") {
+                    Toggle("Include track listing", isOn: $includeTrackListing)
+                        .disabled(release.physicalDiscs == nil)
+                        .onChange(of: includeTrackListing) { _, included in
+                            if included, let discs = release.physicalDiscs { discCount = discs.count }
+                        }
+                    Text(release.physicalDiscs == nil
+                         ? "A complete positioned track list was not returned. You can still save the album and add tracks later."
+                         : "Optional catalogue-only tracks. No audio files are created or attached; these tracks cannot play without a digital copy.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    DisclosureGroup("Review discs and tracks") {
+                        MusicBrainzTrackListingView(release: release)
+                    }
+                }
             }
 
             Section("Contributors") {
@@ -4881,6 +4907,7 @@ private struct AlbumEditor: View {
     private func applyMusicBrainzRelease(_ release: ExternalReleasePreview) {
         selectedMusicBrainzRelease = release
         saveMusicBrainzCover = release.coverArtworkURL != nil
+        includeTrackListing = false
         title = release.title
         editionLabel = ""
         releaseYear = release.releaseYear.map(String.init) ?? ""
@@ -4929,7 +4956,8 @@ private struct AlbumEditor: View {
                     toBoxSet: boxSetID,
                     contributors: credits,
                     musicBrainzArtworkURL: saveMusicBrainzCover ? selectedMusicBrainzRelease?.coverArtworkURL : nil,
-                    musicBrainzReleaseID: selectedMusicBrainzRelease?.id
+                    musicBrainzReleaseID: selectedMusicBrainzRelease?.id,
+                    discs: includeTrackListing ? (selectedMusicBrainzRelease?.physicalDiscs ?? []) : []
                 )
                 onAdded(album)
                 dismiss()

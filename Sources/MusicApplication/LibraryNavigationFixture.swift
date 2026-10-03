@@ -26,9 +26,27 @@ extension LibraryStore {
             try await database.addAlbumContributor(contributor.id, to: album.id, role: .albumArtist)
             if index <= 12 { try await database.addAlbum(album.id, to: box.id, at: index) }
         }
-        let store = LibraryStore(database: database)
+        let store = LibraryStore(database: database, metadataLookupProvider: NavigationMetadataFixture())
         try await store.reload()
         return (store, directory)
+    }
+}
+
+/// Deterministic, explicitly synthetic lookup for physical-entry acceptance.
+/// Compiled out of Release and never used by normal catalogue startup.
+private struct NavigationMetadataFixture: MetadataLookupProviding {
+    func searchRelease(title: String, artist: String?) async throws -> [ExternalReleasePreview] {
+        try await lookupRelease(.title(title, artist: artist))
+    }
+    func lookupRelease(_ lookup: MusicBrainzReleaseLookup) async throws -> [ExternalReleasePreview] {
+        [try await releaseDetails(id: "9383a6f5-9607-4a36-9c68-8663aad3592b")]
+    }
+    func releaseDetails(id: String) async throws -> ExternalReleasePreview {
+        try MusicBrainzMetadataProvider.decodeReleaseDetail(from: Data("""
+        {"id":"9383a6f5-9607-4a36-9c68-8663aad3592b","title":"Synthetic two-disc release","artist-credit":[{"name":"Fixture Orchestra"}],"media":[
+          {"position":1,"title":"Original","format":"CD","track-count":2,"tracks":[{"position":1,"number":"A1","title":"Synthetic opening","length":123456},{"position":2,"number":"A2","title":"Synthetic adagio","length":62000}]},
+          {"position":2,"title":"Bonus","format":"CD","track-count":1,"tracks":[{"position":1,"number":"B1","title":"Synthetic finale","length":180000}]}]}
+        """.utf8))
     }
 }
 #endif

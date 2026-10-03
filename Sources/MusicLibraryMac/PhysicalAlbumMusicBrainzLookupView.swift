@@ -302,20 +302,7 @@ private struct PhysicalAlbumMusicBrainzReleaseDetail: View {
                         }
 
                         GroupBox("Track listing") {
-                            if result.trackTitles.isEmpty {
-                                Text("MusicBrainz did not return a track listing for this release.")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            } else {
-                                VStack(alignment: .leading, spacing: 5) {
-                                    ForEach(Array(result.trackTitles.enumerated()), id: \.offset) { index, title in
-                                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                                            Text("\(index + 1).").foregroundStyle(.secondary).frame(width: 28, alignment: .trailing)
-                                            Text(title)
-                                        }
-                                    }
-                                }
-                            }
+                            MusicBrainzTrackListingView(release: result)
                         }
                     }
                     .padding(24)
