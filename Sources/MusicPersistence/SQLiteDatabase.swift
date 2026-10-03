@@ -1391,10 +1391,16 @@ public actor MusicDatabase {
         at position: Int? = nil,
         contributors: [NewAlbumContributorCredit] = [],
         frontArtworkPath: String? = nil,
-        frontArtworkSource: String = "managed-user-selected"
+        frontArtworkSource: String = "managed-user-selected",
+        musicBrainzReleaseID: String? = nil
     ) throws -> Album {
         var valid = try draft.validated()
         let validContributors = try contributors.map { try $0.validated() }
+        let releaseID: String?
+        if let musicBrainzReleaseID {
+            guard musicBrainzReleaseID.count == 36, let uuid = UUID(uuidString: musicBrainzReleaseID) else { throw DatabaseError.invalidIdentifier("MusicBrainz release ID") }
+            releaseID = uuid.uuidString.lowercased()
+        } else { releaseID = nil }
         let validFrontArtworkPath = frontArtworkPath?.trimmingCharacters(in: .whitespacesAndNewlines)
         if frontArtworkPath != nil && validFrontArtworkPath?.isEmpty != false {
             throw DatabaseError.invalidOperation("Front artwork path cannot be blank.")
@@ -1489,6 +1495,14 @@ public actor MusicDatabase {
                 try Self.stepDone(statement, connection: connection)
             }
 
+            if let releaseID {
+                let identifier = try Self.prepare("INSERT INTO external_identifier (id, owner_type, owner_id, provider, kind, value) VALUES (?, 'album', ?, 'musicbrainz', 'release', ?);", on: connection)
+                defer { sqlite3_finalize(identifier) }
+                try Self.bind(UUID().uuidString.lowercased(), at: 1, to: identifier)
+                try Self.bind(id.description, at: 2, to: identifier)
+                try Self.bind(releaseID, at: 3, to: identifier)
+                try Self.stepDone(identifier, connection: connection)
+            }
             if let validFrontArtworkPath {
                 let artworkID = UUID()
                 let artwork = try Self.prepare("INSERT INTO artwork (id, owner_type, owner_id, role, local_path, source, is_selected) VALUES (?, 'album', ?, 'front', ?, ?, 1);", on: connection)
@@ -1510,6 +1524,20 @@ public actor MusicDatabase {
         try Self.bind(id.description, at: 1, to: statement)
         guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
         return try Self.album(from: statement)
+    }
+
+    public func musicBrainzReleaseIDs() throws -> [AlbumID: String] {
+        let statement = try Self.prepare("SELECT e.owner_id, e.value FROM external_identifier e JOIN album a ON a.id = e.owner_id WHERE e.owner_type = 'album' AND e.provider = 'musicbrainz' AND e.kind = 'release' AND a.deleted_at IS NULL ORDER BY e.id;", on: connection)
+        defer { sqlite3_finalize(statement) }
+        var result: [AlbumID: String] = [:]
+        var status = sqlite3_step(statement)
+        while status == SQLITE_ROW {
+            guard let raw = Self.text(at: 0, from: statement), let uuid = UUID(uuidString: raw), let value = Self.text(at: 1, from: statement) else { throw DatabaseError.invalidIdentifier("External album identifier") }
+            result[AlbumID(rawValue: uuid)] = value
+            status = sqlite3_step(statement)
+        }
+        guard status == SQLITE_DONE else { throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(connection))) }
+        return result
     }
 
     public func updateAlbum(_ id: AlbumID, with draft: NewAlbum) throws -> Album {

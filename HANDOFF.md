@@ -4,7 +4,23 @@ Last updated: 3 October 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — R4b lookup modes
+## Current resume — R4b release references and duplicates
+
+Delivered release-configuration local app: **Music Library 0.26 (build 27)** at `build/Music Library 0.26.app`, versioned through `Packaging/MusicLibraryMac-Info.plist`. Source audio remains untouched; no distribution archive/notarization or personal-catalogue launch was performed.
+
+Physical entry now saves the selected MusicBrainz release UUID in the existing external identifier model (`musicbrainz` / `release`) atomically with album, credits, placement and artwork. Saving without cover still retains the release reference; clearing release selection detaches it before Save. Album Detail offers a trusted MusicBrainz link with wording distinguishing the selected reference from locally edited metadata. Import-proposal creation does not yet persist this association; existing imports are not silently backfilled.
+
+Schema **17** rebuilds `external_identifier` with owner-inclusive uniqueness and a provider/kind/value index. It preserves IDs/rows and catalogue revision while allowing separate albums to share a release ID. Malformed release IDs are rejected before database creation. The active-album ID map is loaded once per catalogue refresh and excludes deleted albums; no SwiftUI SQL, per-card probes or network duplicate checks. Older builds refuse schema 17; no in-place downgrade is provided, so retain a pre-upgrade recovery archive if rollback to an older app is needed.
+
+Review shows explained duplicate suggestions, prioritizing exact release ID, then barcode/title/recorded artist, then catalogue number/title/artist. Leading-zero barcodes remain significant; title alone is insufficient. Open Existing confirms draft discard and writes nothing. Continue/Save with suggestions requires deliberate Add Separate Edition; changed suggestions reset that acknowledgement. Nothing merges or overwrites existing albums. Smaller collection/duplicate view components resolve SwiftUI type-checking limits without changing the existing toolbar workflow.
+
+Relevant files: `SchemaMigrator.swift`, `SQLiteDatabase.swift`, `LibraryStore.swift`, `PhysicalAlbumDuplicates.swift`, `MusicLibraryMacApp.swift`, and the duplicate/migration tests. `swift test`: **128 tests across 18 suites**; `swift test -c release`: **127 across 17** (DEBUG-only fixture differs). Tests cover schema-16 preservation/idempotence, same-release separate albums, reload, malformed ID/transaction rollback, delete/restore, evidence priority, different artists and leading zeros. Final Debug build, packaging, plist/version/signature and whitespace checks pass. Existing AVMetadataItem deprecation remains unrelated.
+
+Native checks used only the freshly generated hardened fixture `musiclibrary-navigation.dxdHjE`, then quit it. The new seeded first album exposes barcode `0077`/catalogue `FIXTURE-001` for repeatable duplicate acceptance. Review displayed evidence and blocked Continue until acknowledgement. Open Existing confirmed and retained 240 records; deliberate separate Save opened a new physical-only album and Back showed 241 records with both originals/copies visible. Layout was visually checked. Exact-ID link rendering and online selected-release saving were not exercised natively; automated persistence covers ID retention. Historical startup incidents below remain preserved.
+
+Next: structured medium/track previews and optional atomic physical track creation (R4b), including multiple-disc positions/durations, no digital assets, and rollback tests. Carry forward online provider/cover-failure/release-replacement, keyboard/appearance, broad responsive, NAS/destructive and iPad-device acceptance from `MAC_AND_NAS_TESTING.md`; full R4 is not yet complete. Import-proposal release-ID association remains explicit follow-up scope. Locations browsing stays R7. User accepted 0.25 before requesting this slice.
+
+## Previous resume — R4b lookup modes
 
 Delivered local release-configuration app: **Music Library 0.25 (build 26)** at `build/Music Library 0.25.app`, versioned through `Packaging/MusicLibraryMac-Info.plist`. No distribution archive/notarization or personal-catalogue launch is part of this delivery.
 

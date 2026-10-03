@@ -3542,6 +3542,30 @@ private struct AlbumDetail: View {
     @State private var artworkToView: Artwork?
     @State private var isOrganizeMode = false
 
+    private var selectedReleaseURL: URL? {
+        guard let value = library.albumMusicBrainzReleaseIDs[album.id], let uuid = UUID(uuidString: value) else { return nil }
+        return URL(string: "https://musicbrainz.org/release/\(uuid.uuidString.lowercased())")
+    }
+
+    @ViewBuilder private var collectionPanel: some View {
+        if album.hasCD || album.notes != nil || album.physicalNote != nil || selectedReleaseURL != nil {
+            LibraryPanel {
+                VStack(alignment: .leading, spacing: 12) {
+                    LibrarySectionHeader("Collection", subtitle: "Physical placement and catalogue notes")
+                    if let url = selectedReleaseURL {
+                        Link("MusicBrainz release", destination: url)
+                            .help("Selected release reference; catalogue fields may have been edited locally.")
+                    }
+                    if album.hasCD {
+                        LabeledContent("Location", value: locationName)
+                        if let note = album.physicalNote, !note.isEmpty { LabeledContent("Physical note", value: note) }
+                    }
+                    if let notes = album.notes, !notes.isEmpty { LabeledContent("Notes", value: notes).textSelection(.enabled) }
+                }
+            }
+        }
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
@@ -3596,23 +3620,7 @@ private struct AlbumDetail: View {
                     }
                 }
 
-                if album.hasCD || album.notes != nil || album.physicalNote != nil {
-                    LibraryPanel {
-                        VStack(alignment: .leading, spacing: 12) {
-                            LibrarySectionHeader("Collection", subtitle: "Physical placement and catalogue notes")
-                            if album.hasCD {
-                                LabeledContent("Location", value: locationName)
-                                if let note = album.physicalNote, !note.isEmpty {
-                                    LabeledContent("Physical note", value: note)
-                                }
-                            }
-                            if let notes = album.notes, !notes.isEmpty {
-                                LabeledContent("Notes", value: notes)
-                                    .textSelection(.enabled)
-                            }
-                        }
-                    }
-                }
+                collectionPanel
             }
             .frame(maxWidth: 1_060, alignment: .leading)
             .padding(24)
@@ -4489,6 +4497,8 @@ private struct AlbumEditor: View {
     @State private var step: Step = .find
     @State private var showsDiscardConfirmation = false
     @State private var pendingRelease: ExternalReleasePreview?
+    @State private var pendingExistingAlbum: Album?
+    @State private var acknowledgesSeparateEdition = false
     @State private var title = ""
     @State private var editionLabel = ""
     @State private var releaseYear = ""
@@ -4564,7 +4574,7 @@ private struct AlbumEditor: View {
                             .disabled(isAddingAlbum || isCreatingLocation)
                         if step == .review {
                             Button("Continue to Your Copy") { step = .copy }
-                                .disabled(!identityMessages.isEmpty)
+                                .disabled(!identityMessages.isEmpty || (!duplicateSuggestions.isEmpty && !acknowledgesSeparateEdition))
                                 .buttonStyle(.borderedProminent)
                         } else {
                             if isAddingAlbum { ProgressView().controlSize(.small) }
@@ -4580,6 +4590,14 @@ private struct AlbumEditor: View {
         .frame(minWidth: 720, idealWidth: 1_100, maxWidth: 1_400, minHeight: 560, idealHeight: 760, maxHeight: 900)
         .background(PhysicalAlbumMusicBrainzSheetResizability())
         .interactiveDismissDisabled(isDirty || isAddingAlbum || isCreatingLocation)
+        .onChange(of: duplicateSuggestions) { _, _ in acknowledgesSeparateEdition = false }
+        .confirmationDialog("Open the existing album and discard this draft?", isPresented: Binding(get: { pendingExistingAlbum != nil }, set: { if !$0 { pendingExistingAlbum = nil } }), titleVisibility: .visible) {
+            Button("Open Existing Album") {
+                if let album = pendingExistingAlbum { onAdded(album); dismiss() }
+                pendingExistingAlbum = nil
+            }
+            Button("Keep Editing", role: .cancel) { pendingExistingAlbum = nil }
+        }
         .confirmationDialog("Discard this album draft?", isPresented: $showsDiscardConfirmation, titleVisibility: .visible) {
             Button("Discard Draft", role: .destructive) { dismiss() }
             Button("Keep Editing", role: .cancel) {}
@@ -4598,6 +4616,9 @@ private struct AlbumEditor: View {
     private var editorForm: some View {
         Form {
             if step == .review {
+            if !duplicateSuggestions.isEmpty {
+                duplicateReviewSection
+            }
             Section("Album") {
                 if let release = selectedMusicBrainzRelease {
                     HStack(alignment: .top, spacing: 12) {
@@ -4760,6 +4781,30 @@ private struct AlbumEditor: View {
         .disabled(isAddingAlbum || isCreatingLocation)
     }
 
+    private var duplicateReviewSection: some View {
+        Section("Possible Existing Albums") {
+            Text("These are suggestions, not automatic merges. Open an existing album or deliberately add a separate edition.").font(.callout).foregroundStyle(.secondary)
+            ForEach(duplicateSuggestions) { match in
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text(match.album.title).font(.headline)
+                        Text(match.reason).font(.caption).foregroundStyle(.secondary)
+                        Text(duplicateEditionSummary(match.album)).font(.caption)
+                    }
+                    Spacer()
+                    Button("Open Existing Album") { pendingExistingAlbum = match.album }
+                }
+            }
+            Button(acknowledgesSeparateEdition ? "Separate Edition Chosen" : "Add Separate Edition") { acknowledgesSeparateEdition = true }
+                .disabled(acknowledgesSeparateEdition)
+        }
+    }
+
+    private func duplicateEditionSummary(_ album: Album) -> String {
+        let values: [String?] = [album.editionLabel, album.catalogueNumber, album.releaseYear.map { String($0) }]
+        return values.compactMap { $0 }.joined(separator: " · ")
+    }
+
     private var orderedLocations: [PhysicalLocation] {
         library.locations.sorted { locationPath($0, in: library.locations) < locationPath($1, in: library.locations) }
     }
@@ -4789,6 +4834,7 @@ private struct AlbumEditor: View {
 
     private var validationMessages: [String] {
         var messages = identityMessages
+        if !duplicateSuggestions.isEmpty && !acknowledgesSeparateEdition { messages.append("Review possible existing albums, or choose Add Separate Edition.") }
         guard step == .copy else { return messages }
         switch placement {
         case .location: if selectedLocationID == nil { messages.append("Choose a location, or set it later.") }
@@ -4802,6 +4848,13 @@ private struct AlbumEditor: View {
         [title, editionLabel, releaseYear, countryCode, labelName, catalogueNumber, barcode, remasterYear].contains { $0.nilIfBlank != nil }
             || mediaFormat != "CD" || discCount != 1 || selectedMusicBrainzRelease != nil
             || contributorDrafts.contains { $0.name.nilIfBlank != nil || $0.creditedName.nilIfBlank != nil || $0.role != .albumArtist }
+    }
+
+    private var duplicateSuggestions: [PhysicalAlbumDuplicate] {
+        PhysicalAlbumDuplicates.suggestions(title: title,
+            artist: contributorDrafts.filter { $0.role == .albumArtist }.map { $0.creditedName.nilIfBlank ?? $0.name }.filter { $0.nilIfBlank != nil }.joined(separator: ", "),
+            barcode: barcode, catalogueNumber: catalogueNumber, releaseID: selectedMusicBrainzRelease?.id,
+            albums: library.catalogueAlbums, summaries: library.albumBrowseSummaries, releaseIDs: library.albumMusicBrainzReleaseIDs)
     }
 
     private var isDirty: Bool {
@@ -4875,7 +4928,8 @@ private struct AlbumEditor: View {
                     draft,
                     toBoxSet: boxSetID,
                     contributors: credits,
-                    musicBrainzArtworkURL: saveMusicBrainzCover ? selectedMusicBrainzRelease?.coverArtworkURL : nil
+                    musicBrainzArtworkURL: saveMusicBrainzCover ? selectedMusicBrainzRelease?.coverArtworkURL : nil,
+                    musicBrainzReleaseID: selectedMusicBrainzRelease?.id
                 )
                 onAdded(album)
                 dismiss()

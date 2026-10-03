@@ -18,7 +18,9 @@ extension LibraryStore {
         for index in 1...240 {
             let album = try await database.createAlbum(.init(
                 title: String(format: "Fixture Album %03d", index) + (index.isMultiple(of: 20) ? " — A long classical title with several movements" : ""),
-                releaseYear: 1970 + index % 50, mediaFormat: "CD", hasCD: true,
+                releaseYear: 1970 + index % 50,
+                catalogueNumber: index == 1 ? "FIXTURE-001" : nil,
+                barcode: index == 1 ? "0077" : nil, mediaFormat: "CD", hasCD: true,
                 physicalLocationID: location.id
             ))
             try await database.addAlbumContributor(contributor.id, to: album.id, role: .albumArtist)

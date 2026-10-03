@@ -33,6 +33,7 @@ public final class LibraryStore: ObservableObject {
     @Published public private(set) var publishedAlbumIDs: Set<AlbumID> = []
     @Published public private(set) var albumFrontArtworkPaths: [AlbumID: String] = [:]
     @Published public private(set) var albumBrowseSummaries: [AlbumID: AlbumBrowseSummary] = [:]
+    @Published public private(set) var albumMusicBrainzReleaseIDs: [AlbumID: String] = [:]
     @Published public private(set) var importBatches: [ImportBatch] = []
     @Published public private(set) var importScanProgress: [ImportBatchID: ImportScanProgress] = [:]
     @Published public private(set) var libraryHealthIssues: [LibraryHealthIssue] = []
@@ -130,12 +131,14 @@ public final class LibraryStore: ObservableObject {
         async let loadedPublishedAlbumIDs = database.albumIDs(withAssetsIn: .nasPublished)
         async let loadedAlbumFrontArtworkPaths = database.selectedFrontArtworkPaths()
         async let loadedBrowseSummaries = database.albumBrowseSummaries()
+        async let loadedReleaseIDs = database.musicBrainzReleaseIDs()
         async let loadedImportBatches = database.importBatches()
         async let loadedHealth = database.libraryHealthIssues()
         async let loadedPlaylists = database.playlists()
         async let loadedDeletedPlaylists = database.deletedPlaylists()
         let nextCatalogueAlbums = try await loadedCatalogueAlbums
         let nextSummaries = try await loadedBrowseSummaries
+        let nextReleaseIDs = try await loadedReleaseIDs
         let nextDeletedAlbums = try await loadedDeletedAlbums
         let nextContributors = try await loadedContributors
         let nextLocations = try await loadedLocations
@@ -156,6 +159,7 @@ public final class LibraryStore: ObservableObject {
         guard generation == reloadGeneration, !Task.isCancelled else { return }
         catalogueAlbums = nextCatalogueAlbums
         albumBrowseSummaries = nextSummaries
+        albumMusicBrainzReleaseIDs = nextReleaseIDs
         deletedAlbums = nextDeletedAlbums
         contributors = nextContributors
         locations = nextLocations
@@ -207,7 +211,8 @@ public final class LibraryStore: ObservableObject {
         _ draft: NewAlbum,
         toBoxSet boxSetID: BoxSetID? = nil,
         contributors: [NewAlbumContributorCredit] = [],
-        musicBrainzArtworkURL: URL? = nil
+        musicBrainzArtworkURL: URL? = nil,
+        musicBrainzReleaseID: String? = nil
     ) async throws -> Album {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
         let managedArtworkURL: URL?
@@ -223,7 +228,8 @@ public final class LibraryStore: ObservableObject {
                 in: boxSetID,
                 contributors: contributors,
                 frontArtworkPath: managedArtworkURL?.path,
-                frontArtworkSource: "managed-musicbrainz-artwork"
+                frontArtworkSource: "managed-musicbrainz-artwork",
+                musicBrainzReleaseID: musicBrainzReleaseID
             )
         } catch {
             if let managedArtworkURL { try? FileManager.default.removeItem(at: managedArtworkURL) }

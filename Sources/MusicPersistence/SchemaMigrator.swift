@@ -2,7 +2,7 @@ import Foundation
 import SQLite3
 
 enum SchemaMigrator {
-    static let currentVersion = 16
+    static let currentVersion = 17
 
     static func migrate(_ connection: OpaquePointer) throws {
         var statement: OpaquePointer?
@@ -32,6 +32,7 @@ enum SchemaMigrator {
         if version == 13 { try migrateToVersion14(connection); version = 14 }
         if version == 14 { try migrateToVersion15(connection); version = 15 }
         if version == 15 { try migrateToVersion16(connection); version = 16 }
+        if version == 16 { try migrateToVersion17(connection); version = 17 }
     }
 
     private static func migrateToVersion1(_ connection: OpaquePointer) throws {
@@ -412,6 +413,30 @@ enum SchemaMigrator {
         let sql = "BEGIN IMMEDIATE; ALTER TABLE storage_root ADD COLUMN scope TEXT NOT NULL DEFAULT 'localOnly' CHECK (scope IN ('localOnly', 'nasPublished')); UPDATE storage_root SET scope = 'nasPublished' WHERE last_known_path LIKE '/Volumes/%'; PRAGMA user_version = 15; UPDATE catalogue_state SET schema_version = 15 WHERE singleton_id = 1; COMMIT;"
         var error: UnsafeMutablePointer<CChar>?; guard sqlite3_exec(connection, sql, nil, nil, &error) == SQLITE_OK else { defer { sqlite3_free(error) }; throw DatabaseError.sqlite(message: error.map { String(cString: $0) } ?? String(cString: sqlite3_errmsg(connection))) }
     }
+    private static func migrateToVersion17(_ connection: OpaquePointer) throws {
+        let sql = """
+        BEGIN IMMEDIATE;
+        CREATE TABLE external_identifier_v17 (
+            id TEXT PRIMARY KEY, owner_type TEXT NOT NULL, owner_id TEXT NOT NULL,
+            provider TEXT NOT NULL, kind TEXT NOT NULL, value TEXT NOT NULL,
+            UNIQUE(owner_type, owner_id, provider, kind, value)
+        );
+        INSERT INTO external_identifier_v17 SELECT * FROM external_identifier;
+        DROP TABLE external_identifier;
+        ALTER TABLE external_identifier_v17 RENAME TO external_identifier;
+        CREATE INDEX external_identifier_lookup ON external_identifier(provider, kind, value);
+        PRAGMA user_version = 17;
+        UPDATE catalogue_state SET schema_version = 17 WHERE singleton_id = 1;
+        COMMIT;
+        """
+        var error: UnsafeMutablePointer<CChar>?
+        guard sqlite3_exec(connection, sql, nil, nil, &error) == SQLITE_OK else {
+            defer { sqlite3_free(error) }
+            _ = sqlite3_exec(connection, "ROLLBACK;", nil, nil, nil)
+            throw DatabaseError.sqlite(message: error.map { String(cString: $0) } ?? String(cString: sqlite3_errmsg(connection)))
+        }
+    }
+
     private static func migrateToVersion16(_ connection: OpaquePointer) throws {
         let sql = "BEGIN IMMEDIATE; CREATE TABLE root_scan_missing_asset (batch_id TEXT NOT NULL REFERENCES import_batch(id) ON DELETE CASCADE, asset_id TEXT NOT NULL REFERENCES digital_asset(id) ON DELETE CASCADE, PRIMARY KEY (batch_id, asset_id)); CREATE INDEX root_scan_missing_asset_batch_index ON root_scan_missing_asset(batch_id); PRAGMA user_version = 16; UPDATE catalogue_state SET schema_version = 16 WHERE singleton_id = 1; COMMIT;"
         var error: UnsafeMutablePointer<CChar>?; guard sqlite3_exec(connection, sql, nil, nil, &error) == SQLITE_OK else { defer { sqlite3_free(error) }; throw DatabaseError.sqlite(message: error.map { String(cString: $0) } ?? String(cString: sqlite3_errmsg(connection))) }

@@ -794,6 +794,8 @@ R4a implementation checkpoint (3 October 2026): physical entry now uses one resi
 
 R4b lookup checkpoint (3 October 2026): Find now supports barcode, catalogue number with optional artist, and pasted exact MusicBrainz release URLs alongside title/artist/manual entry. Typed input/query/URL validation, distinct cache namespaces, fixed API origin, stale-response protection and concurrent rate-limit reservations are covered by offline tests. Disposable native checks verify lookup-mode layout and invalid-link recovery; the previously pending R4a manual save/open and Back/validation path also passed. Live provider results, failed-cover recovery, broader appearance/keyboard checks and full R4 acceptance remain pending. Next R4b slice: external-ID provenance and evidence-based duplicate suggestions, then optional structured track creation with atomic persistence.
 
+R4b identifier/duplicate checkpoint (3 October 2026): physical-entry saves now atomically retain the selected MusicBrainz release reference, and Review offers explained exact-ID or barcode/catalogue-plus-identity suggestions with Open Existing / Add Separate Edition choices. Schema 17 preserves identifiers while changing uniqueness to include the owner, so a deliberate separate copy can share the release ID. This does not merge metadata or attach source assets. Acceptance and exact validation scope are in HANDOFF.md. Next: structured medium/track previews and optional atomic physical track creation; import-proposal ID association and the remaining live-provider/cover/UI acceptance are still pending.
+
 Entry: Add Album → Import Music Folder, or Imports → Scan Folder.
 
 Flow:
