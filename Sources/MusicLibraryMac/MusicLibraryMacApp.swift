@@ -70,7 +70,7 @@ private struct LibraryNavigationFixtureWorkspace: View {
         }
         .task {
             guard store == nil, failure == nil else { return }
-            do { store = try await LibraryStore.makeNavigationFixture().store }
+            do { store = try await LibraryStore.makeNavigationFixture(includeImportReview: ProcessInfo.processInfo.arguments.contains("--import-review-fixture")).store }
             catch { failure = error.localizedDescription }
         }
     }
@@ -368,7 +368,10 @@ private struct LibraryShellView: View {
                     .disabled(selectedAlbumID != nil)
             } detail: { albumDetail }
         case .importInbox:
-            if selectedImportBatchID == nil { content } else { detail }
+            RetainedBrowseWorkspace(showsDetail: selectedAlbumID != nil) {
+                Group { if selectedImportBatchID == nil { content } else { detail } }
+                    .disabled(selectedAlbumID != nil)
+            } detail: { albumDetail }
         case .playlists:
             if selectedPlaylistID == nil { content } else { detail }
         case .settings:
@@ -631,6 +634,7 @@ private struct LibraryShellView: View {
                 onRescanStarted: { self.selectedImportBatchID = $0 },
                 onCombinedRescanRequested: { self.importBatchToAnalyzeAfterScan = $0 },
                 analyzeMetadataAfterScan: importBatchToAnalyzeAfterScan == batch.id,
+                onOpenAlbum: { selectedAlbumID = $0 },
                 onCombinedAnalysisFinished: {
                     if self.importBatchToAnalyzeAfterScan == batch.id {
                         self.importBatchToAnalyzeAfterScan = nil
@@ -742,6 +746,7 @@ private struct LibraryShellView: View {
             case .boxSets:
                 title = library.boxSets.first(where: { $0.id == selectedBoxSetID })?.title ?? "Box Sets"
             case .settings: title = settingsCategory.title
+            case .importInbox: title = "Import Review"
             default: title = "Albums"
             }
             return (title, { selectedAlbumID = nil })
@@ -1286,12 +1291,6 @@ private struct ScanMetric: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
-}
-
-private func proposalSummary(_ proposal: ImportReleaseProposal) -> String {
-    let artist = proposal.artist ?? "Unknown artist"
-    let confidence = Int((proposal.confidence * 100).rounded())
-    return "\(artist) · \(proposal.discCount) disc(s) · \(proposal.trackCount) files · \(confidence)% confidence"
 }
 
 private func relinkConfirmationMessage(_ proposal: AssetRelinkProposal) -> String {
@@ -2264,6 +2263,7 @@ private struct ImportBatchDetail: View {
     let onRescanStarted: (ImportBatchID) -> Void
     let onCombinedRescanRequested: (ImportBatchID) -> Void
     let analyzeMetadataAfterScan: Bool
+    let onOpenAlbum: (AlbumID) -> Void
     let onCombinedAnalysisFinished: () -> Void
     @State private var candidates: [ImportCandidate] = []
     @State private var unregisteredCandidates: [ImportCandidate] = []
@@ -2277,11 +2277,13 @@ private struct ImportBatchDetail: View {
     @State private var missingAssetToConfirm: MissingAssetReview?
     @State private var missingAssetToRemove: MissingAssetReview?
     @State private var missingAssetToRelink: MissingAssetReview?
+    @State private var showsBatchDetails = false
+    @State private var isReadingMetadata = false
 
     private var audioCandidates: [ImportCandidate] { candidates.filter { $0.payload != nil } }
     private var failedCandidates: [ImportCandidate] { candidates.filter { $0.status == .failed } }
 
-    var body: some View {
+    private var batchDetails: some View {
         List {
             Section("Scan") {
                 HStack(spacing: 22) {
@@ -2331,16 +2333,10 @@ private struct ImportBatchDetail: View {
                     Text("Review New Files performs the same safe rescan, then reads metadata only for paths not already represented in the catalogue.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                if batch.status != .scanning && !unregisteredCandidates.isEmpty { Button("Read Metadata for New Files", systemImage: "text.magnifyingglass") {
-                    Task {
-                        do {
-                            try await library.analyzeImportBatch(batch.id)
-                            await load()
-                        } catch {
-                            library.presentError(error)
-                        }
-                    }
-                } }
+                if batch.status != .scanning && unregisteredCandidates.contains(where: { $0.metadata == nil }) {
+                    Button("Read Metadata for New Files", systemImage: "text.magnifyingglass", action: readMetadata)
+                        .disabled(isReadingMetadata)
+                }
                 if batch.status != .scanning && candidates.isEmpty == false && unregisteredCandidates.isEmpty {
                     Text("All scanned audio files already have catalogue asset paths; no metadata review is needed.")
                         .font(.caption).foregroundStyle(.secondary)
@@ -2377,72 +2373,6 @@ private struct ImportBatchDetail: View {
                     }
                 }
             }
-            Section("Release Proposals") {
-                if proposals.isEmpty { Text("Read embedded metadata to create local proposals. No catalogue records or source files will be changed.").foregroundStyle(.secondary) }
-                ForEach(proposals) { proposal in
-                    HStack(alignment: .top, spacing: 14) {
-                        proposalArtwork(for: proposal)
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text(proposal.title).font(.headline).lineLimit(2)
-                            Text(proposal.artist ?? "Unknown artist").font(.subheadline)
-                            HStack(spacing: 8) {
-                                Label(proposal.provenance, systemImage: "tag")
-                                Text(proposalSummary(proposal))
-                            }
-                            .font(.caption).foregroundStyle(.secondary)
-                            if proposal.createdAlbumID != nil {
-                                Label("Catalogue edition created", systemImage: "checkmark.circle.fill")
-                                    .font(.caption).foregroundStyle(.green)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        VStack(alignment: .trailing, spacing: 8) {
-                            LibraryPill(
-                                title: proposal.status.rawValue.capitalized,
-                                symbol: proposal.createdAlbumID != nil
-                                    ? "checkmark.circle.fill"
-                                    : (proposal.status == .dismissed ? "xmark.circle" : "circle.dashed"),
-                                tint: proposal.createdAlbumID != nil
-                                    ? .green
-                                    : (proposal.status == .dismissed ? .secondary : .orange)
-                            )
-                            Button("Search MusicBrainz…", systemImage: "magnifyingglass") { proposalToLookUp = proposal }
-                            if let selection = selections[proposal.id] {
-                                Button("Review MusicBrainz Fields…", systemImage: "rectangle.and.pencil.and.ellipsis") { selectionToReview = selection }
-                            }
-                            if proposal.createdAlbumID == nil && (proposal.status == .proposed || proposal.status == .approved) {
-                                HStack(spacing: 8) {
-                                    Button("Create New Edition", systemImage: "plus.rectangle.on.folder") {
-                                        Task {
-                                            do {
-                                                _ = try await library.confirmImportReleaseProposal(proposal.id)
-                                                await load()
-                                            } catch {
-                                                library.presentError(error)
-                                            }
-                                        }
-                                    }
-                                    Button("Dismiss", role: .destructive) {
-                                        Task {
-                                            do {
-                                                try await library.setImportReleaseProposal(proposal.id, status: .dismissed)
-                                                await load()
-                                            } catch {
-                                                library.presentError(error)
-                                            }
-                                        }
-                                    }
-                                }
-                                Button("Attach to Existing Edition…", systemImage: "link.badge.plus") { proposalToAttach = proposal }
-                            }
-                        }
-                        .frame(minWidth: 210, alignment: .trailing)
-                    }
-                    .padding(12)
-                    .background(.quaternary.opacity(0.65), in: RoundedRectangle(cornerRadius: 12))
-                    .padding(.vertical, 4)
-                }
-            }
             if !unregisteredCandidates.isEmpty {
                 Section("New audio files") {
                     Text("These files are under this scan's music folder but are not yet represented by a catalogue asset path. Review their metadata before creating any catalogue records.")
@@ -2456,7 +2386,43 @@ private struct ImportBatchDetail: View {
                 }
             }
         }
-        .navigationTitle("Import Batch")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Label(batch.status == .scanning ? "Scanning…" : "Scan \(batch.status.rawValue)", systemImage: scanStatusSymbol)
+                    .foregroundStyle(scanStatusColor)
+                Spacer()
+                Text("\(batch.candidateCount) audio files · \(batch.errorCount) errors").font(.caption).foregroundStyle(.secondary)
+            }
+            if let source = batch.sourceDescription { Text(source).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+            if batch.status == .scanning {
+                ProgressView()
+                Button("Cancel Scan") { Task { await library.cancelImportScan(batch.id) } }
+            } else if unregisteredCandidates.contains(where: { $0.metadata == nil }) {
+                Button(isReadingMetadata ? "Reading Metadata…" : "Read Metadata for New Files", systemImage: "text.magnifyingglass", action: readMetadata)
+                    .disabled(isReadingMetadata)
+            }
+            ImportReviewWorkspace(
+                batchID: batch.id, proposals: proposals, previews: proposalPreviews, candidates: candidates, selections: selections,
+                onAdd: { proposal in
+                    let id = try await library.confirmImportReleaseProposal(proposal.id)
+                    await load()
+                    return id
+                },
+                onStatus: { proposal, status in try await library.setImportReleaseProposal(proposal.id, status: status); await load() },
+                onAttach: { proposalToAttach = $0 }, onLookUp: { proposalToLookUp = $0 },
+                onCompare: { selectionToReview = $0 }, onOpenAlbum: onOpenAlbum
+            )
+            .frame(maxHeight: .infinity)
+            .disabled(isReadingMetadata || batch.status == .scanning)
+            DisclosureGroup("Scan and File Details", isExpanded: $showsBatchDetails) {
+                batchDetails.frame(height: 260).disabled(isReadingMetadata)
+            }
+        }
+        .padding(20)
+        .navigationTitle("Import Review")
         .task(id: batchRefreshToken) {
             await load()
             await analyzeNewFilesIfRequested()
@@ -2526,6 +2492,16 @@ private struct ImportBatchDetail: View {
         }
     }
 
+    private func readMetadata() {
+        guard !isReadingMetadata else { return }
+        isReadingMetadata = true
+        Task {
+            defer { isReadingMetadata = false }
+            do { try await library.analyzeImportBatch(batch.id); await load() }
+            catch { library.presentError(error) }
+        }
+    }
+
     private var scanStatusColor: Color {
         switch batch.status {
         case .scanning: .blue
@@ -2576,6 +2552,9 @@ private struct ImportBatchDetail: View {
             return
         }
 
+        guard !isReadingMetadata else { return }
+        isReadingMetadata = true
+        defer { isReadingMetadata = false }
         do {
             try await library.analyzeImportBatch(batch.id)
             await load()
@@ -2583,23 +2562,6 @@ private struct ImportBatchDetail: View {
             library.presentError(error)
         }
         onCombinedAnalysisFinished()
-    }
-
-    @ViewBuilder
-    private func proposalArtwork(for proposal: ImportReleaseProposal) -> some View {
-        if let url = proposalPreviews[proposal.id]?.artworkURL, let image = NSImage(contentsOf: url) {
-            Image(nsImage: image)
-                .resizable()
-                .scaledToFill()
-                .frame(width: 96, height: 96)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-        } else {
-            Image(systemName: "music.note.list")
-                .font(.title2)
-                .foregroundStyle(.secondary)
-                .frame(width: 96, height: 96)
-                .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
-        }
     }
 
     private var scanOutcome: String {

@@ -6,7 +6,7 @@ import MusicPersistence
 extension LibraryStore {
     /// Real services over disposable synthetic data; never calls live startup.
     /// The caller may remove the returned temporary directory after closing the fixture.
-    public static func makeNavigationFixture() async throws -> (store: LibraryStore, directory: URL) {
+    public static func makeNavigationFixture(includeImportReview: Bool = false) async throws -> (store: LibraryStore, directory: URL) {
         let directory = FileManager.default.temporaryDirectory
             .appending(path: "MusicLibrary-Navigation-\(UUID().uuidString)", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -26,9 +26,35 @@ extension LibraryStore {
             try await database.addAlbumContributor(contributor.id, to: album.id, role: .albumArtist)
             if index <= 12 { try await database.addAlbum(album.id, to: box.id, at: index) }
         }
+        if includeImportReview { try await seedImportReview(database: database, directory: directory) }
         let store = LibraryStore(database: database, metadataLookupProvider: NavigationMetadataFixture())
         try await store.reload()
         return (store, directory)
+    }
+
+    private static func seedImportReview(database: MusicDatabase, directory: URL) async throws {
+        let rootDirectory = directory.appending(path: "Synthetic Imports", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: rootDirectory, withIntermediateDirectories: true)
+        let root = try await database.createStorageRoot(.init(displayName: "Synthetic import root (no audio files)", lastKnownPath: rootDirectory.path, bookmarkData: nil))
+        let batch = try await database.createImportBatch(storageRootID: root.id, sourceDescription: "Synthetic import review — no source audio files")
+        for index in 1...4 {
+            try await database.recordImportCandidate(batchID: batch.id, payload: .init(relativePath: "Candidate \(index)/01.flac", fileName: "01.flac", contentTypeIdentifier: "org.xiph.flac", fileSize: 1, modifiedAt: nil))
+        }
+        let candidates = try await database.importCandidates(batchID: batch.id)
+        var drafts: [ImportReleaseProposalDraft] = []
+        for (index, candidate) in candidates.enumerated() {
+            let title = "Synthetic candidate \(index + 1)"
+            try await database.saveEmbeddedMetadata(.init(title: "Synthetic movement", albumTitle: title, artist: "Fixture Orchestra", albumArtist: "Fixture Orchestra", discNumber: 1, trackNumber: 1, durationMilliseconds: 62000, rawTags: ["ALBUM": title], provenance: "synthetic-fixture"), for: candidate.id)
+            drafts.append(.init(title: title, artist: "Fixture Orchestra", discCount: 1, confidence: 0.9, candidateIDs: [candidate.id], provenance: "synthetic-fixture"))
+        }
+        try await database.rebuildImportReleaseProposals(batchID: batch.id, drafts: drafts)
+        let proposals = try await database.importReleaseProposals(batchID: batch.id)
+        try await database.updateImportReleaseProposal(proposals[1].id, status: .approved)
+        try await database.updateImportReleaseProposal(proposals[2].id, status: .dismissed)
+        _ = try await database.confirmImportReleaseProposal(proposals[3].id)
+        try await database.finishImportBatch(batch.id, status: .completed)
+        // Fake references remain offline. No actual audio file or playback exists.
+        try await database.updateStorageRootAccess(root.id, status: .offline)
     }
 }
 

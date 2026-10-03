@@ -4,7 +4,23 @@ Last updated: 3 October 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — R4b optional physical tracks
+## Current resume — R5a selected-candidate import review
+
+Delivered release-configuration local app: **Music Library 0.28 (build 29)** at `build/Music Library 0.28.app`, versioned through `Packaging/MusicLibraryMac-Info.plist`. Schema remains **17**. Source audio and the personal catalogue were not opened or changed during this slice; no normal-app launch, distribution archive or notarization was performed.
+
+Import Review replaces the long proposal-card list with a selected-album workspace. Wide layouts have a candidate list beside the review; compact layouts use a candidate picker. All, Needs Review, Ready, Added and Skipped map to existing proposal states, with a committed album taking precedence. Ready never authorizes unattended import. Cover/identity/pressing summary and grouped tracks precede explicit Add New Album / Link to Existing Album / Skip controls. Raw tags, relative paths and grouping confidence sit inside Details; scan metrics, errors and file diagnostics remain in expandable Scan and File Details. No scanning, pairing, source-path or transaction semantics change.
+
+Add and Skip advance to another pending candidate; Skipped offers Return to Review. Add offers Open Album, and Back returns to the mounted batch workspace. Per-batch category and selected candidate are device-local preferences with safe fallback when a candidate is absent or hidden. Saves and metadata reading block repeat actions; errors leave a candidate available for retry. Existing idempotent confirmation/attachment services are reused. MusicBrainz lookup, selected-field comparison and attachment still use their existing dialogs; this is the first R5 slice, not full R5 completion.
+
+Relevant files: `ImportReviewPresentation.swift`, `ImportReviewWorkspace.swift`, `MusicLibraryMacApp.swift`, `LibraryNavigationFixture.swift`, `LibraryLaunchMode.swift`, fixture launcher, and presentation/fixture/startup regression tests. `swift test` passes **140 tests across 21 suites**; `swift test -c release` passes **138 across 20** (two DEBUG fixture tests differ). Final build, packaging, plist/version/signature and whitespace checks accompany delivery. Tests cover category mapping, selection recovery, pending advancement, explicit Skip/Return, idempotent Add, and absence of source-file writes.
+
+The optional `Scripts/run-navigation-fixture.sh --import-review-fixture` variant seeds four candidates, one in each category, in a newly generated temporary catalogue. Its one registered root is empty and offline, with synthetic asset references only; background destinations remain disabled. Default navigation fixture still has no roots/assets. Release refuses fixture flags/identifiers, including the new flag, instead of opening live data.
+
+Native acceptance remains blocked by the UI automation helper, not a verified app crash. Fresh fixture Albums/physical Find and Imports/batch list were readable, but Search and opening the batch lost the native pipe. Local diagnostic reports name `SkyComputerUseService`, with EXC_BREAKPOINT/SIGTRAP and an assertion/`Array.remove(at:)` stack during UI traversal. Do not infer a more precise cause or copy private crash logs into Git. Neither the new Review layout nor R4b Search/Save was visually verified. Fixtures `musiclibrary-navigation.B83Okr` and `musiclibrary-navigation.UnVTho` may remain open; do not inspect a quit fixture unless deliberately testing isolated relaunch. Earlier startup incidents below remain preserved.
+
+Next: **R5b inline MusicBrainz comparison and attachment review**, then album-origin Attach Digital Files, preserving explicit field approval, pairing/mismatch explanations, transactional compatibility/path uniqueness, existing metadata and idempotent retry. Run the R5a disposable acceptance checklist when UI inspection works, and carry forward R4b live-provider/cover/replacement/keyboard/appearance checks. Import-proposal release-ID association, track-specific credits/IDs, R3 real-library performance, NAS/destructive and iPad-device acceptance remain explicit follow-ups.
+
+## Previous resume — R4b optional physical tracks
 
 This slice adds optional structured MusicBrainz disc/track creation. Delivered release-configuration local app: **Music Library 0.27 (build 28)** at `build/Music Library 0.27.app`, from `Packaging/MusicLibraryMac-Info.plist`. Schema remains **17**; source audio and the personal catalogue were not opened or changed by these development checks. No distribution archive/notarization or normal-app launch was performed.
 

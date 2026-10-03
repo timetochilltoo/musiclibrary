@@ -6,6 +6,28 @@ import Testing
 @Suite("Navigation fixture")
 @MainActor
 struct LibraryNavigationFixtureTests {
+    @Test("Import review fixtures use only offline metadata references below a disposable root")
+    func importReview() async throws {
+        let fixture = try await LibraryStore.makeNavigationFixture(includeImportReview: true)
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+        let store = fixture.store
+        let root = try #require(store.storageRoots.first)
+        #expect(root.lastKnownPath.hasPrefix(fixture.directory.path + "/"))
+        #expect(root.status == .offline)
+        #expect(root.bookmarkData == nil)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: root.lastKnownPath).isEmpty)
+        let batch = try #require(store.importBatches.first)
+        let proposals = try await store.importReleaseProposals(batchID: batch.id)
+        #expect(Set(proposals.map(ImportReviewCategory.category)) == [.needsReview, .ready, .skipped, .added])
+        let pending = try #require(proposals.first(where: { $0.status == .proposed }))
+        try await store.setImportReleaseProposal(pending.id, status: .dismissed)
+        try await store.setImportReleaseProposal(pending.id, status: .proposed)
+        let id = try await store.confirmImportReleaseProposal(pending.id)
+        #expect(try await store.confirmImportReleaseProposal(pending.id) == id)
+        #expect(store.catalogueAlbums.count == 242)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: root.lastKnownPath).isEmpty)
+    }
+
     @Test("Real shell data stays disposable and startup cannot switch to the personal catalogue")
     func isolatedStartup() async throws {
         let fixture = try await LibraryStore.makeNavigationFixture()

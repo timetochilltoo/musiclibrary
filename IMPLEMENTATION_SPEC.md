@@ -477,6 +477,12 @@ Flow:
 
 The transaction must be idempotent using `import_candidate.created_album_id` or an operation UUID.
 
+### Implemented import-review presentation (R5a)
+
+`ImportReviewPresentation` maps existing proposals to Needs Review (proposed), Ready (legacy approved), Skipped (dismissed), or Added (created album ID takes precedence). These are presentation categories, not new persisted states or permission for automatic import. `ImportReviewWorkspace` shows one selected candidate, grouped tracks and explicit Add/Link/Skip actions; source tags/paths and scan diagnostics remain expandable. Wide and compact layouts share the same selected detail. Selection/category preferences are device-local and recover when a selected item disappears. Successful Add/Skip advances to a pending item; errors preserve retry. Opening an album retains the mounted batch origin for Back. Metadata reading and saving block overlapping user actions. Existing LibraryStore/database transactions remain authoritative; there is no schema change or source-media mutation. MusicBrainz field approval and attachment pairing still use existing dialogs pending R5b integration.
+
+The DEBUG-only `--import-review-fixture` variant registers an empty temporary offline root and synthetic references, with four review categories and no audio files. Normal startup is unchanged; Release refuses fixture flags/identifiers. This variant is an explicit exception to the default navigation fixture's no-root/no-asset composition, not authority to test against personal media.
+
 ## 9. File-scanning pipeline
 
 ### Enumeration

@@ -6,6 +6,7 @@ public enum LibraryLaunchMode: Equatable, Sendable {
     public static func resolve(bundleIdentifier: String?, arguments: [String], supportsFixtures: Bool) -> Self {
         let navigation = bundleIdentifier == "com.timetochilltoo.MusicLibraryNavigationFixture"
             || arguments.contains("--navigation-fixture")
+            || arguments.contains("--import-review-fixture")
         let browse = bundleIdentifier == "com.timetochilltoo.MusicLibraryBrowseFixture"
             || arguments.contains("--browse-fixture")
         guard navigation || browse else { return .catalogue }

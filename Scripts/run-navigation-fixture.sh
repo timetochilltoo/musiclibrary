@@ -16,5 +16,5 @@ cp Packaging/NavigationFixture-Info.plist "${navigation_fixture_app}/Contents/In
 ditto "${navigation_binary_directory}/MusicLibraryMac" "${navigation_fixture_app}/Contents/MacOS/MusicLibraryMac"
 codesign --force --sign - "${navigation_fixture_app}"
 codesign --verify --deep --strict "${navigation_fixture_app}"
-open -n "${navigation_fixture_app}" --args --navigation-fixture
+open -n "${navigation_fixture_app}" --args --navigation-fixture "$@"
 echo "Opened disposable fixture: ${navigation_fixture_app}"
