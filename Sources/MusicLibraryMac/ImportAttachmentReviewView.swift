@@ -9,6 +9,8 @@ struct ImportAttachmentReviewView: View {
     let onAttach: (AlbumID) async throws -> Void
     let onReviewMatching: () -> Void
     let onCancel: () -> Void
+    var intendedTargetID: AlbumID? = nil
+    var onSeparateAlbum: (() -> Void)? = nil
     @State private var searchText = ""
     @State private var selectedAlbumID: AlbumID?
     @State private var preview: ImportAttachmentPreview?
@@ -32,12 +34,16 @@ struct ImportAttachmentReviewView: View {
         GroupBox("Link Files to an Existing Album") {
             VStack(alignment: .leading, spacing: 14) {
                 Text("Existing titles, credits, artwork and edition metadata stay unchanged. Empty albums receive the imported disc/track structure. Source audio files are never copied, moved, renamed or retagged.").font(.caption).foregroundStyle(.secondary)
+                if let intendedTargetID {
+                    LabeledContent("Target album", value: library.catalogueAlbums.first(where: { $0.id == intendedTargetID })?.displayTitle ?? "Album unavailable")
+                } else {
                 TextField("Find an album by title, edition or catalogue number", text: $searchText)
                 Picker("Target album", selection: Binding(get: { selectedAlbumID }, set: { selectedAlbumID = $0; invalidatePreview() })) {
                     Text("Select an album…").tag(Optional<AlbumID>.none)
                     ForEach(albums) { album in Text(album.displayTitle).tag(Optional(album.id)) }
                 }
                 if albums.isEmpty { Text("No albums match this search.").font(.caption).foregroundStyle(.secondary) }
+                }
                 if isLoading { ProgressView("Checking tracks and file paths…") }
                 if let errorMessage {
                     Label(errorMessage, systemImage: "exclamationmark.triangle").foregroundStyle(.red).font(.callout)
@@ -62,7 +68,7 @@ struct ImportAttachmentReviewView: View {
                         Toggle("I reviewed the target album and file-to-track pairing", isOn: $acknowledged)
                     } else {
                         Button("Review Matching") { onReviewMatching() }
-                        Button("Return to Add a Separate Album") { onCancel() }
+                        Button(intendedTargetID == nil ? "Return to Add a Separate Album" : "Add a Separate Album in Imports") { (onSeparateAlbum ?? onCancel)() }
                     }
                 }
                 HStack {
@@ -72,6 +78,7 @@ struct ImportAttachmentReviewView: View {
             }.padding(8).frame(maxWidth: .infinity, alignment: .leading)
         }
         .disabled(isAttaching)
+        .onAppear { if let intendedTargetID { selectedAlbumID = intendedTargetID; invalidatePreview() } }
         .task(id: requestID) { await loadPreview() }
         .onChange(of: searchText) { _, _ in
             if let id = selectedAlbumID, !albums.contains(where: { $0.id == id }) { selectedAlbumID = nil; invalidatePreview() }

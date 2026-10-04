@@ -660,7 +660,9 @@ private struct LibraryShellView: View {
 
     @ViewBuilder private var albumDetail: some View {
         if let selectedAlbumID, let album = library.catalogueAlbums.first(where: { $0.id == selectedAlbumID }) {
-            AlbumDetail(library: library, playback: playback, album: album, locations: library.locations, onEdit: { albumToEdit = album })
+            AlbumDetail(library: library, playback: playback, album: album, locations: library.locations, onEdit: { albumToEdit = album }, onReviewImport: { batchID in
+                section = .importInbox; self.selectedAlbumID = nil; selectedImportBatchID = batchID
+            })
                 .id(selectedAlbumID)
         } else {
             ContentUnavailableView("Album unavailable", systemImage: "opticaldisc", description: Text("This album is no longer in the active catalogue. Use Back to return."))
@@ -2072,10 +2074,12 @@ private struct StorageRootRenameEditor: View {
     private func save() { Task { do { try await library.renameStorageRoot(root.id, to: name); dismiss() } catch { library.presentError(error) } } }
 }
 
-private struct ScanRootPicker: View {
+struct ScanRootPicker: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var library: LibraryStore
+    var onStarted: (ImportBatchID) -> Void = { _ in }
     @State private var showsChildFolderPicker = false
+    @State private var isStarting = false
 
     var body: some View {
         NavigationStack {
@@ -2091,12 +2095,19 @@ private struct ScanRootPicker: View {
                 ToolbarItem(placement: .primaryAction) { Button("Scan Album Folder…", systemImage: "folder") { showsChildFolderPicker = true } }
             }
         }
+        .disabled(isStarting)
+        .overlay { if isStarting { ProgressView("Starting scan…") } }
+        .interactiveDismissDisabled(isStarting)
         .frame(width: 520, height: 360)
         .fileImporter(isPresented: $showsChildFolderPicker, allowedContentTypes: [.folder]) { result in
             guard case let .success(url) = result else { return }
+            guard !isStarting else { return }
+            isStarting = true
             Task {
+                defer { isStarting = false }
                 do {
-                    _ = try await library.startImportScan(containing: url)
+                    let id = try await library.startImportScan(containing: url)
+                    onStarted(id)
                     dismiss()
                 } catch {
                     library.presentError(error)
@@ -2105,7 +2116,15 @@ private struct ScanRootPicker: View {
         }
     }
 
-    private func scan(_ root: StorageRoot) { Task { do { _ = try await library.startImportScan(rootID: root.id); dismiss() } catch { library.presentError(error) } } }
+    private func scan(_ root: StorageRoot) {
+        guard !isStarting else { return }
+        isStarting = true
+        Task {
+            defer { isStarting = false }
+            do { let id = try await library.startImportScan(rootID: root.id); onStarted(id); dismiss() }
+            catch { library.presentError(error) }
+        }
+    }
 }
 
 private struct PlaylistEditor: View {
@@ -2865,6 +2884,7 @@ private struct AlbumDetail: View {
     let album: Album
     let locations: [PhysicalLocation]
     let onEdit: () -> Void
+    let onReviewImport: (ImportBatchID) -> Void
     @State private var placement: AlbumBoxPlacement?
     @State private var discs: [Disc] = []
     @State private var tracksByDisc: [DiscID: [Track]] = [:]
@@ -2892,6 +2912,7 @@ private struct AlbumDetail: View {
     @State private var showsArtworkManagement = false
     @State private var artworkToView: Artwork?
     @State private var isOrganizeMode = false
+    @State private var showsAlbumAttachment = false
 
     private var selectedReleaseURL: URL? {
         guard let value = library.albumMusicBrainzReleaseIDs[album.id], let uuid = UUID(uuidString: value) else { return nil }
@@ -2990,6 +3011,7 @@ private struct AlbumDetail: View {
                 Button("Organize", systemImage: "pencil") { isOrganizeMode = true }
             }
             Menu("Artwork", systemImage: "photo") { artworkMenuContent() }
+            Button("Attach Digital Files…", systemImage: "link") { showsAlbumAttachment = true }
             if isOrganizeMode {
                 Menu("Album Actions", systemImage: "ellipsis.circle") {
                     if aliases.isEmpty {
@@ -3011,6 +3033,7 @@ private struct AlbumDetail: View {
             }
             await loadContent()
         }
+        .sheet(isPresented: $showsAlbumAttachment) { AlbumAttachmentEntryView(library: library, album: album, onAttached: { await loadContent() }, onReviewMatching: onReviewImport) }
         .sheet(isPresented: $showsAddDisc) { AddDiscEditor(library: library, albumID: album.id, onAdded: { await loadContent() }) }
         .sheet(item: $discForTrack) { disc in AddTrackEditor(library: library, disc: disc, onAdded: { await loadContent() }) }
         .sheet(isPresented: $showsAddAlias) { AddAliasEditor(library: library, albumID: album.id, onAdded: { await loadContent() }) }

@@ -820,6 +820,8 @@ MusicBrainz matching belongs within the selected candidate review workspace. Use
 
 Attachment:
 
+R5 album-origin checkpoint (4 October 2026): Album Detail exposes Attach Digital Files without entering Organize. Its workspace fixes the target, selects existing batch/pending candidate data, or explicitly opens the shared registered-folder scanner. New scan completion never silently reads metadata or attaches: Read Metadata and pairing acknowledgment remain deliberate actions. Scanner startup is repeat-click guarded. Close preserves scans/proposals; successful Attach refreshes the originating album. Mismatch review or separate-album creation explicitly navigates to Imports. Functional R5 entry/review/attachment components are now present; native/provider/appearance acceptance remains outstanding before declaring R5 complete.
+
 R5b attachment checkpoint (4 October 2026): Link to Existing Album expands target search/selection and every file-to-track pair inside Import Review. Acknowledgment is required before explicit Attach; changing target, proposal or catalogue revision invalidates the preview and acknowledgment. Preview responses are cancellation/token guarded. Compatibility failures remain explained, with Review Matching or Return to Add a Separate Album, never Force Attach. Success shows Linked/Open Album and advances to a pending candidate. Target selection uses the full active catalogue rather than current browse filters. Existing transaction/retry/source-safety services are unchanged. Album-origin attachment remains the next slice; native visual acceptance is pending.
 
 - From an existing album, Attach digital files opens this workflow with that album as the intended target.

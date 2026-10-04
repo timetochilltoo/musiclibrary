@@ -5,6 +5,16 @@ import MusicDomain
 
 @Suite("Import attachment review")
 struct ImportAttachmentReviewTests {
+    @Test("Album-origin selection offers only uncommitted proposed and approved candidates")
+    func pendingCandidates() {
+        func proposal(_ status: ImportProposalStatus, added: Bool = false) -> ImportReleaseProposal {
+            .init(id: UUID(), batchID: .init(), title: "Synthetic", artist: nil, discCount: 1, trackCount: 1, confidence: 1, provenance: "fixture", status: status, createdAlbumID: added ? .init() : nil)
+        }
+        let proposed = proposal(.proposed), approved = proposal(.approved)
+        let items = [proposed, approved, proposal(.dismissed), proposal(.approved, added: true)]
+        #expect(ImportAttachmentReview.pendingProposals(items) == [proposed, approved])
+        #expect(ImportAttachmentReview.pendingProposals([]).isEmpty)
+    }
     @Test("Confirmation requires acknowledgment and compatible evidence for the exact proposal and target")
     func confirmationGate() {
         let proposalID = UUID(), albumID = AlbumID()

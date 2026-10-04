@@ -4,7 +4,21 @@ Last updated: 4 October 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — R5b inline file attachment
+## Current resume — R5 album-origin attachment
+
+Delivered release-configuration local app: **Music Library 0.32 (build 33)** at `build/Music Library 0.32.app`, versioned through `Packaging/MusicLibraryMac-Info.plist`. Schema remains **17**. No personal catalogue/source audio was opened or modified during development validation; no normal-app launch, distribution archive or notarization was performed. User acceptance of R5a is recorded historically, not acceptance of the newer R5 layouts.
+
+Album Detail now exposes Attach Digital Files directly in its toolbar. `AlbumAttachmentEntryView` fixes the originating album as target, offers existing import batches and pending candidates, and reuses the complete pairing/acknowledgment/transaction workflow. Added and skipped proposals are excluded. The target is displayed, not editable; the save callback deliberately uses the originating album ID. Read-only compatibility evidence and acknowledgment still precede explicit Attach. Success refreshes Album Detail and offers Done back to that album, without adding another album or replacing existing metadata.
+
+Scan Registered Folder explicitly opens the shared root picker, accepting an available registered root or a contained album folder. Its optional started-batch callback selects the new scan in this workspace; repeat startup clicks are blocked. New roots are not registered here. Scan progress/Cancel is visible; Read Metadata for New Files remains a separate user action, and no candidate is attached automatically. Closing preserves persisted scans and proposals for later Imports review. Switching batches clears prior candidates; canceled/stale reads cannot populate a different batch. Missing targets show an unavailable state. Matching review or separate-album creation explicitly routes to Imports; neither writes during navigation.
+
+Relevant files: new `AlbumAttachmentEntryView.swift`, shared `ImportAttachmentReviewView.swift` locked-target option, `ImportAttachmentReview.swift` pending filter, `MusicLibraryMacApp.swift` album action/scan callback, and filter regression. `swift test` passes **145 tests across 23 suites**; `swift test -c release` passes **142 across 22** (three DEBUG fixture tests differ). Final build, packaging, plist/version/signature and whitespace checks accompany delivery. Existing disposable service tests retain read-only preview, exact-target acknowledgment, preserved metadata/credits, transaction mismatch/path protection, idempotent retry and empty-source-directory coverage. The new test excludes completed/skipped candidates while retaining both proposed and legacy approved rows. An initial Swift compiler assertion around a shadowed album-route variable was resolved by explicitly qualifying the state assignment; no caches or toolchain changes were needed.
+
+Native UI/keyboard/appearance and live registered-folder scan acceptance remain pending because the automation helper previously crashed opening import review. No personal-app/permissions workaround was attempted. Use the expanded disposable checklist in `MAC_AND_NAS_TESTING.md`; the old `musiclibrary-navigation.f9ftLw` fixture does not contain this build. Synthetic fixtures must not be used to claim live NAS/provider acceptance.
+
+Next: acceptance of the integrated R5 workflows, then **R6 responsive player and queue** (BUILD_PLAN.md 12.11), starting with compact player controls/queue entry while reusing PlaybackController rather than changing audio engines. R5 functional entry/review/attachment pieces are present, but full acceptance is not complete. Import-proposal release-ID association, track-specific credits/IDs, large-library performance, NAS/destructive and iPad-device checks remain explicit deferred items.
+
+## Previous resume — R5b inline file attachment
 
 Delivered release-configuration local app: **Music Library 0.31 (build 32)** at `build/Music Library 0.31.app`, versioned through `Packaging/MusicLibraryMac-Info.plist`. Schema remains **17**. No personal catalogue or source audio was opened/modified during development checks; no normal-app launch, distribution archive or notarization was performed. Latest UI acceptance remains pending; user acceptance of R5a does not prove these subsequent layouts.
 
