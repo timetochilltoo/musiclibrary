@@ -2271,7 +2271,6 @@ private struct ImportBatchDetail: View {
     @State private var proposalPreviews: [UUID: ImportProposalPreview] = [:]
     @State private var proposalToAttach: ImportReleaseProposal?
     @State private var proposalToLookUp: ImportReleaseProposal?
-    @State private var selectionToReview: ExternalMetadataSelection?
     @State private var selections: [UUID: ExternalMetadataSelection] = [:]
     @State private var missingAssets: [MissingAssetReview] = []
     @State private var missingAssetToConfirm: MissingAssetReview?
@@ -2413,7 +2412,10 @@ private struct ImportBatchDetail: View {
                 },
                 onStatus: { proposal, status in try await library.setImportReleaseProposal(proposal.id, status: status); await load() },
                 onAttach: { proposalToAttach = $0 }, onLookUp: { proposalToLookUp = $0 },
-                onCompare: { selectionToReview = $0 }, onOpenAlbum: onOpenAlbum
+                onApplyMetadata: { selection, fields in
+                    try await library.applyExternalMetadataSelection(selection, fields: fields)
+                    await load()
+                }, onOpenAlbum: onOpenAlbum
             )
             .frame(maxHeight: .infinity)
             .disabled(isReadingMetadata || batch.status == .scanning)
@@ -2480,7 +2482,6 @@ private struct ImportBatchDetail: View {
         .sheet(item: $proposalToAttach) { proposal in
             ExistingAlbumAttachmentView(library: library, proposal: proposal, onAttached: { await load() })
         }
-        .sheet(item: $selectionToReview) { selection in ExternalMetadataComparisonView(library: library, selection: selection, proposal: proposals.first(where: { $0.id == selection.importProposalID }), onApplied: { await load() }) }
     }
 
     private var scanStatusSymbol: String {
@@ -3111,69 +3112,6 @@ private struct TrackListComparison: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
-}
-
-private struct ExternalMetadataComparisonView: View {
-    @Environment(\.dismiss) private var dismiss
-    @ObservedObject var library: LibraryStore
-    let selection: ExternalMetadataSelection
-    let proposal: ImportReleaseProposal?
-    let onApplied: () async -> Void
-    @State private var useTitle = true
-    @State private var useArtist = true
-    @State private var useDiscCount = true
-    @State private var useCountryCode = true
-    @State private var useCatalogueNumber = true
-    @State private var useReleaseDate = false
-    @State private var useTrackTitles: Bool
-    @State private var useFrontArtwork = false
-    @State private var errorMessage: String?
-
-    init(library: LibraryStore, selection: ExternalMetadataSelection, proposal: ImportReleaseProposal?, onApplied: @escaping () async -> Void) {
-        self.library = library
-        self.selection = selection
-        self.proposal = proposal
-        self.onApplied = onApplied
-        _useTrackTitles = State(initialValue: proposal?.trackCount == selection.trackTitles.count && !selection.trackTitles.isEmpty)
-    }
-
-    var body: some View {
-        Form {
-            Section("MusicBrainz field comparison") {
-                comparison("Album title", current: proposal?.title, proposed: selection.title, enabled: $useTitle)
-                comparison("Artist", current: proposal?.artist, proposed: selection.artist, enabled: $useArtist)
-                comparison("Disc count", current: proposal.map { String($0.discCount) }, proposed: String(selection.discCount), enabled: $useDiscCount)
-                comparison("Country/region", current: proposal?.countryCode, proposed: selection.countryCode, enabled: $useCountryCode)
-                comparison("Catalogue number", current: proposal?.catalogueNumber, proposed: selection.catalogueNumber, enabled: $useCatalogueNumber)
-                comparison("Release date", current: "From imported audio tags", proposed: selection.releaseDate, enabled: $useReleaseDate)
-                Toggle(isOn: $useTrackTitles) {
-                    VStack(alignment: .leading) {
-                        Text("Track titles")
-                        Text("Imported: \(proposal?.trackCount ?? 0) tracks → MusicBrainz: \(selection.trackTitles.count) tracks").font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-                .disabled(!trackTitlesMatch)
-                if !trackTitlesMatch {
-                    Text("Track titles can only be applied when both releases contain the same number of tracks.").font(.caption).foregroundStyle(.secondary)
-                }
-                Toggle(isOn: $useFrontArtwork) {
-                    VStack(alignment: .leading) {
-                        Text("Front cover artwork")
-                        Text("Downloads the selected MusicBrainz cover into managed library storage and makes it the album cover when catalogue records are created.").font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-                Text("Only checked fields update this import proposal. Track titles are matched by disc and track number. This never changes audio tags.").font(.caption).foregroundStyle(.secondary)
-            }
-        }
-        .padding().frame(width: 520)
-        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button("Apply Selected Fields") { apply() } } }
-        .alert("Unable to apply fields", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) { Button("OK", role: .cancel) {} } message: { Text(errorMessage ?? "") }
-    }
-    private func comparison(_ name: String, current: String?, proposed: String?, enabled: Binding<Bool>) -> some View {
-        Toggle(isOn: enabled) { VStack(alignment: .leading) { Text(name); Text("Current: \(current ?? "—") → MusicBrainz: \(proposed ?? "—")").font(.caption).foregroundStyle(.secondary) } }
-    }
-    private var trackTitlesMatch: Bool { proposal?.trackCount == selection.trackTitles.count && !selection.trackTitles.isEmpty }
-    private func apply() { Task { do { try await library.applyExternalMetadataSelection(selection, fields: .init(title: useTitle, artist: useArtist, discCount: useDiscCount, countryCode: useCountryCode, catalogueNumber: useCatalogueNumber, releaseDate: useReleaseDate, trackTitles: useTrackTitles && trackTitlesMatch, frontArtwork: useFrontArtwork)); await onApplied(); dismiss() } catch { errorMessage = error.localizedDescription } } }
 }
 
 /// SwiftUI sheets do not inherit the main window's resizable style. This bridge makes

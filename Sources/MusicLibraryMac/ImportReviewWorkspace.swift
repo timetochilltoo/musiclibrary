@@ -13,7 +13,7 @@ struct ImportReviewWorkspace: View {
     let onStatus: (ImportReleaseProposal, ImportProposalStatus) async throws -> Void
     let onAttach: (ImportReleaseProposal) -> Void
     let onLookUp: (ImportReleaseProposal) -> Void
-    let onCompare: (ExternalMetadataSelection) -> Void
+    let onApplyMetadata: (ExternalMetadataSelection, ExternalMetadataFieldSelection) async throws -> Void
     let onOpenAlbum: (AlbumID) -> Void
     @AppStorage private var savedCategory: String
     @AppStorage private var savedSelection: String
@@ -22,9 +22,9 @@ struct ImportReviewWorkspace: View {
     @State private var errorMessage: String?
     @State private var lastAdded: (title: String, id: AlbumID)?
 
-    init(batchID: ImportBatchID, proposals: [ImportReleaseProposal], previews: [UUID: ImportProposalPreview], candidates: [ImportCandidate], selections: [UUID: ExternalMetadataSelection], onAdd: @escaping (ImportReleaseProposal) async throws -> AlbumID, onStatus: @escaping (ImportReleaseProposal, ImportProposalStatus) async throws -> Void, onAttach: @escaping (ImportReleaseProposal) -> Void, onLookUp: @escaping (ImportReleaseProposal) -> Void, onCompare: @escaping (ExternalMetadataSelection) -> Void, onOpenAlbum: @escaping (AlbumID) -> Void) {
+    init(batchID: ImportBatchID, proposals: [ImportReleaseProposal], previews: [UUID: ImportProposalPreview], candidates: [ImportCandidate], selections: [UUID: ExternalMetadataSelection], onAdd: @escaping (ImportReleaseProposal) async throws -> AlbumID, onStatus: @escaping (ImportReleaseProposal, ImportProposalStatus) async throws -> Void, onAttach: @escaping (ImportReleaseProposal) -> Void, onLookUp: @escaping (ImportReleaseProposal) -> Void, onApplyMetadata: @escaping (ExternalMetadataSelection, ExternalMetadataFieldSelection) async throws -> Void, onOpenAlbum: @escaping (AlbumID) -> Void) {
         self.batchID = batchID; self.proposals = proposals; self.previews = previews; self.candidates = candidates; self.selections = selections
-        self.onAdd = onAdd; self.onStatus = onStatus; self.onAttach = onAttach; self.onLookUp = onLookUp; self.onCompare = onCompare; self.onOpenAlbum = onOpenAlbum
+        self.onAdd = onAdd; self.onStatus = onStatus; self.onAttach = onAttach; self.onLookUp = onLookUp; self.onApplyMetadata = onApplyMetadata; self.onOpenAlbum = onOpenAlbum
         _savedCategory = AppStorage(wrappedValue: ImportReviewCategory.all.rawValue, "MusicLibrary.importReview.\(batchID).category")
         _savedSelection = AppStorage(wrappedValue: "", "MusicLibrary.importReview.\(batchID).selection")
     }
@@ -107,6 +107,15 @@ struct ImportReviewWorkspace: View {
                         }
                     }
                     actionControls(proposal)
+                    if proposal.createdAlbumID == nil, proposal.status != .dismissed, let selection = selections[proposal.id] {
+                        ImportMetadataReviewView(proposal: proposal, selection: selection, importedTracks: previews[proposal.id]?.trackTitles ?? []) { selection, fields in
+                            guard !isBusy else { return }
+                            isBusy = true
+                            defer { isBusy = false }
+                            try await onApplyMetadata(selection, fields)
+                        }
+                        .id(proposal.id)
+                    }
                     GroupBox("Tracks to import") { ImportReviewTrackList(candidates: candidates.filter { $0.proposalID == proposal.id }) }
                     DisclosureGroup("Details — source tags and paths") {
                         VStack(alignment: .leading, spacing: 8) {
@@ -150,7 +159,7 @@ struct ImportReviewWorkspace: View {
             }
             HStack {
                 Button("Find on MusicBrainz…", systemImage: "magnifyingglass") { onLookUp(proposal) }
-                if let selection = selections[proposal.id] { Button("Review Selected Fields…") { onCompare(selection) } }
+                if selections[proposal.id] != nil { Text("Selected release fields are below").font(.caption).foregroundStyle(.secondary) }
             }
         }
     }

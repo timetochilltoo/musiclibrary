@@ -1,10 +1,26 @@
 # Music Library — Project Handoff
 
-Last updated: 3 October 2026
+Last updated: 4 October 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — R5a selected-candidate import review
+## Current resume — R5b inline MusicBrainz field review
+
+Delivered release-configuration local app: **Music Library 0.29 (build 30)** at `build/Music Library 0.29.app`, versioned through `Packaging/MusicLibraryMac-Info.plist`. Schema remains **17**. No source audio or personal catalogue was opened or modified during this slice; no normal-app launch, distribution archive or notarization was performed. The user reports the preceding 0.28 import workspace works; record this as manual R5a acceptance, not evidence for every remaining provider/layout check.
+
+MusicBrainz field approval is now embedded in the selected pending import candidate, replacing the second comparison sheet. Imported and selected values are shown together, all choices initially unchecked. Apply Selected Fields updates only the proposal through the existing service; Add New Album remains a separate explicit action. Track comparison expands inline, with track-title application unavailable for empty/mismatched counts. Cover choice remains opt-in managed-storage download, with an explanation for retry or continuing without cover. No SQL or media manipulation is added to the view.
+
+`ImportMetadataReviewDraft` restricts choices to a matching pending proposal, masks invalid track choices, and disallows empty Apply. Workspace actions are blocked during Apply; failure retains choices and an inline error, while success clears choices and shows confirmation. Replacing the saved selection resets choices. Unsaved choices are intentionally not persisted across selecting another candidate. Lookup and file attachment still use their existing dialogs, and album-origin attachment is not implemented; this is a focused R5b field-review slice, not full R5 completion.
+
+Relevant files: new `ImportMetadataReviewDraft.swift`, `ImportMetadataReviewView.swift`, draft tests, `ImportReviewWorkspace.swift`, `MusicLibraryMacApp.swift`, and fixture tests. The obsolete field-comparison sheet is removed. `swift test` passes **142 tests across 22 suites**; `swift test -c release` passes **140 across 21** (DEBUG fixtures differ). Final build, packaging, plist/version/signature and whitespace checks accompany delivery. Draft regressions protect explicit choices, wrong-proposal/completed/skipped rejection, empty/mismatched tracks and unchanged unchecked fields. Disposable service integration applies only title without creating an album, then verifies Add/retry remains idempotent and the temporary source directory stays empty.
+
+The import-review fixture now includes one synthetic saved MusicBrainz selection on its Needs Review candidate, so inline field approval can be tested without network access. Its root remains empty/offline, with fake references only and no managed artwork store. See the expanded disposable acceptance checklist in `MAC_AND_NAS_TESTING.md`. Cover failure in this fixture must not be mistaken for live-provider artwork acceptance.
+
+Automated native inspection remains blocked: retries with fresh isolated fixtures reached Albums and Imports but opening Review closed the native pipe; screenshot inspection also failed. Earlier diagnostic evidence identifies the automation helper crash. No further personal-app or permissions changes were attempted. The last retry fixture `musiclibrary-navigation.f9ftLw` may remain open. R5b native layout, keyboard/appearance, live-provider replacement and cover-recovery checks remain pending; user acceptance of R5a does not prove these new checks.
+
+Next: integrate MusicBrainz lookup and file-to-track attachment into the selected review workspace, then add album-origin Attach Digital Files. Reuse existing explicit approval/pairing services, preserve target metadata and transactional compatibility/path uniqueness, and retain idempotent retry. Carry forward pending R4b provider/cover checks, import-proposal release-ID association, track-specific credits/IDs, real-library performance, NAS/destructive and iPad-device acceptance. Do not broaden those scopes silently.
+
+## Previous resume — R5a selected-candidate import review
 
 Delivered release-configuration local app: **Music Library 0.28 (build 29)** at `build/Music Library 0.28.app`, versioned through `Packaging/MusicLibraryMac-Info.plist`. Schema remains **17**. Source audio and the personal catalogue were not opened or changed during this slice; no normal-app launch, distribution archive or notarization was performed.
 

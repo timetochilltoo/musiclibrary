@@ -802,6 +802,8 @@ R5a workspace checkpoint (3 October 2026): selected-candidate review replaces th
 
 Entry: Add Album → Import Music Folder, or Imports → Scan Folder.
 
+R5b field-review checkpoint (4 October 2026): a selected MusicBrainz release now exposes its field comparison inside the selected import candidate instead of a second modal. Every field begins unchecked; explicit Apply updates only the proposal and remains separate from Add. Inline errors retain choices for retry, successful Apply clears them, and replacing the selected release resets them. Track comparison is expandable; count mismatch disables track-title application. Existing lookup and attachment dialogs remain for subsequent R5 slices, as does album-origin attachment. The user reported R5a works; that is manual acceptance, not completion of every visual/provider check. Exact automated validation and delivery are recorded in HANDOFF.md.
+
 Flow:
 
 1. Choose an existing registered folder or authorize a new folder. Reuse compatible existing registration rather than creating duplicate roots.

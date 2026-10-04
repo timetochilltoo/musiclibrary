@@ -49,6 +49,7 @@ extension LibraryStore {
         }
         try await database.rebuildImportReleaseProposals(batchID: batch.id, drafts: drafts)
         let proposals = try await database.importReleaseProposals(batchID: batch.id)
+        try await database.saveExternalMetadataSelection(importProposalID: proposals[0].id, provider: "musicbrainz", externalID: "00000000-0000-4000-8000-000000000001", title: "Synthetic selected release", artist: "Fixture Orchestra", discCount: 1, countryCode: "GB", catalogueNumber: "FIXTURE-MB", releaseDate: "2026", trackTitles: ["Synthetic MusicBrainz movement"])
         try await database.updateImportReleaseProposal(proposals[1].id, status: .approved)
         try await database.updateImportReleaseProposal(proposals[2].id, status: .dismissed)
         _ = try await database.confirmImportReleaseProposal(proposals[3].id)
