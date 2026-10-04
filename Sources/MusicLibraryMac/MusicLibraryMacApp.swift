@@ -1083,6 +1083,8 @@ private struct MiniPlayerBar: View {
     let showMetadata: () -> Void
     @State private var showsOptions = false
     @State private var showsQueue = false
+    @State private var showsExpandedPlayer = false
+    @State private var expandedMetadataSelection: MetadataInspectionSelection?
     @State private var queueSelectionError: String?
     @State private var albumIDsByTrack: [TrackID: AlbumID] = [:]
     @State private var resolvedIdentityRequest: IdentityRequest?
@@ -1108,8 +1110,9 @@ private struct MiniPlayerBar: View {
                 identity
                 transport
                 progress.frame(minWidth: 180, maxWidth: .infinity)
-                secondaryControls
+                secondaryControls()
                 queueButton
+                expandedPlayerButton
             }
             VStack(spacing: 8) {
                 HStack(spacing: 12) {
@@ -1117,12 +1120,13 @@ private struct MiniPlayerBar: View {
                     Spacer(minLength: 0)
                     transport
                     queueButton
+                    expandedPlayerButton
                     Button("Playback Options", systemImage: "slider.horizontal.3") { showsOptions.toggle() }
                         .playerIconStyle()
                         .popover(isPresented: $showsOptions) {
                             VStack(alignment: .leading, spacing: 14) {
                                 Text("Playback Options").font(.headline)
-                                secondaryControls
+                                secondaryControls()
                             }.padding(20)
                         }
                 }
@@ -1133,6 +1137,10 @@ private struct MiniPlayerBar: View {
         .padding(.vertical, 9)
         .background(.bar)
         .overlay(alignment: .top) { Divider() }
+        .sheet(isPresented: $showsExpandedPlayer) { expandedPlayer }
+        .onChange(of: showsExpandedPlayer) { _, isPresented in
+            if !isPresented { expandedMetadataSelection = nil }
+        }
         .task(id: identityRequest) {
             let request = identityRequest
             do {
@@ -1235,10 +1243,10 @@ private struct MiniPlayerBar: View {
             .frame(maxWidth: .infinity)
     }
 
-    private var secondaryControls: some View {
+    private func secondaryControls(showsMetadata: Bool = true) -> some View {
         HStack(spacing: 12) {
-            if playback.currentTrackID != nil {
-                Button("Show extracted metadata", systemImage: "info.circle", action: showMetadata).playerIconStyle()
+            if showsMetadata && playback.currentTrackID != nil {
+                Button("Show extracted metadata", systemImage: "info.circle", action: inspectMetadata).playerIconStyle()
             }
             Button(playback.queue.isShuffled ? "Turn Shuffle Off" : "Shuffle Queue", systemImage: "shuffle") { playback.toggleShuffle() }
                 .playerToggleStyle(active: playback.queue.isShuffled)
@@ -1257,67 +1265,155 @@ private struct MiniPlayerBar: View {
     private var queueButton: some View {
         Button("Show Queue", systemImage: "list.bullet") { queueSelectionError = nil; showsQueue.toggle() }
             .playerIconStyle()
-            .popover(isPresented: $showsQueue) {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Text("Playback Queue").font(.headline)
-                        Spacer()
-                        Text("\(playback.queue.trackIDs.count) tracks").foregroundStyle(.secondary)
-                    }
-                    if let queueSelectionError {
-                        Text(queueSelectionError).font(.caption).foregroundStyle(.red)
-                    }
-                    if playback.queue.trackIDs.isEmpty {
-                        Text("Play an album or playlist to start a queue.").foregroundStyle(.secondary)
-                    } else {
-                        ScrollViewReader { proxy in
-                            ScrollView {
-                                LazyVStack(alignment: .leading, spacing: 0) {
-                                    let titles = playback.queueTitles
-                                    ForEach(Array(playback.queue.trackIDs.indices), id: \.self) { index in
-                                        let trackID = playback.queue.trackIDs[index]
-                                        let title = titles.indices.contains(index) ? titles[index] : "Unavailable track"
-                                        Button {
-                                            do {
-                                                try playback.playQueueEntry(at: index, expectedTrackID: trackID)
-                                                queueSelectionError = nil
-                                            } catch { queueSelectionError = error.localizedDescription }
-                                        } label: {
-                                            HStack(alignment: .top, spacing: 10) {
-                                                Text("\(index + 1)").monospacedDigit().foregroundStyle(.secondary).frame(width: 32)
-                                                Text(title)
-                                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                                if playback.queue.currentIndex == index {
-                                                    Image(systemName: playback.isLoading ? "hourglass" : (playback.isPlaying ? "speaker.wave.2.fill" : "pause.circle"))
-                                                        .accessibilityLabel("Current queue entry")
-                                                }
-                                            }
-                                            .padding(10)
-                                            .background(playback.queue.currentIndex == index ? Color.accentColor.opacity(0.12) : Color.clear,
-                                                        in: RoundedRectangle(cornerRadius: 8))
-                                            .contentShape(Rectangle())
+            .popover(isPresented: $showsQueue) { queueContents.padding(20).frame(width: 420) }
+    }
+
+    private var queueContents: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Playback Queue").font(.headline)
+                Spacer()
+                Text("\(playback.queue.trackIDs.count) tracks").foregroundStyle(.secondary)
+            }
+            if let queueSelectionError {
+                Text(queueSelectionError).font(.caption).foregroundStyle(.red)
+            }
+            if playback.queue.trackIDs.isEmpty {
+                Text("Play an album or playlist to start a queue.").foregroundStyle(.secondary)
+            } else {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            let titles = playback.queueTitles
+                            ForEach(Array(playback.queue.trackIDs.indices), id: \.self) { index in
+                                let trackID = playback.queue.trackIDs[index]
+                                let title = titles.indices.contains(index) ? titles[index] : "Unavailable track"
+                                Button {
+                                    do {
+                                        try playback.playQueueEntry(at: index, expectedTrackID: trackID)
+                                        queueSelectionError = nil
+                                    } catch { queueSelectionError = error.localizedDescription }
+                                } label: {
+                                    HStack(alignment: .top, spacing: 10) {
+                                        Text("\(index + 1)").monospacedDigit().foregroundStyle(.secondary).frame(width: 32)
+                                        Text(title)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                        if playback.queue.currentIndex == index {
+                                            Image(systemName: playback.isLoading ? "hourglass" : (playback.isPlaying ? "speaker.wave.2.fill" : "pause.circle"))
+                                                .accessibilityLabel("Current queue entry")
                                         }
-                                        .buttonStyle(.plain)
-                                        .disabled(!playback.canPlayQueueEntry(at: index))
-                                        .help("Play \(title) from the beginning")
-                                        .accessibilityLabel("Play queue entry \(index + 1): \(title)")
-                                        .id(index)
                                     }
+                                    .padding(10)
+                                    .background(playback.queue.currentIndex == index ? Color.accentColor.opacity(0.12) : Color.clear,
+                                                in: RoundedRectangle(cornerRadius: 8))
+                                    .contentShape(Rectangle())
                                 }
-                            }
-                            .frame(maxHeight: 360)
-                            .onAppear { if let index = playback.queue.currentIndex { proxy.scrollTo(index, anchor: .center) } }
-                            .onChange(of: playback.queue.currentIndex) { _, index in
-                                if let index { proxy.scrollTo(index, anchor: .center) }
+                                .buttonStyle(.plain)
+                                .disabled(!playback.canPlayQueueEntry(at: index))
+                                .help("Play \(title) from the beginning")
+                                .accessibilityLabel("Play queue entry \(index + 1): \(title)")
+                                .id(index)
                             }
                         }
-                        Text("Select a track to play from its beginning. Queue order stays unchanged.")
-                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    .frame(maxHeight: 360)
+                    .onAppear { if let index = playback.queue.currentIndex { proxy.scrollTo(index, anchor: .center) } }
+                    .onChange(of: playback.queue.currentIndex) { _, index in
+                        if let index { proxy.scrollTo(index, anchor: .center) }
                     }
                 }
-                .padding(20)
-                .frame(width: 420)
+                Text("Select a track to play from its beginning. Queue order stays unchanged.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
+        }
+    }
+
+    private var expandedPlayerButton: some View {
+        Button("Open Now Playing", systemImage: "arrow.up.left.and.arrow.down.right") {
+            showsOptions = false
+            showsQueue = false
+            queueSelectionError = nil
+            showsExpandedPlayer = true
+        }
+        .playerIconStyle()
+        .help("Open Now Playing")
+    }
+
+    private var expandedPlayer: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Label("Now Playing", systemImage: "waveform").font(.headline)
+                Spacer()
+                Button("Close") { showsExpandedPlayer = false }.keyboardShortcut(.cancelAction)
+            }
+            .padding(20)
+            Divider()
+            GeometryReader { geometry in
+                ScrollView {
+                    if geometry.size.width >= 900 {
+                        HStack(alignment: .top, spacing: 28) {
+                            expandedPlaybackCard.frame(width: 380)
+                            GroupBox { queueContents.padding(8) }.frame(maxWidth: .infinity)
+                        }.padding(28)
+                    } else {
+                        VStack(spacing: 24) {
+                            expandedPlaybackCard
+                            GroupBox { queueContents.padding(8) }
+                        }
+                        .frame(maxWidth: 520)
+                        .padding(24)
+                        .frame(maxWidth: .infinity)
+                    }
+                }
+            }
+        }
+        .frame(minWidth: 620, idealWidth: 980, minHeight: 600, idealHeight: 740)
+        .sheet(item: $expandedMetadataSelection) { selection in
+            TrackMetadataInspector(library: library, selection: selection)
+        }
+    }
+
+    private var expandedPlaybackCard: some View {
+        VStack(spacing: 18) {
+            AlbumArtworkImage(path: currentAlbum.flatMap { library.albumFrontArtworkPaths[$0.id] })
+                .frame(width: 280, height: 280)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .shadow(color: .black.opacity(0.12), radius: 12, y: 6)
+                .accessibilityLabel("Album cover")
+            VStack(spacing: 6) {
+                Text(playback.currentTitle).font(.title2.bold()).multilineTextAlignment(.center).textSelection(.enabled)
+                Text(artistAndAlbum).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                if playback.isLoading {
+                    Label("Preparing playback", systemImage: "hourglass").font(.headline)
+                    Text(loadingDetail).font(.caption).foregroundStyle(.secondary)
+                } else if let format = playback.audioFormatDescription {
+                    Text(format).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            progress
+            transport
+            secondaryControls(showsMetadata: false)
+            HStack {
+                Button("Open Album", systemImage: "opticaldisc") {
+                    guard let album = currentAlbum else { return }
+                    showsExpandedPlayer = false
+                    openAlbum(album.id)
+                }.disabled(currentAlbum == nil)
+                Button("Audio Details", systemImage: "info.circle", action: inspectMetadata)
+                    .disabled(playback.currentTrackID == nil)
+            }
+            if let error = playback.errorMessage {
+                Text(error).font(.caption).foregroundStyle(.red)
+                Button("Dismiss Playback Error") { playback.dismissError() }
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func inspectMetadata() {
+        if showsExpandedPlayer, let trackID = playback.currentTrackID {
+            expandedMetadataSelection = .init(trackID: trackID, title: playback.currentTitle)
+        } else { showMetadata() }
     }
 
     private var repeatLabel: String {

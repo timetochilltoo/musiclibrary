@@ -1,10 +1,24 @@
 # Music Library — Project Handoff
 
-Last updated: 4 October 2026
+Last updated: 5 October 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — R6 explicit Queue selection
+## Current resume — R6 expanded player foundation
+
+Delivered release-configuration local app: **Music Library 0.36 (build 37)** at `build/Music Library 0.36.app`, versioned through `Packaging/MusicLibraryMac-Info.plist`. Schema remains **17**. This is presentation-only: no PlaybackController, persistence, catalogue schema or source-media behavior changed. Development validation did not launch the personal app, open its catalogue/media or modify its preferences. No distribution archive or notarization was added.
+
+The mini-player now exposes Open Now Playing (expand arrows) directly in wide and compact layouts. Its sheet leads with large artwork, full selectable track title, artist/album identity, audio format or Preparing Playback/loading detail, shared progress and transport, and volume/shuffle/repeat/Stop controls. The existing loading percentage/estimate/finalizing feedback is retained. Artwork and album identity remain tied to currentTrackID and the cached queue/revision map, not browse selection. Missing artwork keeps the placeholder; missing/deleted album identities disable Open Album rather than guessing a target.
+
+Queue content is extracted once and reused by the existing popover and expanded panel. Explicit row selection, current/loading indicator, actual order, availability gates, expected-ID validation, inline selection errors and current-index scrolling remain identical. Wide panels place Queue beside a 380-point playback card; compact panels stack the card and Queue inside a scrolling workspace. Close/Escape stays in a fixed header outside scrolling content. Opening/closing the panel never invokes play, pause or Stop, and no second controller/engine is created. The expand action closes mini-player popovers first.
+
+Open Album closes Now Playing and uses the existing retained origin route. Audio Details presents the existing track-snapshot inspector inside the expanded panel, while the mini-player continues using the shell inspector callback; the expanded controls omit the duplicate metadata icon. Closing the panel clears its nested inspector selection so reopening cannot retain a stale modal. Playback errors are also displayed with Dismiss inside the panel; the shell's existing playback-alert behavior is unchanged and modal/error acceptance is pending. Lyrics are deliberately not exposed as a nonfunctional command in this first expanded-player slice.
+
+Relevant files: `MusicLibraryMacApp.swift`, version plist and the R6 documentation/checklist. `swift test` passes **155 tests across 25 suites**; `swift test -c release` passes **152 across 24** (three existing DEBUG fixture tests differ). Final incremental build, packaging, plist/version/strict signature and whitespace checks accompany delivery; logs are under `/private/tmp/musiclibrary-036-*.log`. Existing queue/controller regressions are reused because no engine/domain behavior changed. Native compact/wide, queue interaction, artwork timing, nested Audio Details, error-modal behavior, keyboard/light-dark and real-audio acceptance remain unverified. The previously crashing automation helper was not retried and an asset-free fixture cannot establish audio acceptance. Follow the 0.36 disposable-media checklist in `MAC_AND_NAS_TESTING.md`; integrated R5 acceptance also remains open.
+
+Next: existing manual/plain/LRC lyrics inside Now Playing, including an intentional instrumental/empty state and Mac edit entry, without internet providers or tag writes. Queue editing/Play Next, import release-ID association, track-specific credits/IDs, large-library performance, NAS/destructive and iPad-device checks remain deferred. This checkpoint is not completion of all R6 acceptance.
+
+## Previous resume — R6 explicit Queue selection
 
 Delivered release-configuration local app: **Music Library 0.35 (build 36)** at `build/Music Library 0.35.app`, versioned through `Packaging/MusicLibraryMac-Info.plist`. Schema remains **17**. Validation used disposable preferences and catalogues only; no personal catalogue, preferences or source audio was opened/rewritten, no normal-app launch occurred, and no distribution archive/notarization was added.
 
