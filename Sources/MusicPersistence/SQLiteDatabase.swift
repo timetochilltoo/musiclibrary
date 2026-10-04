@@ -836,15 +836,27 @@ public actor MusicDatabase {
         let statement = try Self.prepare("SELECT id, language, kind, text, source, provider_id, is_user_edited FROM lyrics WHERE track_id = ? ORDER BY language, kind;", on: connection)
         defer { sqlite3_finalize(statement) }; try Self.bind(trackID.description, at: 1, to: statement)
         var values: [LyricsEntry] = []
-        while sqlite3_step(statement) == SQLITE_ROW {
+        var status = sqlite3_step(statement)
+        while status == SQLITE_ROW {
             guard let rawID = Self.text(at: 0, from: statement), let id = UUID(uuidString: rawID), let kindRaw = Self.text(at: 2, from: statement), let kind = LyricsKind(rawValue: kindRaw), let text = Self.text(at: 3, from: statement), let source = Self.text(at: 4, from: statement) else { throw DatabaseError.invalidIdentifier("Lyrics") }
             values.append(.init(id: id, trackID: trackID, language: Self.text(at: 1, from: statement), kind: kind, text: text, source: source, providerID: Self.text(at: 5, from: statement), isUserEdited: Self.int(at: 6, from: statement) != 0))
+            status = sqlite3_step(statement)
         }
+        guard status == SQLITE_DONE else { throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(connection))) }
         return values
     }
 
     public func saveLyrics(_ entry: LyricsEntry) throws {
         try transaction {
+            guard try track(id: entry.trackID) != nil else { throw DatabaseError.notFound("Track") }
+            let owner = try Self.prepare("SELECT track_id FROM lyrics WHERE id = ?;", on: connection)
+            defer { sqlite3_finalize(owner) }
+            try Self.bind(entry.id.uuidString, at: 1, to: owner)
+            let result = sqlite3_step(owner)
+            guard result == SQLITE_DONE || result == SQLITE_ROW else { throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(connection))) }
+            guard result == SQLITE_DONE || (result == SQLITE_ROW && Self.text(at: 0, from: owner) == entry.trackID.description) else {
+                throw DatabaseError.invalidOperation("Lyrics cannot be reassigned to another track.")
+            }
             let statement = try Self.prepare("INSERT INTO lyrics (id, track_id, language, kind, text, source, provider_id, is_user_edited) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET language = excluded.language, kind = excluded.kind, text = excluded.text, source = excluded.source, provider_id = excluded.provider_id, is_user_edited = excluded.is_user_edited;", on: connection)
             defer { sqlite3_finalize(statement) }
             try Self.bind(entry.id.uuidString, at: 1, to: statement); try Self.bind(entry.trackID.description, at: 2, to: statement); try Self.bind(entry.language, at: 3, to: statement); try Self.bind(entry.kind.rawValue, at: 4, to: statement); try Self.bind(entry.text, at: 5, to: statement); try Self.bind(entry.source, at: 6, to: statement); try Self.bind(entry.providerID, at: 7, to: statement); try Self.bind(entry.isUserEdited ? 1 : 0, at: 8, to: statement); try Self.stepDone(statement, connection: connection); try incrementRevision()

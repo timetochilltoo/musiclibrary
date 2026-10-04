@@ -7,7 +7,7 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 ## 1. Launch the packaged Mac app
 
 1. In Finder, open the project folder.
-2. Open the newest sequential package, currently `build/Music Library 0.10.app`. For normal use, the same build is installed at `/Applications/Music Library.app`.
+2. Open the newest sequential package, currently `build/Music Library 0.38.app`. An older `/Applications/Music Library.app` installation is not automatically updated by packaging.
 3. If macOS blocks the first launch, Control-click the app, choose **Open**, then choose **Open** again.
 4. The app opens a catalogue in its Application Support folder. It does not use a SQLite database on the NAS.
 5. Keep the app open while following the tests below. If anything unexpected happens, take a screenshot and note the exact action just before it happened.
@@ -21,7 +21,9 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 
 ## 3. Phase 3 — Mac player and playlists
 
-### R6 responsive player acceptance (0.33)
+### R6 responsive player acceptance (0.38)
+
+For **0.38 manual lyrics editor**, use disposable catalogue tracks only. Open Lyrics from Album and Now Playing. Edit a saved plain/LRC version: text, language and kind must load; Save Changes replaces that version rather than adding a duplicate; unchanged Save is disabled. New Lyrics adds a separate version. Whitespace-only text cannot save; language is trimmed. Change playback while editing: Save/Delete remain bound to the original track. Dirty Close/New/Edit offers Discard/Keep Editing; keeping preserves the draft. Delete requires confirmation and removes only that version; cancelling leaves it intact. Exercise read failure/Retry and save/delete failure: errors stay visible, drafts survive, repeat clicks are blocked while pending, and retry does not duplicate a committed version. Confirm busy/dirty sheet dismissal, resizing, keyboard and light/dark behavior. No source tags or internet requests occur. Native checks remain pending; unit fixtures do not prove them.
 
 For **0.37 saved lyrics**, use disposable tracks with plain and LRC entries in multiple languages, an instrumental track and a track without lyrics. Open Now Playing: Lyrics must match the playing track rather than the browsed album. Choose each version; plain text and raw LRC timestamps must remain readable/selectable (timed highlighting is not implemented). Empty/instrumental states are neutral, not errors, and offer Add Lyrics. Manage Lyrics opens the existing editor inside the panel. Change playback while editing: the editor title/save target must remain the track originally opened; Save updates only that track and refreshes the panel through catalogue revision. Rapid Queue selection and revisions must never show an older track's text/error. Exercise Retry for a disposable read failure, deleted/missing-track state, nested editor Close/reopen, keyboard/light-dark and compact/wide scrolling. Close/reopen never saves or changes playback. No online lookup or source tag write occurs.
 

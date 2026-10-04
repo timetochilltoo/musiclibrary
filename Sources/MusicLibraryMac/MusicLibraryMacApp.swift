@@ -2998,11 +2998,17 @@ struct LyricsEditor: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var library: LibraryStore
     let track: Track
-    @State private var entries: [LyricsEntry] = []
-    @State private var text = ""
-    @State private var language = ""
-    @State private var kind: LyricsKind = .plain
-    @State private var errorMessage: String?
+    @StateObject private var model: LyricsEditorModel
+    @State private var pendingEdit: LyricsEntry?
+    @State private var pendingDelete: LyricsEntry?
+    @State private var confirmDiscard = false
+    @State private var closeAfterDiscard = false
+
+    init(library: LibraryStore, track: Track) {
+        self.library = library
+        self.track = track
+        _model = StateObject(wrappedValue: LyricsEditorModel(trackID: track.id))
+    }
 
     var body: some View {
         NavigationStack {
@@ -3015,23 +3021,32 @@ struct LyricsEditor: View {
                     }
 
                     GroupBox("Saved lyrics") {
-                        if entries.isEmpty {
+                        if model.isBusy {
+                            ProgressView("Working…")
+                        }
+                        if let error = model.readError {
+                            Text(error).foregroundStyle(.red)
+                            Button("Retry Reading Lyrics") { Task { await load() } }.disabled(model.isBusy)
+                        } else if model.entries.isEmpty {
                             Text("No lyrics stored. This is not treated as an error.")
                                 .foregroundStyle(.secondary)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         } else {
                             VStack(alignment: .leading, spacing: 12) {
-                                ForEach(entries) { entry in
+                                ForEach(model.entries) { entry in
                                     VStack(alignment: .leading, spacing: 6) {
                                         HStack {
                                             Text("\(entry.kind.rawValue.capitalized) · \(entry.language ?? "No language") · \(entry.source)")
                                                 .font(.caption)
                                                 .foregroundStyle(.secondary)
                                             Spacer()
+                                            Button("Edit", systemImage: "pencil") { requestEdit(entry) }
+                                                .disabled(model.isBusy)
                                             Button("Delete", systemImage: "trash", role: .destructive) {
-                                                Task { try? await library.deleteLyrics(entry.id); await load() }
+                                                pendingDelete = entry
                                             }
                                             .labelStyle(.iconOnly)
+                                            .disabled(model.isBusy)
                                         }
                                         ScrollView {
                                             Text(entry.text)
@@ -3042,25 +3057,26 @@ struct LyricsEditor: View {
                                         .padding(8)
                                         .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 6))
                                     }
-                                    if entry.id != entries.last?.id { Divider() }
+                                    if entry.id != model.entries.last?.id { Divider() }
                                 }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
 
-                    GroupBox("Manual import or edit") {
+                    GroupBox(model.editingID == nil ? "New lyrics" : "Edit saved lyrics") {
                         VStack(alignment: .leading, spacing: 10) {
+                            Button("New Lyrics", systemImage: "plus") { requestEdit(nil) }
                             Text("Language (optional)").font(.caption).foregroundStyle(.secondary)
-                            TextField("e.g. en or zh-Hant", text: $language)
+                            TextField("e.g. en or zh-Hant", text: $model.language)
                             Text("Kind").font(.caption).foregroundStyle(.secondary)
-                            Picker("Kind", selection: $kind) {
+                            Picker("Kind", selection: $model.kind) {
                                 Text("Plain").tag(LyricsKind.plain)
                                 Text("Synchronized (LRC)").tag(LyricsKind.synchronized)
                             }
                             .pickerStyle(.menu)
                             Text("Lyrics text").font(.caption).foregroundStyle(.secondary)
-                            TextEditor(text: $text)
+                            TextEditor(text: $model.text)
                                 .font(.body)
                                 .frame(minWidth: 620, minHeight: 320)
                                 .padding(6)
@@ -3070,19 +3086,61 @@ struct LyricsEditor: View {
                                 .foregroundStyle(.secondary)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .disabled(model.isBusy)
                     }
                 }
                 .padding(24)
             }
             .navigationTitle("Lyrics — \(track.title)")
             .task { await load() }
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button("Save") { save() }.disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) } }
-            .alert("Unable to save lyrics", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) { Button("OK", role: .cancel) {} } message: { Text(errorMessage ?? "") }
+            .safeAreaInset(edge: .bottom) {
+                if model.writeError != nil || model.status != nil {
+                    VStack(alignment: .leading) {
+                        if let error = model.writeError { Text(error).foregroundStyle(.red).textSelection(.enabled) }
+                        if let status = model.status { Label(status, systemImage: "checkmark.circle").foregroundStyle(.secondary) }
+                    }
+                    .font(.callout)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+                    .background(.regularMaterial)
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") {
+                        if model.isDirty { closeAfterDiscard = true; confirmDiscard = true } else { dismiss() }
+                    }.disabled(model.isBusy)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(model.editingID == nil ? "Save Lyrics" : "Save Changes") {
+                        Task { await model.save { try await library.saveLyrics($0) } }
+                    }.disabled(!model.canSave)
+                }
+            }
+            .interactiveDismissDisabled(model.isBusy || model.isDirty)
+            .confirmationDialog("Discard unsaved lyrics changes?", isPresented: $confirmDiscard) {
+                Button("Discard Changes", role: .destructive) {
+                    if closeAfterDiscard { dismiss() } else { model.beginEditing(pendingEdit) }
+                }
+                Button("Keep Editing", role: .cancel) {}
+            }
+            .confirmationDialog("Delete this saved lyrics version?", isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } })) {
+                if let entry = pendingDelete {
+                    Button("Delete Lyrics", role: .destructive) {
+                        Task { await model.delete(entry) { try await library.deleteLyrics($0) } }
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: { Text("This removes the saved version from the catalogue, not the source audio file. Any unsaved draft for this version will also be discarded.") }
         }
         .frame(minWidth: 760, idealWidth: 820, minHeight: 700, idealHeight: 760)
     }
-    private func load() async { entries = (try? await library.lyrics(trackID: track.id)) ?? [] }
-    private func save() { Task { do { try await library.saveLyrics(.init(trackID: track.id, language: language.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : language, kind: kind, text: text)); text = ""; await load() } catch { errorMessage = error.localizedDescription } } }
+    private func load() async { await model.load { try await library.lyrics(trackID: $0) } }
+    private func requestEdit(_ entry: LyricsEntry?) {
+        pendingEdit = entry
+        closeAfterDiscard = false
+        if model.isDirty { confirmDiscard = true } else { model.beginEditing(entry) }
+    }
 }
 
 private struct MetadataInspectionSelection: Identifiable {

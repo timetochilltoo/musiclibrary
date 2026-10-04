@@ -4,7 +4,21 @@ Last updated: 5 October 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — R6 saved lyrics in Now Playing
+## Current resume — R6 shared manual lyrics editor
+
+Delivered release-configuration local app: **Music Library 0.38 (build 39)** at `build/Music Library 0.38.app`, versioned through `Packaging/MusicLibraryMac-Info.plist`. Schema remains **17**. No PlaybackController/audio engine changes, provider/network lookup, tag writes, personal catalogue/preferences/media access or normal-app launch are part of this slice. All development mutations use disposable fixtures; no release archive/notarization is added.
+
+The shared Album/Now Playing editor now exposes Edit on each saved lyrics version. It loads that version's text/language/kind and updates the same UUID; source/provider provenance is retained and corrections become user-edited. New Lyrics intentionally starts another version. Save retains the draft UUID after errors, including LibraryStore reload failure following a committed database write, so retry does not create duplicate rows. Retry may still increment revision: this is row identity protection, not a promise of no-op transactions. Successful saves update the local list without another read and leave the saved draft visible; unchanged/blank Save is disabled. Track identity is immutable in the model, independent of later playback changes.
+
+Busy guards reject repeat submissions, draft switching and saved-version deletion while an operation is pending; controls and sheet dismissal are disabled during work. Read failures show Retry instead of a false empty result. Save/delete failures preserve drafts and appear in a fixed bottom feedback area, along with success feedback, rather than below long scrolling lyrics. Close/New/Edit with a dirty draft asks Discard/Keep Editing. Delete requires explicit confirmation, stating that it removes catalogue text only and discards an unsaved draft for that version. Native confirmation, keyboard and nested-modal behavior remains acceptance work, not a claimed automated pass.
+
+Persistence revalidates an active target track and the existing UUID's owner inside save transactions, rejecting cross-track replacement and missing/deleted tracks without revision changes. Lyrics reads now propagate SQLite stepping failure rather than returning partial/empty results. Existing LibraryStore write/reload and deletion APIs remain unchanged. The model is new `LyricsEditorModel.swift`; UI integration remains in `MusicLibraryMacApp.swift`. Five new isolated tests cover provenance/identity/language trimming, stable retry UUID, repeated-submit and switch guards, visible read/write/delete failures with draft retention, blank/mismatched targets, and transactional in-place edit/ownership/deleted-track rollback.
+
+`swift test` passes **164 tests across 27 suites**; `swift test -c release` passes **161 across 26** (three existing DEBUG fixture tests differ). Incremental `swift build`, packaging, plist/version/strict signature and whitespace checks accompany delivery; results/logs are under `/private/tmp/musiclibrary-038-*.log`. The existing EmbeddedMetadataExtractor AVMetadataItem deprecation warning remains unrelated. Native UI and real-audio acceptance remain pending; the previously crashing helper was not retried and the personal app was not launched. Follow the 0.38 disposable checklist in `MAC_AND_NAS_TESTING.md`. Integrated R5 and full R6 acceptance remain open.
+
+Next: timed LRC parsing/highlighting with tested seek/CUE semantics, while retaining raw text for invalid/unsupported timestamps and no internet provider. Queue editing/Play Next, import release-ID association, track-specific credits/IDs, large-library performance, NAS/destructive and iPad-device checks remain explicitly deferred.
+
+## Previous resume — R6 saved lyrics in Now Playing
 
 Delivered release-configuration local app: **Music Library 0.37 (build 38)** at `build/Music Library 0.37.app`, versioned through `Packaging/MusicLibraryMac-Info.plist`. Schema remains **17**. PlaybackController and audio engines are unchanged. All development reads/writes used disposable test catalogues; no personal catalogue, preferences or source audio was opened/modified, no normal-app launch occurred, and no distribution archive/notarization was added.
 
