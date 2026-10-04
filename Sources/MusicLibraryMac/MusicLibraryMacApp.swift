@@ -1349,21 +1349,16 @@ private struct MiniPlayerBar: View {
             .padding(20)
             Divider()
             GeometryReader { geometry in
+                let isWide = geometry.size.width >= 900
+                let layout = isWide ? AnyLayout(HStackLayout(alignment: .top, spacing: 28)) : AnyLayout(VStackLayout(spacing: 24))
                 ScrollView {
-                    if geometry.size.width >= 900 {
-                        HStack(alignment: .top, spacing: 28) {
-                            expandedPlaybackCard.frame(width: 380)
-                            GroupBox { queueContents.padding(8) }.frame(maxWidth: .infinity)
-                        }.padding(28)
-                    } else {
-                        VStack(spacing: 24) {
-                            expandedPlaybackCard
-                            GroupBox { queueContents.padding(8) }
-                        }
-                        .frame(maxWidth: 520)
-                        .padding(24)
-                        .frame(maxWidth: .infinity)
+                    layout {
+                        expandedPlaybackCard.frame(width: isWide ? 380 : nil)
+                        expandedReadingPanels.frame(maxWidth: .infinity)
                     }
+                    .frame(maxWidth: isWide ? nil : 520)
+                    .padding(isWide ? 28 : 24)
+                    .frame(maxWidth: .infinity)
                 }
             }
         }
@@ -1408,6 +1403,13 @@ private struct MiniPlayerBar: View {
             }
         }
         .frame(maxWidth: .infinity)
+    }
+
+    private var expandedReadingPanels: some View {
+        VStack(spacing: 20) {
+            GroupBox { queueContents.padding(8) }
+            NowPlayingLyricsView(library: library, playback: playback)
+        }
     }
 
     private func inspectMetadata() {
@@ -2992,7 +2994,7 @@ private struct TagWritePreviewSheet: View {
     }
 }
 
-private struct LyricsEditor: View {
+struct LyricsEditor: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var library: LibraryStore
     let track: Track

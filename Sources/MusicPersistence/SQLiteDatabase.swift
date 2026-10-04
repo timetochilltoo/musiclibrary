@@ -1939,6 +1939,26 @@ public actor MusicDatabase {
         }
     }
 
+    public func track(id: TrackID) throws -> Track? {
+        let statement = try Self.prepare("""
+            SELECT track.disc_id, track.number, track.title, track.display_position, track.duration_ms,
+                   track.work_name, track.movement_number, track.movement_name, track.is_instrumental, track.rating
+            FROM track JOIN disc ON disc.id = track.disc_id JOIN album ON album.id = disc.album_id
+            WHERE track.id = ? AND album.deleted_at IS NULL;
+            """, on: connection)
+        defer { sqlite3_finalize(statement) }
+        try Self.bind(id.description, at: 1, to: statement)
+        let result = sqlite3_step(statement)
+        guard result != SQLITE_DONE else { return nil }
+        guard result == SQLITE_ROW else { throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(connection))) }
+        guard let rawDisc = Self.text(at: 0, from: statement), let uuid = UUID(uuidString: rawDisc) else { throw DatabaseError.invalidIdentifier("Track disc") }
+        return .init(id: id, discID: .init(rawValue: uuid), number: Int(Self.int(at: 1, from: statement) ?? 0),
+                     title: Self.text(at: 2, from: statement) ?? "", displayPosition: Self.text(at: 3, from: statement),
+                     durationMilliseconds: Self.int(at: 4, from: statement).map(Int.init), workName: Self.text(at: 5, from: statement),
+                     movementNumber: Self.int(at: 6, from: statement).map(Int.init), movementName: Self.text(at: 7, from: statement),
+                     isInstrumental: Self.int(at: 8, from: statement).map { $0 == 1 }, rating: Self.int(at: 9, from: statement).map(Int.init))
+    }
+
     public func tracks(discID: DiscID) throws -> [Track] {
         let statement = try Self.prepare("SELECT id, number, title, display_position, duration_ms, work_name, movement_number, movement_name, is_instrumental, rating FROM track WHERE disc_id = ? ORDER BY number;", on: connection)
         defer { sqlite3_finalize(statement) }; try Self.bind(discID.description, at: 1, to: statement)

@@ -753,6 +753,11 @@ public final class LibraryStore: ObservableObject {
     public func permanentlyDeletePlaylist(_ id: PlaylistID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.permanentlyDeletePlaylist(id); try await reload() }
     public func embeddedMetadata(trackID: TrackID) async throws -> EmbeddedMetadataPayload? { guard let database else { throw DatabaseError.notFound("Catalogue database") }; return try await database.embeddedMetadata(trackID: trackID) }
     public func lyrics(trackID: TrackID) async throws -> [LyricsEntry] { guard let database else { throw DatabaseError.notFound("Catalogue database") }; return try await database.lyrics(trackID: trackID) }
+    public func nowPlayingLyrics(trackID: TrackID) async throws -> NowPlayingLyrics? {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        guard let track = try await database.track(id: trackID) else { return nil }
+        return .init(track: track, entries: try await database.lyrics(trackID: trackID))
+    }
     public func saveLyrics(_ entry: LyricsEntry) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.saveLyrics(entry); try await reload() }
     public func deleteLyrics(_ id: UUID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.deleteLyrics(id); try await reload() }
 
