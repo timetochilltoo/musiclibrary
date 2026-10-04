@@ -11,6 +11,12 @@ public struct PlaybackQueue: Codable, Equatable, Sendable {
     public init(trackIDs: [TrackID] = [], currentIndex: Int? = nil, repeatMode: RepeatMode = .off, isShuffled: Bool = false) { self.trackIDs = trackIDs; self.currentIndex = currentIndex; self.repeatMode = repeatMode; self.isShuffled = isShuffled }
     public var currentTrackID: TrackID? { currentIndex.flatMap { trackIDs.indices.contains($0) ? trackIDs[$0] : nil } }
     public mutating func replace(with ids: [TrackID], startingAt index: Int = 0) { trackIDs = ids; currentIndex = ids.isEmpty ? nil : min(max(0, index), ids.count - 1); isShuffled = false }
+    /// Explicit selection preserves playback order and repeat/shuffle preferences.
+    public mutating func select(at index: Int) -> TrackID? {
+        guard trackIDs.indices.contains(index) else { return nil }
+        currentIndex = index
+        return trackIDs[index]
+    }
     public mutating func next() -> TrackID? { guard let index = currentIndex else { return nil }; if repeatMode == .one { return currentTrackID }; if index + 1 < trackIDs.count { currentIndex = index + 1; return currentTrackID }; if repeatMode == .all, !trackIDs.isEmpty { currentIndex = 0; return currentTrackID }; return nil }
     /// Advances for an explicit user "next track" request. Repeat One only applies when a track ends on its own.
     public mutating func skipForward() -> TrackID? { guard let index = currentIndex else { return nil }; if index + 1 < trackIDs.count { currentIndex = index + 1; return currentTrackID }; if repeatMode == .all, !trackIDs.isEmpty { currentIndex = 0; return currentTrackID }; return nil }

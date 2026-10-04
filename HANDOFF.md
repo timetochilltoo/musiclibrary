@@ -4,7 +4,21 @@ Last updated: 4 October 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — R6 player artwork and album navigation
+## Current resume — R6 explicit Queue selection
+
+Delivered release-configuration local app: **Music Library 0.35 (build 36)** at `build/Music Library 0.35.app`, versioned through `Packaging/MusicLibraryMac-Info.plist`. Schema remains **17**. Validation used disposable preferences and catalogues only; no personal catalogue, preferences or source audio was opened/rewritten, no normal-app launch occurred, and no distribution archive/notarization was added.
+
+Queue rows now explicitly play the selected position from its beginning through the existing resolved playback pipeline (CUE segment start remains handled there). Selecting the current row restarts it. Selection changes only currentIndex, not queue order, repeat/shuffle state or original unshuffled items. Rows remain actionable while loading so a newer selection can supersede the previous request. Unresolved entries and active DSF cache maintenance disable selection. Controller validation checks both index/resolved item and the row's expected track identity before changing state; stale/invalid actions show an inline queue error. Actual source-open errors still use the existing playback alert. The popover stays open and follows the current-entry indicator, including loading state.
+
+`PlaybackQueue.select` validates bounds and preserves preferences/duplicate positions. `PlaybackController.playQueueEntry` persists the selection then invokes existing beginLoading, generation guards, cue handling and preparation; it does not rebuild the queue or implement another engine. Restoration now tolerates duplicate resolved IDs rather than trapping on dictionary construction, retaining every queue position. The normal initializer continues using standard preferences, remote/Now Playing integration, preloading and the production loader. An internal composition boundary injects preferences and preparation and explicitly disables system integration/preloading for isolated tests. No new queue editing, Add to Queue or Play Next behavior was added.
+
+Relevant files: `PlaybackQueue.swift`, `PlaybackController.swift`, the Queue popover in `MusicLibraryMacApp.swift`, two domain regressions and new `PlaybackQueueSelectionTests.swift`. `swift test` passes **155 tests across 25 suites**; `swift test -c release` passes **152 across 24**. Final incremental build, packaging and plist/version/strict signature/whitespace checks accompany delivery; logs are under `/private/tmp/musiclibrary-035-*.log`. The four new controller checks cover duplicate-safe restoration/no autoplay, persisted selection/preferences, invalid/stale/unresolved actions, same-track latest-generation progress/failure rejection, retry and Stop invalidation. They never prepare actual audio, register system media controls, preload source files or use standard preferences. Existing three DEBUG-only fixture tests account for the release-count difference.
+
+Native compact/wide, keyboard, audio output, CUE/DSF and failure/relaunch acceptance remain pending. The previously crashing automation helper was not retried, and the personal app was not launched. Follow the 0.35 disposable-media checklist in `MAC_AND_NAS_TESTING.md`. The asset-free navigation fixture cannot prove these playback behaviors; isolated callback regressions are not an audible/visual pass. R5 integrated acceptance also remains open.
+
+Next: expanded player presentation around the existing controller, reusing current-track identity, Queue and Audio Details, then existing manual/plain/LRC lyrics. Queue editing/Play Next, internet lyrics, import release-ID association, track-specific credits/IDs, large-library performance, NAS/destructive and iPad-device checks remain deferred.
+
+## Previous resume — R6 player artwork and album navigation
 
 Delivered release-configuration local app: **Music Library 0.34 (build 35)** at `build/Music Library 0.34.app`, versioned through `Packaging/MusicLibraryMac-Info.plist`. Schema remains **17**. Development checks used temporary catalogues only; no personal catalogue/source audio was opened or modified, no normal-app launch was performed, and no distribution archive/notarization was added.
 

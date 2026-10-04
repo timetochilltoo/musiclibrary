@@ -34,11 +34,26 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
     private var cueEndTimer: Timer?
     private var progressTimer: Timer?
     private let defaultsKey = "MusicLibrary.playbackQueue"
+    private let preferences: UserDefaults
+    private let systemIntegrationEnabled: Bool
+    private let permitsPreloading: Bool
+    private let preparation: PlaybackPreparation?
 
-    public override init() {
-        if let data = UserDefaults.standard.data(forKey: defaultsKey), let queue = try? JSONDecoder().decode(PlaybackQueue.self, from: data) { self.queue = queue }
+    public override convenience init() {
+        self.init(preferences: .standard, systemIntegrationEnabled: true, permitsPreloading: true)
+    }
+
+    /// Supports isolated validation with explicit preferences, optional system
+    /// integration/preloading, and an injected audio preparation boundary.
+    init(preferences: UserDefaults, systemIntegrationEnabled: Bool = false,
+         permitsPreloading: Bool = false, preparation: PlaybackPreparation? = nil) {
+        self.preferences = preferences
+        self.systemIntegrationEnabled = systemIntegrationEnabled
+        self.permitsPreloading = permitsPreloading
+        self.preparation = preparation
+        if let data = preferences.data(forKey: defaultsKey), let queue = try? JSONDecoder().decode(PlaybackQueue.self, from: data) { self.queue = queue }
         super.init()
-        configureRemoteCommands()
+        if systemIntegrationEnabled { configureRemoteCommands() }
     }
     public func play(items: [(url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?)], startingAt index: Int) throws {
         guard !isManagingDSFPlaybackCache else {
@@ -99,6 +114,20 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
         persist()
         beginLoading(index: index)
     }
+    public func canPlayQueueEntry(at index: Int) -> Bool {
+        !isManagingDSFPlaybackCache && queue.trackIDs.indices.contains(index) && items.indices.contains(index)
+            && queue.trackIDs[index] == items[index].trackID
+    }
+
+    /// Does not replace the queue or change its shuffle/repeat state.
+    public func playQueueEntry(at index: Int, expectedTrackID: TrackID) throws {
+        guard canPlayQueueEntry(at: index), queue.trackIDs[index] == expectedTrackID else {
+            throw NSError(domain: "MusicLibrary", code: 5, userInfo: [NSLocalizedDescriptionKey: "This queue entry is no longer available. Review the current queue and try again."])
+        }
+        guard queue.select(at: index) != nil else { return }
+        persist()
+        beginLoading(index: index)
+    }
     public func seek(to fraction: Double) {
         guard let player, player.duration > 0 else { return }
         player.currentTime = player.duration * min(max(0, fraction), 1)
@@ -130,7 +159,7 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
 
     public func restore(items restoredItems: [(url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?)]) {
         guard !queue.trackIDs.isEmpty else { return }
-        let itemsByID = Dictionary(uniqueKeysWithValues: restoredItems.map { ($0.trackID, $0) })
+        let itemsByID = Dictionary(restoredItems.map { ($0.trackID, $0) }, uniquingKeysWith: { first, _ in first })
         items = queue.trackIDs.compactMap { itemsByID[$0] }
         guard !items.isEmpty else {
             queue.currentIndex = nil
@@ -191,7 +220,7 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
         }.value
     }
 
-    private func persist() { if let data = try? JSONEncoder().encode(queue) { UserDefaults.standard.set(data, forKey: defaultsKey) } }
+    private func persist() { if let data = try? JSONEncoder().encode(queue) { preferences.set(data, forKey: defaultsKey) } }
     private func failPlayback(message: String) {
         loadGeneration += 1
         invalidatePreparedNext()
@@ -252,18 +281,21 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
         item: (url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?),
         generation: Int
     ) {
-        loader.prepare(url: item.url, progress: { [weak self] progress in
+        let progress: @Sendable (PlaybackPreparationProgress) -> Void = { [weak self] progress in
             Task { @MainActor [weak self] in
                 guard let self, self.loadGeneration == generation, self.queue.currentTrackID == item.trackID else { return }
                 self.loadingProgress = progress.fractionCompleted
                 self.loadingEstimatedTimeRemaining = progress.estimatedTimeRemaining
                 self.isFinalizingLoad = progress.isFinalizing
             }
-        }) { [weak self] result in
+        }
+        let completion: @Sendable (PreparedAudioResult) -> Void = { [weak self] result in
             Task { @MainActor [weak self] in
                 self?.finishLoading(result, item: item, generation: generation, retryPreparedFailure: false)
             }
         }
+        if let preparation { preparation(item.url, progress, completion) }
+        else { loader.prepare(url: item.url, progress: progress, completion: completion) }
     }
 
     private func finishLoading(
@@ -357,6 +389,7 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
 
     private func schedulePreload() {
         invalidatePreparedNext()
+        guard permitsPreloading else { return }
         guard let currentIndex = queue.currentIndex, let nextIndex = nextIndex(after: currentIndex), items.indices.contains(nextIndex) else { return }
         let currentTrackID = queue.currentTrackID
         let item = items[nextIndex]
@@ -450,6 +483,7 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
     }
 
     private func updateNowPlayingInfo() {
+        guard systemIntegrationEnabled else { return }
         guard let player else { return }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = [
             MPMediaItemPropertyTitle: currentTitle,
@@ -460,6 +494,7 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
     }
 
     private func clearNowPlayingInfo() {
+        guard systemIntegrationEnabled else { return }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
     }
     #else
@@ -469,7 +504,10 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
     #endif
 }
 
-private final class PreparedAudioPlayer: @unchecked Sendable {
+typealias PlaybackPreparation = @MainActor (URL, @escaping @Sendable (PlaybackPreparationProgress) -> Void,
+                                           @escaping @Sendable (PreparedAudioResult) -> Void) -> Void
+
+final class PreparedAudioPlayer: @unchecked Sendable {
     let player: AVAudioPlayer
     let playableURL: URL
     init(_ player: AVAudioPlayer, playableURL: URL) {
@@ -478,12 +516,12 @@ private final class PreparedAudioPlayer: @unchecked Sendable {
     }
 }
 
-private enum PreparedAudioResult: @unchecked Sendable {
+enum PreparedAudioResult: @unchecked Sendable {
     case success(PreparedAudioPlayer)
     case failure(String)
 }
 
-private struct PlaybackPreparationProgress: Sendable {
+struct PlaybackPreparationProgress: Sendable {
     let fractionCompleted: Double
     let estimatedTimeRemaining: TimeInterval?
     let isFinalizing: Bool

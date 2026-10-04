@@ -87,6 +87,29 @@ struct AlbumTests {
 
 @Suite("Playback queue")
 struct PlaybackQueueTests {
+    @Test("Explicit queue selection preserves duplicate positions, order and playback preferences")
+    func explicitSelection() throws {
+        let first = TrackID(), second = TrackID()
+        var queue = PlaybackQueue(trackIDs: [first, second, first], currentIndex: 0, repeatMode: .one, isShuffled: true)
+        #expect(queue.select(at: 2) == first)
+        #expect(queue.currentIndex == 2)
+        #expect(queue.trackIDs == [first, second, first])
+        #expect(queue.repeatMode == .one && queue.isShuffled)
+        #expect(try JSONDecoder().decode(PlaybackQueue.self, from: JSONEncoder().encode(queue)) == queue)
+        #expect(queue.select(at: 1) == second)
+    }
+
+    @Test("Invalid queue selection changes nothing")
+    func invalidSelection() {
+        var queue = PlaybackQueue(trackIDs: [TrackID()], currentIndex: 0, repeatMode: .all, isShuffled: true)
+        let before = queue
+        #expect(queue.select(at: -1) == nil)
+        #expect(queue.select(at: 1) == nil)
+        #expect(queue == before)
+        var empty = PlaybackQueue()
+        #expect(empty.select(at: 0) == nil)
+        #expect(empty.currentIndex == nil)
+    }
     @Test("Queue advances, repeats, and preserves a Codable state")
     func queueBehaviour() throws {
         let first = TrackID(); let second = TrackID()

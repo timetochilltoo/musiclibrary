@@ -1083,6 +1083,7 @@ private struct MiniPlayerBar: View {
     let showMetadata: () -> Void
     @State private var showsOptions = false
     @State private var showsQueue = false
+    @State private var queueSelectionError: String?
     @State private var albumIDsByTrack: [TrackID: AlbumID] = [:]
     @State private var resolvedIdentityRequest: IdentityRequest?
 
@@ -1254,7 +1255,7 @@ private struct MiniPlayerBar: View {
     }
 
     private var queueButton: some View {
-        Button("Show Queue", systemImage: "list.bullet") { showsQueue.toggle() }
+        Button("Show Queue", systemImage: "list.bullet") { queueSelectionError = nil; showsQueue.toggle() }
             .playerIconStyle()
             .popover(isPresented: $showsQueue) {
                 VStack(alignment: .leading, spacing: 12) {
@@ -1262,6 +1263,9 @@ private struct MiniPlayerBar: View {
                         Text("Playback Queue").font(.headline)
                         Spacer()
                         Text("\(playback.queue.trackIDs.count) tracks").foregroundStyle(.secondary)
+                    }
+                    if let queueSelectionError {
+                        Text(queueSelectionError).font(.caption).foregroundStyle(.red)
                     }
                     if playback.queue.trackIDs.isEmpty {
                         Text("Play an album or playlist to start a queue.").foregroundStyle(.secondary)
@@ -1271,18 +1275,32 @@ private struct MiniPlayerBar: View {
                                 LazyVStack(alignment: .leading, spacing: 0) {
                                     let titles = playback.queueTitles
                                     ForEach(Array(playback.queue.trackIDs.indices), id: \.self) { index in
-                                        HStack(alignment: .top, spacing: 10) {
-                                            Text("\(index + 1)").monospacedDigit().foregroundStyle(.secondary).frame(width: 32)
-                                            Text(titles.indices.contains(index) ? titles[index] : "Unavailable track")
-                                                .frame(maxWidth: .infinity, alignment: .leading)
-                                            if playback.queue.currentIndex == index {
-                                                Image(systemName: playback.isPlaying ? "speaker.wave.2.fill" : "pause.circle")
-                                                    .accessibilityLabel("Current queue entry")
+                                        let trackID = playback.queue.trackIDs[index]
+                                        let title = titles.indices.contains(index) ? titles[index] : "Unavailable track"
+                                        Button {
+                                            do {
+                                                try playback.playQueueEntry(at: index, expectedTrackID: trackID)
+                                                queueSelectionError = nil
+                                            } catch { queueSelectionError = error.localizedDescription }
+                                        } label: {
+                                            HStack(alignment: .top, spacing: 10) {
+                                                Text("\(index + 1)").monospacedDigit().foregroundStyle(.secondary).frame(width: 32)
+                                                Text(title)
+                                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                                if playback.queue.currentIndex == index {
+                                                    Image(systemName: playback.isLoading ? "hourglass" : (playback.isPlaying ? "speaker.wave.2.fill" : "pause.circle"))
+                                                        .accessibilityLabel("Current queue entry")
+                                                }
                                             }
+                                            .padding(10)
+                                            .background(playback.queue.currentIndex == index ? Color.accentColor.opacity(0.12) : Color.clear,
+                                                        in: RoundedRectangle(cornerRadius: 8))
+                                            .contentShape(Rectangle())
                                         }
-                                        .padding(10)
-                                        .background(playback.queue.currentIndex == index ? Color.accentColor.opacity(0.12) : Color.clear,
-                                                    in: RoundedRectangle(cornerRadius: 8))
+                                        .buttonStyle(.plain)
+                                        .disabled(!playback.canPlayQueueEntry(at: index))
+                                        .help("Play \(title) from the beginning")
+                                        .accessibilityLabel("Play queue entry \(index + 1): \(title)")
                                         .id(index)
                                     }
                                 }
@@ -1293,7 +1311,7 @@ private struct MiniPlayerBar: View {
                                 if let index { proxy.scrollTo(index, anchor: .center) }
                             }
                         }
-                        Text("Shown in playback order. Use Previous and Next to change tracks.")
+                        Text("Select a track to play from its beginning. Queue order stays unchanged.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
