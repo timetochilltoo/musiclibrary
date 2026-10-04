@@ -144,6 +144,11 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
         currentTrackID = items[queue.currentIndex ?? 0].trackID
         schedulePreload()
     }
+    /// Presentation of the resolved queue; does not resolve files or start playback.
+    public var queueTitles: [String] {
+        PlaybackQueuePresentation.titles(for: queue, resolvedTitles: items.map { ($0.trackID, $0.title) })
+    }
+
     public func dismissError() { errorMessage = nil }
     public func dsfPlaybackCacheStatus() async throws -> DSFPlaybackCacheStatus {
         let cache = DSFPlaybackCache()

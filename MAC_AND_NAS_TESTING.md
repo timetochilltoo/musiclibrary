@@ -21,6 +21,10 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 
 ## 3. Phase 3 — Mac player and playlists
 
+### R6 responsive player acceptance (0.33)
+
+Using a disposable catalogue and audio fixtures, play a multi-track album. Resize between wide and minimum supported window widths: the compact player must show identity/transport/Queue/Options above full-width progress, with no clipped controls. Open Options and exercise volume, shuffle, repeat, metadata and Stop; Pause stays directly available. Check keyboard navigation, labels, light/dark appearance and clearance below the last album track. Seek and elapsed/duration should remain correct. With a disposable DSF fixture, retain percentage/time estimate and cancellation behavior while resizing. Queue must show actual shuffled order, count and current-entry indicator, scroll to the current entry when opened/advanced, and never begin playback merely by opening it. Rows are deliberately read-only; no selection/reorder commands are claimed. Stop retains the queue; reopening the app must not autoplay. A fixture without digital assets cannot establish these audio acceptance checks. Do not use the personal catalogue/media for automated checks.
+
 ## 3.0 Catalogue cleanup and complete archive
 
 Use ordinary test records only for this section. None of these actions should touch source audio.

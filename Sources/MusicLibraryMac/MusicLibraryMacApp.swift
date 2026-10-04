@@ -1067,8 +1067,43 @@ private struct AlbumSourceBadges: View {
 private struct MiniPlayerBar: View {
     @ObservedObject var playback: PlaybackController
     let showMetadata: () -> Void
+    @State private var showsOptions = false
+    @State private var showsQueue = false
 
     var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 16) {
+                identity
+                transport
+                progress.frame(minWidth: 180, maxWidth: .infinity)
+                secondaryControls
+                queueButton
+            }
+            VStack(spacing: 8) {
+                HStack(spacing: 12) {
+                    identity
+                    Spacer(minLength: 0)
+                    transport
+                    queueButton
+                    Button("Playback Options", systemImage: "slider.horizontal.3") { showsOptions.toggle() }
+                        .playerIconStyle()
+                        .popover(isPresented: $showsOptions) {
+                            VStack(alignment: .leading, spacing: 14) {
+                                Text("Playback Options").font(.headline)
+                                secondaryControls
+                            }.padding(20)
+                        }
+                }
+                progress
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+        .background(.bar)
+        .overlay(alignment: .top) { Divider() }
+    }
+
+    private var identity: some View {
         HStack(spacing: 16) {
             ZStack {
                 RoundedRectangle(cornerRadius: 8).fill(.quaternary)
@@ -1087,8 +1122,12 @@ private struct MiniPlayerBar: View {
                 Text(playback.isLoading ? loadingDetail : (playback.audioFormatDescription ?? "Ready to play"))
                     .font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
-            .frame(minWidth: 180, maxWidth: 320, alignment: .leading)
+            .frame(minWidth: 100, maxWidth: 280, alignment: .leading)
+        }
+    }
 
+    private var transport: some View {
+        HStack(spacing: 12) {
             Button("Previous", systemImage: "backward.fill") { playback.previous() }.playerIconStyle()
             Button(playback.isPlaying ? "Pause" : "Play", systemImage: playback.isPlaying ? "pause.fill" : "play.fill") { playback.toggle() }
                 .labelStyle(.iconOnly)
@@ -1096,7 +1135,11 @@ private struct MiniPlayerBar: View {
                 .controlSize(.large)
                 .disabled(playback.isLoading)
             Button("Next", systemImage: "forward.fill") { playback.next() }.playerIconStyle()
+        }
+        .fixedSize()
+    }
 
+    private var progress: some View {
             VStack(spacing: 2) {
                 if playback.isLoading, let progress = playback.loadingProgress {
                     ProgressView(value: progress, total: 1)
@@ -1118,6 +1161,7 @@ private struct MiniPlayerBar: View {
                         get: { playback.duration > 0 ? playback.currentTime / playback.duration : 0 },
                         set: { playback.seek(to: $0) }
                     ), in: 0...1)
+                    .accessibilityLabel("Playback position")
                     .disabled(playback.duration <= 0 || playback.isLoading)
                     HStack {
                         Text(time(playback.currentTime))
@@ -1127,8 +1171,11 @@ private struct MiniPlayerBar: View {
                     .font(.caption2).monospacedDigit().foregroundStyle(.secondary)
                 }
             }
-            .frame(minWidth: 140, maxWidth: .infinity)
+            .frame(maxWidth: .infinity)
+    }
 
+    private var secondaryControls: some View {
+        HStack(spacing: 12) {
             if playback.currentTrackID != nil {
                 Button("Show extracted metadata", systemImage: "info.circle", action: showMetadata).playerIconStyle()
             }
@@ -1140,12 +1187,59 @@ private struct MiniPlayerBar: View {
                 .foregroundStyle(.secondary)
             Slider(value: Binding(get: { playback.volume }, set: { playback.setVolume(Float($0)) }), in: 0...1)
                 .frame(width: 80)
+                .accessibilityLabel("Volume")
             Button("Stop", systemImage: "stop.fill") { playback.stop() }.playerIconStyle()
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 9)
-        .background(.bar)
-        .overlay(alignment: .top) { Divider() }
+        .fixedSize()
+    }
+
+    private var queueButton: some View {
+        Button("Show Queue", systemImage: "list.bullet") { showsQueue.toggle() }
+            .playerIconStyle()
+            .popover(isPresented: $showsQueue) {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Text("Playback Queue").font(.headline)
+                        Spacer()
+                        Text("\(playback.queue.trackIDs.count) tracks").foregroundStyle(.secondary)
+                    }
+                    if playback.queue.trackIDs.isEmpty {
+                        Text("Play an album or playlist to start a queue.").foregroundStyle(.secondary)
+                    } else {
+                        ScrollViewReader { proxy in
+                            ScrollView {
+                                LazyVStack(alignment: .leading, spacing: 0) {
+                                    let titles = playback.queueTitles
+                                    ForEach(Array(playback.queue.trackIDs.indices), id: \.self) { index in
+                                        HStack(alignment: .top, spacing: 10) {
+                                            Text("\(index + 1)").monospacedDigit().foregroundStyle(.secondary).frame(width: 32)
+                                            Text(titles.indices.contains(index) ? titles[index] : "Unavailable track")
+                                                .frame(maxWidth: .infinity, alignment: .leading)
+                                            if playback.queue.currentIndex == index {
+                                                Image(systemName: playback.isPlaying ? "speaker.wave.2.fill" : "pause.circle")
+                                                    .accessibilityLabel("Current queue entry")
+                                            }
+                                        }
+                                        .padding(10)
+                                        .background(playback.queue.currentIndex == index ? Color.accentColor.opacity(0.12) : Color.clear,
+                                                    in: RoundedRectangle(cornerRadius: 8))
+                                        .id(index)
+                                    }
+                                }
+                            }
+                            .frame(maxHeight: 360)
+                            .onAppear { if let index = playback.queue.currentIndex { proxy.scrollTo(index, anchor: .center) } }
+                            .onChange(of: playback.queue.currentIndex) { _, index in
+                                if let index { proxy.scrollTo(index, anchor: .center) }
+                            }
+                        }
+                        Text("Shown in playback order. Use Previous and Next to change tracks.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                .padding(20)
+                .frame(width: 420)
+            }
     }
 
     private var repeatLabel: String {

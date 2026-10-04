@@ -4,7 +4,21 @@ Last updated: 4 October 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — R5 album-origin attachment
+## Current resume — R6 compact player and queue entry
+
+Delivered release-configuration local app: **Music Library 0.33 (build 34)** at `build/Music Library 0.33.app`, versioned through `Packaging/MusicLibraryMac-Info.plist`. Schema remains **17**. No personal catalogue/source audio was opened or modified during development validation; no normal-app launch, distribution archive or notarization was performed.
+
+The persistent mini-player now chooses a fitting wide row or compact two-row presentation. The compact top row retains title/loading identity, Previous/Play/Pause/Next, Queue and Playback Options; progress/seek and elapsed/duration occupy the full second row. Compact Playback Options contains volume, shuffle, repeat, metadata and Stop. The wide row keeps these controls directly available. Seek and volume have explicit accessibility labels. Existing DSF percentage/remaining-time/finalizing feedback, playback loading guards and audio engine paths are retained. Album Detail's existing bottom clearance is unchanged; the shell safe-area inset follows the player's new height.
+
+Queue opens a read-only popover showing actual order, track count and current-entry indicator, scrolling to that index on opening or advancement. It reads already-resolved item titles by track identity, not array position or selected album; missing identities show Unavailable track and repeated IDs retain their positions. Opening Queue never resolves source files, starts playback, changes shuffle/repeat or writes catalogue data. Rows intentionally have no selection/reorder/add actions yet. The only PlaybackController addition is a read-only presentation property; no queue execution, persistence, conversion or engine semantics were changed.
+
+Relevant files: `MusicLibraryMacApp.swift`, `PlaybackController.swift`, new `PlaybackQueuePresentation.swift` and its pure regression suite. `swift test` passes **147 Debug tests across 24 suites** and `swift test -c release` passes **144 across 23**, with the three existing DEBUG fixture tests accounting for the configuration difference. Incremental build, packaging, plist/version/strict signature and whitespace checks accompany delivery. Regressions cover shuffled order, duplicates, unresolved identities and empty queues without constructing a live controller or touching personal preferences/media. Validation logs are saved under `/private/tmp/musiclibrary-033-*.log`.
+
+Native compact/wide, keyboard, light/dark and audio/DSF acceptance remains pending. This turn did not retry the previously crashing automation helper or launch a personal app. The navigation fixture has no playable assets and cannot prove audio acceptance. Use the new R6 checklist in `MAC_AND_NAS_TESTING.md` with disposable audio/catalogue data. The integrated R5 acceptance backlog also remains open; this first R6 slice does not declare either phase fully complete.
+
+Next: current-track catalogue identity/cover and album navigation, followed by explicit queue-entry selection through the existing latest-selection-wins pipeline with queue tests. Expanded player and lyrics follow afterward. Queue editing/Play Next requires separate semantics/tests. Import-proposal release-ID association, track-specific credits/IDs, large-library performance, NAS/destructive and iPad-device acceptance remain deferred.
+
+## Previous resume — R5 album-origin attachment
 
 Delivered release-configuration local app: **Music Library 0.32 (build 33)** at `build/Music Library 0.32.app`, versioned through `Packaging/MusicLibraryMac-Info.plist`. Schema remains **17**. No personal catalogue/source audio was opened or modified during development validation; no normal-app launch, distribution archive or notarization was performed. User acceptance of R5a is recorded historically, not acceptance of the newer R5 layouts.
 
