@@ -4,7 +4,21 @@ Last updated: 4 October 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — R5b inline MusicBrainz field review
+## Current resume — R5b shared inline MusicBrainz lookup
+
+Delivered release-configuration local app: **Music Library 0.30 (build 31)** at `build/Music Library 0.30.app`, versioned through `Packaging/MusicLibraryMac-Info.plist`. Schema remains **17**. No personal catalogue/source audio was opened or changed in development checks; no normal-app launch, distribution archive or notarization was performed. User acceptance of the preceding R5a workspace is recorded below; the latest field-review/shared-lookup visual checks are not implicitly accepted.
+
+Find on MusicBrainz now expands within the selected pending import candidate instead of opening another sheet. Physical entry and digital review share `MusicBrainzReleaseLookupView` and its release-detail view. Both use Title / Artist, Barcode, Catalogue Number and Release URL modes, retaining typed input validation, trusted URL extraction, generation/cancellation guards, fixed provider origin and full-detail loading. Import uses a compact result picker to avoid a second sidebar, with Choose for Comparison instead of physical entry's Use Selected Release.
+
+Choosing retains a comparison reference and full track titles through LibraryStore, then closes lookup and shows the existing unchecked inline field review. It never applies fields or creates an album. Failed detail/save stays available for retry; choosing blocks overlapping workspace actions. Closing lookup or changing candidates invalidates pending searches. Physical selection still fills its draft through an async callback without writing an album. Explicit Save Cover JPEG remains available in import lookup as a user-chosen copy, independent of managed-cover approval. The obsolete import-only lookup/comparison/export implementation and sheet bridge are removed; no scanner, SQL, schema or source-path semantics change.
+
+Relevant files: renamed/shared `MusicBrainzReleaseLookupView.swift`, `ImportReviewWorkspace.swift`, `MusicLibraryMacApp.swift`, and strengthened `LibraryNavigationFixtureTests.swift`. `swift test` passes **142 tests across 22 suites**; `swift test -c release` passes **140 across 21** (DEBUG fixture tests differ). Final build, packaging, version/plist/signature and whitespace checks accompany delivery. The synthetic integration exercises all four lookup modes, saves/replaces the full selected release, verifies proposal fields and album count remain unchanged before explicit Apply/Add, and retains idempotent Add/retry and empty-source-directory checks. Existing parser/transport tests cover real query validation, rate limits, caching and exact API dispatch.
+
+Native UI validation is still pending because fresh-fixture retries previously crashed the automation helper on opening Import Review. No permission changes or personal-app workaround was attempted. See `MAC_AND_NAS_TESTING.md` for shared-lookup/physical-entry regression steps on disposable data, plus live provider/cover export/replacement/keyboard/appearance checks. The synthetic provider returns one deterministic two-disc/three-track result; it is not live provider acceptance. The old fixture `musiclibrary-navigation.f9ftLw` may remain open and does not contain this build.
+
+Next: **inline file-to-track attachment review**, then album-origin Attach Digital Files. Preserve compatibility/mismatch explanations, existing target metadata, transactional root-relative uniqueness and idempotent retry; never add Force Attach. Import-proposal release-ID association, structured track-specific credits/IDs, real-library performance, NAS/destructive and iPad-device acceptance remain explicitly deferred. Full R5 is not complete.
+
+## Previous resume — R5b inline MusicBrainz field review
 
 Delivered release-configuration local app: **Music Library 0.29 (build 30)** at `build/Music Library 0.29.app`, versioned through `Packaging/MusicLibraryMac-Info.plist`. Schema remains **17**. No source audio or personal catalogue was opened or modified during this slice; no normal-app launch, distribution archive or notarization was performed. The user reports the preceding 0.28 import workspace works; record this as manual R5a acceptance, not evidence for every remaining provider/layout check.
 

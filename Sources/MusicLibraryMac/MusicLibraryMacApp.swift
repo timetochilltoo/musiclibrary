@@ -2270,7 +2270,6 @@ private struct ImportBatchDetail: View {
     @State private var proposals: [ImportReleaseProposal] = []
     @State private var proposalPreviews: [UUID: ImportProposalPreview] = [:]
     @State private var proposalToAttach: ImportReleaseProposal?
-    @State private var proposalToLookUp: ImportReleaseProposal?
     @State private var selections: [UUID: ExternalMetadataSelection] = [:]
     @State private var missingAssets: [MissingAssetReview] = []
     @State private var missingAssetToConfirm: MissingAssetReview?
@@ -2404,14 +2403,17 @@ private struct ImportBatchDetail: View {
                     .disabled(isReadingMetadata)
             }
             ImportReviewWorkspace(
-                batchID: batch.id, proposals: proposals, previews: proposalPreviews, candidates: candidates, selections: selections,
+                batchID: batch.id, proposals: proposals, previews: proposalPreviews, candidates: candidates, selections: selections, library: library,
                 onAdd: { proposal in
                     let id = try await library.confirmImportReleaseProposal(proposal.id)
                     await load()
                     return id
                 },
                 onStatus: { proposal, status in try await library.setImportReleaseProposal(proposal.id, status: status); await load() },
-                onAttach: { proposalToAttach = $0 }, onLookUp: { proposalToLookUp = $0 },
+                onAttach: { proposalToAttach = $0 }, onSelectRelease: { proposal, release in
+                    try await library.saveMusicBrainzSelection(release, for: proposal.id)
+                    await load()
+                },
                 onApplyMetadata: { selection, fields in
                     try await library.applyExternalMetadataSelection(selection, fields: fields)
                     await load()
@@ -2475,9 +2477,6 @@ private struct ImportBatchDetail: View {
             case .failure(let error):
                 library.presentError(error)
             }
-        }
-        .sheet(item: $proposalToLookUp) { proposal in
-            ExternalMetadataLookupView(library: library, proposal: proposal, onSelected: { await load() })
         }
         .sheet(item: $proposalToAttach) { proposal in
             ExistingAlbumAttachmentView(library: library, proposal: proposal, onAttached: { await load() })
@@ -2797,333 +2796,6 @@ private struct ExistingAlbumAttachmentView: View {
                 isAttaching = false
                 await loadPreview()
             }
-        }
-    }
-}
-
-private struct ExternalMetadataLookupView: View {
-    @Environment(\.dismiss) private var dismiss
-    @ObservedObject var library: LibraryStore
-    let proposal: ImportReleaseProposal
-    let onSelected: () async -> Void
-    @State private var title: String
-    @State private var artist: String
-    @State private var results: [ExternalReleasePreview] = []
-    @State private var isSearching = false
-    @State private var errorMessage: String?
-    @State private var hasSearched = false
-    @State private var selectedResultID: String?
-    @State private var selectedReleaseDetail: ExternalReleasePreview?
-    @State private var isLoadingReleaseDetail = false
-    @State private var importedPreview = ImportProposalPreview(trackTitles: [], artworkURL: nil)
-    @State private var isDownloadingArtwork = false
-    @State private var artworkMessage: String?
-
-    init(library: LibraryStore, proposal: ImportReleaseProposal, onSelected: @escaping () async -> Void) {
-        self.library = library
-        self.proposal = proposal
-        self.onSelected = onSelected
-        _title = State(initialValue: proposal.title)
-        _artist = State(initialValue: proposal.artist ?? "")
-    }
-
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Search").font(.headline)
-                    Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
-                        GridRow { Text("Album title").frame(width: 96, alignment: .trailing); TextField("Album title", text: $title) }
-                        GridRow { Text("Artist (optional)").frame(width: 96, alignment: .trailing); TextField("Artist", text: $artist) }
-                    }
-                }
-                .padding(.horizontal, 24).padding(.vertical, 16)
-                HStack(spacing: 12) {
-                    Button("Search MusicBrainz") { search() }.disabled(isSearching || title.nilIfBlank == nil)
-                    Text("Only the text above is sent. Audio files are never uploaded or modified.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    Spacer()
-                }
-                .padding(.horizontal, 24).padding(.bottom, 14)
-                Divider()
-                if isSearching {
-                    Spacer(); ProgressView("Searching MusicBrainz…"); Spacer()
-                } else if hasSearched && results.isEmpty {
-                    Spacer(); ContentUnavailableView("No matching releases", systemImage: "magnifyingglass", description: Text("Try a different album title or artist.")); Spacer()
-                } else if !results.isEmpty {
-                    HStack(spacing: 0) {
-                        List(selection: $selectedResultID) {
-                            Section("Album candidates") {
-                                ForEach(results) { result in
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        Text(result.title).font(.headline).lineLimit(2)
-                                        Text([result.artist, result.releaseDate, result.countryCode, result.catalogueNumber].compactMap { $0 }.joined(separator: " · "))
-                                            .font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                                        Text("\(result.mediaCount) disc\(result.mediaCount == 1 ? "" : "s")")
-                                            .font(.caption2).foregroundStyle(.secondary)
-                                    }
-                                    .tag(result.id)
-                                }
-                            }
-                        }
-                        .frame(minWidth: 270, maxWidth: 320)
-                        Divider()
-                        MusicBrainzCandidateComparison(proposal: proposal, result: displayedResult, importedPreview: importedPreview, onDownloadArtwork: downloadArtwork, isDownloadingArtwork: isDownloadingArtwork, isLoadingTracks: isLoadingReleaseDetail)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    }
-                } else {
-                    Spacer(); ContentUnavailableView("Search MusicBrainz", systemImage: "magnifyingglass", description: Text("Search for release candidates, then compare one with this imported album.")); Spacer()
-                }
-            }
-            .navigationTitle("MusicBrainz Lookup")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Use Selected Release") { if let selectedResult { save(selectedResult) } }
-                        .disabled(selectedResult == nil)
-                }
-            }
-            .alert("Search failed", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) { Button("OK", role: .cancel) {} } message: { Text(errorMessage ?? "") }
-            .alert("Cover artwork", isPresented: Binding(get: { artworkMessage != nil }, set: { if !$0 { artworkMessage = nil } })) { Button("OK", role: .cancel) {} } message: { Text(artworkMessage ?? "") }
-        }
-        // Flexible limits let macOS provide a larger, user-resizable sheet on larger displays.
-        .frame(minWidth: 980, idealWidth: 1_200, maxWidth: 1_500, minHeight: 660, idealHeight: 800, maxHeight: 1_000)
-        .background(MusicBrainzSheetResizability())
-        .task { await loadImportedPreview() }
-        .task(id: selectedResultID) { await loadSelectedReleaseDetail() }
-    }
-
-    private var selectedResult: ExternalReleasePreview? { results.first { $0.id == selectedResultID } }
-    private var displayedResult: ExternalReleasePreview? {
-        guard let selectedResult else { return nil }
-        return selectedReleaseDetail?.id == selectedResult.id ? selectedReleaseDetail : selectedResult
-    }
-
-    private func search() {
-        isSearching = true
-        hasSearched = true
-        results = []
-        Task {
-            do {
-                results = try await library.searchMusicBrainz(title: title, artist: artist.nilIfBlank)
-                selectedReleaseDetail = nil
-                selectedResultID = results.first?.id
-            }
-            catch { errorMessage = error.localizedDescription }
-            isSearching = false
-        }
-    }
-
-    private func loadSelectedReleaseDetail() async {
-        guard let selectedResultID else { selectedReleaseDetail = nil; return }
-        isLoadingReleaseDetail = true
-        defer { isLoadingReleaseDetail = false }
-        do { selectedReleaseDetail = try await library.musicBrainzReleaseDetails(id: selectedResultID) }
-        catch { selectedReleaseDetail = nil }
-    }
-
-    private func loadImportedPreview() async {
-        importedPreview = (try? await library.importProposalPreview(proposal)) ?? .init(trackTitles: [], artworkURL: nil)
-    }
-    private func save(_ result: ExternalReleasePreview) {
-        Task {
-            do {
-                // Persist the full detail response, not the lightweight search row, so the later
-                // field-application step can safely offer MusicBrainz track titles.
-                let release = displayedResult?.id == result.id && !(displayedResult?.trackTitles.isEmpty ?? true)
-                    ? displayedResult!
-                    : try await library.musicBrainzReleaseDetails(id: result.id)
-                try await library.saveMusicBrainzSelection(release, for: proposal.id)
-                await onSelected()
-                dismiss()
-            }
-            catch { errorMessage = error.localizedDescription }
-        }
-    }
-
-    private func downloadArtwork(_ result: ExternalReleasePreview) {
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [.jpeg]
-        panel.nameFieldStringValue = "\(safeFileName(result.title)).jpg"
-        panel.message = "Save the selected MusicBrainz cover as a JPEG. This does not change the catalogue or import proposal."
-        guard panel.runModal() == .OK, let destination = panel.url, let artworkURL = result.coverArtworkURL else { return }
-        isDownloadingArtwork = true
-        Task {
-            defer { isDownloadingArtwork = false }
-            do {
-                let request = MusicNetworkRequestPolicy.request(url: artworkURL)
-                let (data, response) = try await URLSession.shared.data(for: request)
-                guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode), let image = NSImage(data: data), let tiff = image.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiff), let jpeg = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.95]) else {
-                    throw NSError(domain: "MusicLibrary", code: 1, userInfo: [NSLocalizedDescriptionKey: "MusicBrainz did not provide a usable front-cover image for this release."])
-                }
-                try jpeg.write(to: destination, options: .atomic)
-                artworkMessage = "Saved JPEG cover artwork to \(destination.lastPathComponent)."
-            } catch {
-                artworkMessage = "Could not download cover artwork: \(error.localizedDescription)"
-            }
-        }
-    }
-
-    private func safeFileName(_ value: String) -> String {
-        let invalid = CharacterSet(charactersIn: "/:\\")
-        return value.components(separatedBy: invalid).joined(separator: "-").trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlank ?? "MusicBrainz Cover"
-    }
-}
-
-private struct MusicBrainzCandidateComparison: View {
-    let proposal: ImportReleaseProposal
-    let result: ExternalReleasePreview?
-    let importedPreview: ImportProposalPreview
-
-    let onDownloadArtwork: (ExternalReleasePreview) -> Void
-    let isDownloadingArtwork: Bool
-    let isLoadingTracks: Bool
-
-    var body: some View {
-        Group {
-            if let result {
-                ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack(alignment: .top, spacing: 18) {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Imported cover").font(.caption.bold()).foregroundStyle(.secondary)
-                            importedArtwork()
-                        }
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("MusicBrainz cover").font(.caption.bold()).foregroundStyle(.secondary)
-                            coverArtwork(for: result)
-                        }
-                        VStack(alignment: .leading, spacing: 7) {
-                            Text("Compare metadata").font(.title3.bold())
-                            Text(result.title).font(.headline)
-                            Text([result.artist, result.releaseDate, result.countryCode, result.catalogueNumber].compactMap { $0 }.joined(separator: " · "))
-                                .font(.caption).foregroundStyle(.secondary)
-                            Button(isDownloadingArtwork ? "Downloading Cover…" : "Download Cover Artwork…", systemImage: "arrow.down.circle") { onDownloadArtwork(result) }
-                                .disabled(isDownloadingArtwork || result.coverArtworkURL == nil)
-                            Text("Saves only a JPEG copy you choose. It does not apply MusicBrainz metadata.")
-                                .font(.caption2).foregroundStyle(.secondary)
-                        }
-                    }
-                    Text("Review the imported values beside the selected MusicBrainz release. Choosing it still changes nothing until you press Use Selected Release, then select the fields to apply.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    Grid(alignment: .leading, horizontalSpacing: 20, verticalSpacing: 12) {
-                        GridRow {
-                            Text("Field").font(.caption.bold()).foregroundStyle(.secondary)
-                            Text("Imported album").font(.caption.bold()).foregroundStyle(.secondary)
-                            Text("Selected MusicBrainz release").font(.caption.bold()).foregroundStyle(.secondary)
-                        }
-                        Divider().gridCellColumns(3)
-                        row("Album title", proposal.title, result.title)
-                        row("Artist", proposal.artist, result.artist)
-                        row("Release date", nil, result.releaseDate)
-                        row("Country / region", proposal.countryCode, result.countryCode)
-                        row("Catalogue number", proposal.catalogueNumber, result.catalogueNumber)
-                        row("Disc count", String(proposal.discCount), String(result.mediaCount))
-                        row("Imported tracks", String(proposal.trackCount), nil)
-                    }
-                    Divider()
-                    if isLoadingTracks {
-                        HStack { ProgressView(); Text("Loading selected release tracks…").font(.caption).foregroundStyle(.secondary) }
-                    } else {
-                        TrackListComparison(importedTracks: importedPreview.trackTitles, musicBrainzTracks: result.trackTitles)
-                    }
-                    Label("Preview only — no catalogue record, import proposal, or audio file has changed.", systemImage: "eye")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                .padding(24)
-                }
-            } else {
-                ContentUnavailableView("Select an album candidate", systemImage: "rectangle.and.text.magnifyingglass", description: Text("The selected candidate's MusicBrainz metadata will appear beside the imported values."))
-            }
-        }
-    }
-
-    @ViewBuilder private func coverArtwork(for result: ExternalReleasePreview) -> some View {
-        if let url = result.coverArtworkThumbnailURL {
-            AsyncImage(url: url, transaction: .init(animation: .default)) { phase in
-                switch phase {
-                case .success(let image): image.resizable().scaledToFill()
-                case .failure:
-                    VStack(spacing: 8) {
-                        Image(systemName: "photo.badge.exclamationmark").font(.largeTitle).foregroundStyle(.secondary)
-                        Text("No MusicBrainz cover").font(.caption).multilineTextAlignment(.center).foregroundStyle(.secondary)
-                    }
-                default: ProgressView()
-                }
-            }
-            // AsyncImage's loading phase is stateful; identity must change with the selected release.
-            .id(result.id)
-            .frame(width: 130, height: 130)
-            .background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
-            .clipShape(RoundedRectangle(cornerRadius: 10))
-        }
-    }
-
-    @ViewBuilder private func importedArtwork() -> some View {
-        if let url = importedPreview.artworkURL, let image = NSImage(contentsOf: url) {
-            Image(nsImage: image).resizable().scaledToFill()
-                .frame(width: 130, height: 130)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-        } else {
-            VStack(spacing: 8) {
-                Image(systemName: "photo").font(.largeTitle).foregroundStyle(.secondary)
-                Text("No folder artwork found").font(.caption).multilineTextAlignment(.center).foregroundStyle(.secondary)
-            }
-            .frame(width: 130, height: 130)
-            .background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
-        }
-    }
-
-    @ViewBuilder private func row(_ label: String, _ imported: String?, _ musicBrainz: String?) -> some View {
-        GridRow {
-            Text(label).font(.subheadline.weight(.medium))
-            Text(imported?.nilIfBlank ?? "—").textSelection(.enabled)
-            Text(musicBrainz?.nilIfBlank ?? "—").textSelection(.enabled)
-        }
-    }
-}
-
-private struct TrackListComparison: View {
-    let importedTracks: [String]
-    let musicBrainzTracks: [String]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Track comparison").font(.headline)
-            HStack(alignment: .top, spacing: 24) {
-                trackColumn(title: "Imported tracks (\(importedTracks.count))", tracks: importedTracks, empty: "No extracted imported tracks.")
-                Divider()
-                trackColumn(title: "MusicBrainz tracks (\(musicBrainzTracks.count))", tracks: musicBrainzTracks, empty: "MusicBrainz did not return a track list.")
-            }
-        }
-    }
-
-    private func trackColumn(title: String, tracks: [String], empty: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.subheadline.bold())
-            if tracks.isEmpty { Text(empty).font(.caption).foregroundStyle(.secondary) }
-            ForEach(Array(tracks.enumerated()), id: \.offset) { index, track in
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text("\(index + 1).") .foregroundStyle(.secondary).frame(width: 28, alignment: .trailing)
-                    Text(track)
-                }
-                .font(.subheadline)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-/// SwiftUI sheets do not inherit the main window's resizable style. This bridge makes
-/// the MusicBrainz lookup sheet explicitly resizable, with sensible catalogue-review limits.
-private struct MusicBrainzSheetResizability: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView { NSView() }
-    func updateNSView(_ view: NSView, context: Context) {
-        DispatchQueue.main.async {
-            guard let window = view.window else { return }
-            window.styleMask.insert(.resizable)
-            window.minSize = .init(width: 980, height: 660)
-            window.maxSize = .init(width: 1_500, height: 1_000)
         }
     }
 }
@@ -4451,7 +4123,7 @@ private struct AlbumEditor: View {
             }.padding(20)
             Divider()
             RetainedBrowseWorkspace(showsDetail: step != .find) {
-                PhysicalAlbumMusicBrainzLookupView(library: library, title: title, artist: contributorDrafts.first?.name) { release in
+                MusicBrainzReleaseLookupView(library: library, title: title, artist: contributorDrafts.first?.name) { release in
                     guard step == .find else { return }
                     if hasReviewInput { pendingRelease = release }
                     else { applyMusicBrainzRelease(release); step = .review }

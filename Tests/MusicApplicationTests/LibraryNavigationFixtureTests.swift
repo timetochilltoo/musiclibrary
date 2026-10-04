@@ -20,7 +20,17 @@ struct LibraryNavigationFixtureTests {
         let proposals = try await store.importReleaseProposals(batchID: batch.id)
         #expect(Set(proposals.map(ImportReviewCategory.category)) == [.needsReview, .ready, .skipped, .added])
         let pending = try #require(proposals.first(where: { $0.status == .proposed }))
+        for request: MusicBrainzReleaseLookup in [.title("Synthetic", artist: "Fixture Orchestra"), .barcode("001234"), .catalogueNumber("FIXTURE", artist: nil), .releaseURL("https://musicbrainz.org/release/9383a6f5-9607-4a36-9c68-8663aad3592b")] {
+            let result = try #require(await store.lookupMusicBrainz(request).first)
+            let detail = try await store.musicBrainzReleaseDetails(id: result.id)
+            try await store.saveMusicBrainzSelection(detail, for: pending.id)
+        }
+        let unchanged = try #require(await store.importReleaseProposals(batchID: batch.id).first(where: { $0.id == pending.id }))
+        #expect(unchanged == pending)
+        #expect(store.catalogueAlbums.count == 241)
         let selection = try #require(await store.externalMetadataSelection(for: pending.id))
+        #expect(selection.trackTitles.count == 3)
+        #expect(selection.discCount == 2)
         try await store.applyExternalMetadataSelection(selection, fields: .init(title: true, artist: false, discCount: false))
         let revised = try #require(await store.importReleaseProposals(batchID: batch.id).first(where: { $0.id == pending.id }))
         #expect(revised.title == selection.title)

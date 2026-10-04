@@ -2,10 +2,12 @@ import AppKit
 import SwiftUI
 import MusicApplication
 
-struct PhysicalAlbumMusicBrainzLookupView: View {
+struct MusicBrainzReleaseLookupView: View {
     private enum SearchMode: String, CaseIterable { case title = "Title / Artist", barcode = "Barcode", catalogue = "Catalogue Number", url = "Release URL" }
     @ObservedObject var library: LibraryStore
-    let onSelected: (ExternalReleasePreview) -> Void
+    let isImportReview: Bool
+    let onBusyChange: (Bool) -> Void
+    let onSelected: (ExternalReleasePreview) async throws -> Void
 
     @State private var title: String
     @State private var artist: String
@@ -23,15 +25,21 @@ struct PhysicalAlbumMusicBrainzLookupView: View {
     @State private var isApplying = false
     @State private var hasSearched = false
     @State private var errorMessage: String?
+    @State private var isDownloadingArtwork = false
+    @State private var artworkMessage: String?
 
     init(
         library: LibraryStore,
         title: String,
         artist: String?,
-        onSelected: @escaping (ExternalReleasePreview) -> Void
+        isImportReview: Bool = false,
+        onBusyChange: @escaping (Bool) -> Void = { _ in },
+        onSelected: @escaping (ExternalReleasePreview) async throws -> Void
     ) {
         self.library = library
         self.onSelected = onSelected
+        self.isImportReview = isImportReview
+        self.onBusyChange = onBusyChange
         _title = State(initialValue: title)
         _artist = State(initialValue: artist ?? "")
     }
@@ -63,11 +71,12 @@ struct PhysicalAlbumMusicBrainzLookupView: View {
                 }
                 .padding(.horizontal, 24)
                 .padding(.top, 18)
+                .disabled(isApplying)
 
                 HStack(spacing: 12) {
                     Button("Search MusicBrainz", systemImage: "magnifyingglass") { search() }
                         .disabled(isSearching || isApplying || inputIsEmpty)
-                    Text("Only entered search text or the release ID is sent to MusicBrainz. Nothing is saved until Add Album.")
+                    Text(isImportReview ? "Only entered text or the release ID is sent. Choosing a release saves a comparison reference; fields and audio files stay unchanged." : "Only entered search text or the release ID is sent to MusicBrainz. Nothing is saved until Add Album.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Spacer()
@@ -87,6 +96,16 @@ struct PhysicalAlbumMusicBrainzLookupView: View {
                         ContentUnavailableView("No matching releases", systemImage: "magnifyingglass", description: Text("Check the lookup value, or try Title / Artist to find another pressing."))
                         Spacer()
                     } else if !results.isEmpty {
+                        if isImportReview {
+                            VStack(spacing: 8) {
+                                Picker("Release candidate", selection: $selectedResultID) {
+                                    ForEach(results) { result in
+                                        Text("\(result.title) · \(summary(for: result))").tag(Optional(result.id))
+                                    }
+                                }.padding(.horizontal, 16).disabled(isApplying)
+                                PhysicalAlbumMusicBrainzReleaseDetail(result: displayedResult, isLoading: isLoadingReleaseDetail, isImportReview: true)
+                            }
+                        } else {
                         HStack(spacing: 0) {
                             List(selection: $selectedResultID) {
                                 Section("Release candidates") {
@@ -118,17 +137,22 @@ struct PhysicalAlbumMusicBrainzLookupView: View {
                             )
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                         }
+                        }
                     } else {
                         Spacer()
-                        ContentUnavailableView("Find a physical release", systemImage: "opticaldisc", description: Text("Search by title, barcode or catalogue number, or paste a MusicBrainz release URL. Choose the matching pressing to fill Review."))
+                        ContentUnavailableView("Find a release", systemImage: "opticaldisc", description: Text(isImportReview ? "Search explicitly, review the pressing, then choose a release for field comparison." : "Search by title, barcode or catalogue number, or paste a MusicBrainz release URL. Choose the matching pressing to fill Review."))
                         Spacer()
                     }
                 }
             }
             .safeAreaInset(edge: .bottom) {
                 HStack {
+                    if isImportReview, let result = displayedResult {
+                        Button(isDownloadingArtwork ? "Downloading Cover…" : "Save Cover JPEG…") { downloadArtwork(result) }
+                            .disabled(isDownloadingArtwork || isApplying || result.coverArtworkURL == nil)
+                    }
                     Spacer()
-                    Button(isApplying ? "Applying…" : "Use Selected Release") { useSelectedRelease() }
+                    Button(isApplying ? "Loading Selection…" : (isImportReview ? "Choose for Comparison" : "Use Selected Release")) { useSelectedRelease() }
                         .disabled(selectedResult == nil || isApplying || isSearching)
                         .buttonStyle(.borderedProminent)
                 }
@@ -139,6 +163,9 @@ struct PhysicalAlbumMusicBrainzLookupView: View {
             } message: {
                 Text(errorMessage ?? "")
             }
+            .alert("Cover artwork", isPresented: Binding(get: { artworkMessage != nil }, set: { if !$0 { artworkMessage = nil } })) {
+                Button("OK", role: .cancel) {}
+            } message: { Text(artworkMessage ?? "") }
         .task(id: selectedResultID) { await loadSelectedReleaseDetail() }
         .onChange(of: mode) { _, _ in
             searchGeneration += 1
@@ -151,7 +178,7 @@ struct PhysicalAlbumMusicBrainzLookupView: View {
             isLoadingReleaseDetail = false
             errorMessage = nil
         }
-        .onDisappear { searchTask?.cancel() }
+        .onDisappear { searchGeneration += 1; searchTask?.cancel() }
     }
 
     private var inputLabel: String {
@@ -238,16 +265,38 @@ struct PhysicalAlbumMusicBrainzLookupView: View {
     private func useSelectedRelease() {
         guard let selectedResult, !isApplying else { return }
         isApplying = true
+        onBusyChange(true)
         Task {
+            defer { isApplying = false; onBusyChange(false) }
             do {
                 let release = selectedReleaseDetail?.id == selectedResult.id
                     ? selectedReleaseDetail!
                     : try await library.musicBrainzReleaseDetails(id: selectedResult.id)
-                onSelected(release)
+                try await onSelected(release)
             } catch {
                 errorMessage = error.localizedDescription
             }
-            isApplying = false
+        }
+    }
+
+    // Explicit JPEG export retained from import lookup; independent of field approval.
+    private func downloadArtwork(_ result: ExternalReleasePreview) {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.jpeg]
+        panel.nameFieldStringValue = result.title.components(separatedBy: CharacterSet(charactersIn: "/:\\")).joined(separator: "-") + ".jpg"
+        panel.message = "Save a JPEG copy only. This does not change the proposal or catalogue cover."
+        guard panel.runModal() == .OK, let destination = panel.url, let artworkURL = result.coverArtworkURL else { return }
+        isDownloadingArtwork = true
+        Task {
+            defer { isDownloadingArtwork = false }
+            do {
+                let (data, response) = try await URLSession.shared.data(for: MusicNetworkRequestPolicy.request(url: artworkURL))
+                guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode), let image = NSImage(data: data), let tiff = image.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiff), let jpeg = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.95]) else {
+                    throw NSError(domain: "MusicLibrary", code: 1, userInfo: [NSLocalizedDescriptionKey: "MusicBrainz did not provide a usable front-cover image."])
+                }
+                try jpeg.write(to: destination, options: .atomic)
+                artworkMessage = "Saved JPEG cover artwork to \(destination.lastPathComponent)."
+            } catch { artworkMessage = "Could not save cover artwork: \(error.localizedDescription)" }
         }
     }
 }
@@ -255,6 +304,7 @@ struct PhysicalAlbumMusicBrainzLookupView: View {
 private struct PhysicalAlbumMusicBrainzReleaseDetail: View {
     let result: ExternalReleasePreview?
     let isLoading: Bool
+    var isImportReview = false
 
     var body: some View {
         Group {
@@ -273,7 +323,7 @@ private struct PhysicalAlbumMusicBrainzReleaseDetail: View {
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                                     .textSelection(.enabled)
-                                Text("Use Selected Release fills the Review step. Nothing is saved until Add Album.")
+                                Text(isImportReview ? "Choose for Comparison retains this release reference. Only explicitly checked fields are applied in the import review area." : "Use Selected Release fills the Review step. Nothing is saved until Add Album.")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }

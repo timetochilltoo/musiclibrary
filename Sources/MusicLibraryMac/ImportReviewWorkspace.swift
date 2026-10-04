@@ -9,10 +9,11 @@ struct ImportReviewWorkspace: View {
     let previews: [UUID: ImportProposalPreview]
     let candidates: [ImportCandidate]
     let selections: [UUID: ExternalMetadataSelection]
+    let library: LibraryStore
     let onAdd: (ImportReleaseProposal) async throws -> AlbumID
     let onStatus: (ImportReleaseProposal, ImportProposalStatus) async throws -> Void
     let onAttach: (ImportReleaseProposal) -> Void
-    let onLookUp: (ImportReleaseProposal) -> Void
+    let onSelectRelease: (ImportReleaseProposal, ExternalReleasePreview) async throws -> Void
     let onApplyMetadata: (ExternalMetadataSelection, ExternalMetadataFieldSelection) async throws -> Void
     let onOpenAlbum: (AlbumID) -> Void
     @AppStorage private var savedCategory: String
@@ -21,10 +22,12 @@ struct ImportReviewWorkspace: View {
     @State private var isBusy = false
     @State private var errorMessage: String?
     @State private var lastAdded: (title: String, id: AlbumID)?
+    @State private var showsLookup = false
 
-    init(batchID: ImportBatchID, proposals: [ImportReleaseProposal], previews: [UUID: ImportProposalPreview], candidates: [ImportCandidate], selections: [UUID: ExternalMetadataSelection], onAdd: @escaping (ImportReleaseProposal) async throws -> AlbumID, onStatus: @escaping (ImportReleaseProposal, ImportProposalStatus) async throws -> Void, onAttach: @escaping (ImportReleaseProposal) -> Void, onLookUp: @escaping (ImportReleaseProposal) -> Void, onApplyMetadata: @escaping (ExternalMetadataSelection, ExternalMetadataFieldSelection) async throws -> Void, onOpenAlbum: @escaping (AlbumID) -> Void) {
+    init(batchID: ImportBatchID, proposals: [ImportReleaseProposal], previews: [UUID: ImportProposalPreview], candidates: [ImportCandidate], selections: [UUID: ExternalMetadataSelection], library: LibraryStore, onAdd: @escaping (ImportReleaseProposal) async throws -> AlbumID, onStatus: @escaping (ImportReleaseProposal, ImportProposalStatus) async throws -> Void, onAttach: @escaping (ImportReleaseProposal) -> Void, onSelectRelease: @escaping (ImportReleaseProposal, ExternalReleasePreview) async throws -> Void, onApplyMetadata: @escaping (ExternalMetadataSelection, ExternalMetadataFieldSelection) async throws -> Void, onOpenAlbum: @escaping (AlbumID) -> Void) {
         self.batchID = batchID; self.proposals = proposals; self.previews = previews; self.candidates = candidates; self.selections = selections
-        self.onAdd = onAdd; self.onStatus = onStatus; self.onAttach = onAttach; self.onLookUp = onLookUp; self.onApplyMetadata = onApplyMetadata; self.onOpenAlbum = onOpenAlbum
+        self.library = library
+        self.onAdd = onAdd; self.onStatus = onStatus; self.onAttach = onAttach; self.onSelectRelease = onSelectRelease; self.onApplyMetadata = onApplyMetadata; self.onOpenAlbum = onOpenAlbum
         _savedCategory = AppStorage(wrappedValue: ImportReviewCategory.all.rawValue, "MusicLibrary.importReview.\(batchID).category")
         _savedSelection = AppStorage(wrappedValue: "", "MusicLibrary.importReview.\(batchID).selection")
     }
@@ -80,7 +83,7 @@ struct ImportReviewWorkspace: View {
         .onAppear { restoreSelection() }
         .onChange(of: proposals) { _, _ in restoreSelection() }
         .onChange(of: savedCategory) { _, _ in restoreSelection() }
-        .onChange(of: selectedID) { _, id in savedSelection = id?.uuidString ?? ""; errorMessage = nil }
+        .onChange(of: selectedID) { _, id in savedSelection = id?.uuidString ?? ""; errorMessage = nil; showsLookup = false }
     }
 
     private var candidateList: some View {
@@ -107,6 +110,16 @@ struct ImportReviewWorkspace: View {
                         }
                     }
                     actionControls(proposal)
+                    if showsLookup, proposal.createdAlbumID == nil, proposal.status != .dismissed {
+                        GroupBox("Find on MusicBrainz") {
+                            MusicBrainzReleaseLookupView(library: library, title: proposal.title, artist: proposal.artist, isImportReview: true, onBusyChange: { isBusy = $0 }) { release in
+                                try await onSelectRelease(proposal, release)
+                                showsLookup = false
+                            }
+                            .id(proposal.id)
+                            .frame(height: 620)
+                        }
+                    }
                     if proposal.createdAlbumID == nil, proposal.status != .dismissed, let selection = selections[proposal.id] {
                         ImportMetadataReviewView(proposal: proposal, selection: selection, importedTracks: previews[proposal.id]?.trackTitles ?? []) { selection, fields in
                             guard !isBusy else { return }
@@ -158,7 +171,7 @@ struct ImportReviewWorkspace: View {
                 }
             }
             HStack {
-                Button("Find on MusicBrainz…", systemImage: "magnifyingglass") { onLookUp(proposal) }
+                Button(showsLookup ? "Close MusicBrainz Lookup" : "Find on MusicBrainz", systemImage: "magnifyingglass") { showsLookup.toggle() }
                 if selections[proposal.id] != nil { Text("Selected release fields are below").font(.caption).foregroundStyle(.secondary) }
             }
         }

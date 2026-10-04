@@ -814,6 +814,8 @@ Flow:
 
 Import workspace: compact candidate list at left, selected album review at right on wide screens; single-page navigation at narrow widths. Show cover/title/artist and a concise pressing summary. Raw tags, paths, scan logs, and batch IDs belong in Details.
 
+R5b lookup checkpoint (4 October 2026): Find on MusicBrainz expands within the selected candidate. Import and physical entry share the four-mode lookup and release-detail component; import uses a compact result picker and Choose for Comparison. Choosing retains full release metadata but never applies fields or adds an album. Failed selection remains open for retry; closing lookup or changing candidates cancels search, and selection blocks overlapping workspace mutations. Explicit cover JPEG export remains separate from managed-cover approval. File attachment remains a dialog; inline pairing and album-origin attachment are next.
+
 MusicBrainz matching belongs within the selected candidate review workspace. Use a shared candidate/detail component with physical entry, but preserve different save semantics: physical entry creates a new draft; digital review applies explicitly selected proposal fields before final import.
 
 Attachment:
