@@ -820,6 +820,8 @@ MusicBrainz matching belongs within the selected candidate review workspace. Use
 
 Attachment:
 
+R5b attachment checkpoint (4 October 2026): Link to Existing Album expands target search/selection and every file-to-track pair inside Import Review. Acknowledgment is required before explicit Attach; changing target, proposal or catalogue revision invalidates the preview and acknowledgment. Preview responses are cancellation/token guarded. Compatibility failures remain explained, with Review Matching or Return to Add a Separate Album, never Force Attach. Success shows Linked/Open Album and advances to a pending candidate. Target selection uses the full active catalogue rather than current browse filters. Existing transaction/retry/source-safety services are unchanged. Album-origin attachment remains the next slice; native visual acceptance is pending.
+
 - From an existing album, Attach digital files opens this workflow with that album as the intended target.
 - Still show file-to-track pairing and existing compatibility failures.
 - Revalidate compatibility and root-relative path uniqueness transactionally.

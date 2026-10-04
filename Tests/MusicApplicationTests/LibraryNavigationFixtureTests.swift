@@ -6,6 +6,36 @@ import Testing
 @Suite("Navigation fixture")
 @MainActor
 struct LibraryNavigationFixtureTests {
+    @Test("Attachment preview is read-only and explicit attachment preserves the target and retries idempotently")
+    func attachmentReview() async throws {
+        let fixture = try await LibraryStore.makeNavigationFixture(includeImportReview: true)
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+        let store = fixture.store
+        let batch = try #require(store.importBatches.first)
+        let proposal = try #require(await store.importReleaseProposals(batchID: batch.id).first(where: { $0.status == .proposed }))
+        let target = try #require(store.catalogueAlbums.first(where: { $0.title == "Fixture Album 001" }))
+        let credits = try await store.albumContributors(albumID: target.id)
+        let revision = store.catalogueRevision
+        let preview = try await store.importAttachmentPreview(proposalID: proposal.id, albumID: target.id)
+        #expect(preview.isCompatible && preview.pairs.count == 1)
+        #expect(store.catalogueRevision == revision && store.catalogueAlbums.count == 241)
+        #expect(try await store.attachImportReleaseProposal(proposal.id, to: target.id) == target.id)
+        let attachedRevision = store.catalogueRevision
+        #expect(attachedRevision == revision + 1)
+        #expect(try await store.attachImportReleaseProposal(proposal.id, to: target.id) == target.id)
+        #expect(store.catalogueRevision == attachedRevision)
+        var after = try #require(store.catalogueAlbums.first(where: { $0.id == target.id }))
+        // Populating empty structure legitimately updates its modification time.
+        after.updatedAt = target.updatedAt
+        #expect(after == target)
+        #expect(try await store.albumContributors(albumID: target.id) == credits)
+        #expect(store.catalogueAlbums.count == 241)
+        let completed = try #require(await store.importReleaseProposals(batchID: batch.id).first(where: { $0.id == proposal.id }))
+        #expect(completed.createdAlbumID == target.id)
+        let root = try #require(store.storageRoots.first)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: root.lastKnownPath).isEmpty)
+    }
+
     @Test("Import review fixtures use only offline metadata references below a disposable root")
     func importReview() async throws {
         let fixture = try await LibraryStore.makeNavigationFixture(includeImportReview: true)
