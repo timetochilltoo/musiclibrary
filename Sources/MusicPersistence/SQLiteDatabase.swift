@@ -2195,6 +2195,36 @@ public actor MusicDatabase {
         return values
     }
 
+    /// Catalogue-only queue identity lookup. Chunked to stay within SQLite bind limits.
+    public func playbackAlbumIDs(trackIDs: [TrackID]) throws -> [TrackID: AlbumID] {
+        let ids = Array(Set(trackIDs))
+        var values: [TrackID: AlbumID] = [:]
+        for start in stride(from: 0, to: ids.count, by: 400) {
+            try Task.checkCancellation()
+            let batch = Array(ids[start..<min(start + 400, ids.count)])
+            let placeholders = Array(repeating: "?", count: batch.count).joined(separator: ",")
+            let statement = try Self.prepare("""
+                SELECT track.id, album.id FROM track
+                JOIN disc ON disc.id = track.disc_id
+                JOIN album ON album.id = disc.album_id
+                WHERE album.deleted_at IS NULL AND track.id IN (\(placeholders));
+                """, on: connection)
+            defer { sqlite3_finalize(statement) }
+            for (index, id) in batch.enumerated() { try Self.bind(id.description, at: Int32(index + 1), to: statement) }
+            var result = sqlite3_step(statement)
+            while result == SQLITE_ROW {
+                guard let rawTrack = Self.text(at: 0, from: statement), let trackUUID = UUID(uuidString: rawTrack),
+                      let rawAlbum = Self.text(at: 1, from: statement), let albumUUID = UUID(uuidString: rawAlbum) else {
+                    throw DatabaseError.invalidIdentifier("Playback album")
+                }
+                values[TrackID(rawValue: trackUUID)] = AlbumID(rawValue: albumUUID)
+                result = sqlite3_step(statement)
+            }
+            guard result == SQLITE_DONE else { throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(connection))) }
+        }
+        return values
+    }
+
     /// Two batched queries; no per-album query or filesystem access.
     public func albumBrowseSummaries() throws -> [AlbumID: AlbumBrowseSummary] {
         let artists = try Self.prepare("""

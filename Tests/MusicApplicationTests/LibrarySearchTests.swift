@@ -8,6 +8,38 @@ import MusicPersistence
 @Suite("Library search")
 @MainActor
 struct LibrarySearchTests {
+    @Test("Playback identities remain independent of browse search and use cached artist/cover summaries")
+    func playbackIdentityOutsideSearch() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let database = try MusicDatabase(url: directory.appending(path: "fixture.sqlite"))
+        try await database.migrate()
+        let album = try await database.createAlbum(.init(title: "Playing album"), in: nil, contributors: [
+            .init(name: "Artist", role: .albumArtist, creditedName: "Credited artist")
+        ])
+        let disc = try await database.createDisc(albumID: album.id)
+        let track = try await database.createTrack(discID: disc.id, draft: .init(title: "Playing track"))
+        let absentCover = directory.appending(path: "absent-cover.jpg").path
+        _ = try await database.addAlbumArtwork(albumID: album.id, localPath: absentCover)
+        let store = LibraryStore(database: database)
+        try await store.reload()
+        await store.search("no results")
+        let revision = store.catalogueRevision
+        #expect(store.albums.isEmpty)
+        #expect(try await store.playbackAlbumIDs(trackIDs: [track.id]) == [track.id: album.id])
+        #expect(store.albumBrowseSummaries[album.id]?.artist == "Credited artist")
+        #expect(store.albumFrontArtworkPaths[album.id] == absentCover)
+        #expect(store.catalogueAlbums.map(\.id) == [album.id])
+        #expect(store.catalogueRevision == revision)
+        #expect(!FileManager.default.fileExists(atPath: absentCover))
+        #expect(!store.isSnapshotPublishPending)
+        try await store.softDeleteAlbum(album.id)
+        #expect(try await store.playbackAlbumIDs(trackIDs: [track.id]).isEmpty)
+        #expect(store.catalogueAlbums.isEmpty)
+        #expect(store.albumFrontArtworkPaths[album.id] == nil)
+        try await store.restoreAlbum(album.id)
+        #expect(try await store.playbackAlbumIDs(trackIDs: [track.id]) == [track.id: album.id])
+    }
     @Test("Search does not republish catalogue summaries or change revision; clearing uses the cached catalogue")
     func lightweightSearch() async throws {
         let directory = try temporaryDirectory()

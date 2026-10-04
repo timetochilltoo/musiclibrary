@@ -836,6 +836,8 @@ Do not perform online searches for every scanned album automatically. â€œReadyâ€
 
 ### 12.11 Player, queue, and lyrics
 
+R6 identity checkpoint (4 October 2026): the player now resolves queued track-to-album identities in chunked catalogue-only reads, then reuses cached album-artist and selected-cover summaries. Identity follows currentTrackID rather than browse selection; queue/revision requests and cover reads reject stale/cancelled results. Cover/title opens Album Detail without playback changes and Back retains the origin, including Playlists and Locations. Missing/deleted identities or read failures retain a non-navigable placeholder. Native artwork/navigation acceptance remains pending; queue selection, editing, expanded player and lyrics remain subsequent work.
+
 R6 first checkpoint (4 October 2026): the mini-player uses a fitting single-row layout at wide widths and a two-row layout with full-width progress at compact widths. Volume, shuffle, repeat, Stop and Audio Details move into Playback Options in compact mode. Queue stays directly accessible in both layouts and displays actual order, current index and unavailable entries from already-resolved playback data, without filesystem access or autoplay. Queue is read-only in this slice; selection, editing, current-track album/artwork identity, expanded player and lyrics remain subsequent work. Native compact/wide, keyboard and appearance acceptance is pending.
 
 Compact player has cover/title/artist at left, transport/progress centrally, volume and Queue at right. Click identity to open its album or expanded player. At compact widths, move volume and secondary repeat/shuffle controls into an accessible popover. Stop may be secondary; Pause stays prominent.

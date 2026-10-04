@@ -5,6 +5,26 @@ import Testing
 
 @Suite("Music database")
 struct MusicDatabaseTests {
+    @Test("Playback album lookup is batched, read-only and excludes deleted or unknown identities")
+    func playbackAlbumIdentity() async throws {
+        let database = try MusicDatabase(url: temporaryDatabaseURL())
+        try await database.migrate()
+        let first = try await database.createAlbum(.init(title: "First"))
+        let second = try await database.createAlbum(.init(title: "Second"))
+        let firstDisc = try await database.createDisc(albumID: first.id)
+        let secondDisc = try await database.createDisc(albumID: second.id)
+        let firstTrack = try await database.createTrack(discID: firstDisc.id, draft: .init(title: "Same track title"))
+        let secondTrack = try await database.createTrack(discID: secondDisc.id, draft: .init(title: "Same track title"))
+        let revision = try await database.currentRevision()
+        // More than one bind batch, without creating hundreds of unrelated records.
+        let missing = (0..<405).map { _ in TrackID() }
+        let identities = try await database.playbackAlbumIDs(trackIDs: missing + [secondTrack.id, firstTrack.id, secondTrack.id])
+        #expect(identities == [firstTrack.id: first.id, secondTrack.id: second.id])
+        #expect(try await database.playbackAlbumIDs(trackIDs: []).isEmpty)
+        #expect(try await database.currentRevision() == revision)
+        try await database.softDeleteAlbum(second.id)
+        #expect(try await database.playbackAlbumIDs(trackIDs: [firstTrack.id, secondTrack.id]) == [firstTrack.id: first.id])
+    }
     @Test("Browse summaries prefer ordered album artists and distinguish physical track lists from digital copies")
     func browseArtistsAndPhysicalTracks() async throws {
         let database = try MusicDatabase(url: temporaryDatabaseURL())

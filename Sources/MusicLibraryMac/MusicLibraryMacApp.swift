@@ -300,7 +300,7 @@ private struct LibraryShellView: View {
         }
         .safeAreaInset(edge: .bottom) {
             if playback.isPlaying || playback.currentTitle != "Nothing playing" {
-                MiniPlayerBar(playback: playback) {
+                MiniPlayerBar(library: library, playback: playback, openAlbum: { selectedAlbumID = $0 }) {
                     if let trackID = playback.currentTrackID {
                         metadataSelection = .init(trackID: trackID, title: playback.currentTitle)
                     }
@@ -373,7 +373,10 @@ private struct LibraryShellView: View {
                     .disabled(selectedAlbumID != nil)
             } detail: { albumDetail }
         case .playlists:
-            if selectedPlaylistID == nil { content } else { detail }
+            RetainedBrowseWorkspace(showsDetail: selectedAlbumID != nil) {
+                Group { if selectedPlaylistID == nil { content } else { detail } }
+                    .disabled(selectedAlbumID != nil)
+            } detail: { albumDetail }
         case .settings:
             RetainedBrowseWorkspace(showsDetail: selectedAlbumID != nil) {
                 SettingsWorkspace(
@@ -389,7 +392,9 @@ private struct LibraryShellView: View {
                 .disabled(selectedAlbumID != nil)
             } detail: { albumDetail }
         case .locations, .none:
-            content
+            RetainedBrowseWorkspace(showsDetail: selectedAlbumID != nil) {
+                content.disabled(selectedAlbumID != nil)
+            } detail: { albumDetail }
         }
     }
 
@@ -749,6 +754,9 @@ private struct LibraryShellView: View {
                 title = library.boxSets.first(where: { $0.id == selectedBoxSetID })?.title ?? "Box Sets"
             case .settings: title = settingsCategory.title
             case .importInbox: title = "Import Review"
+            case .playlists:
+                title = library.playlists.first(where: { $0.id == selectedPlaylistID })?.name ?? "Playlists"
+            case .locations: title = "Locations"
             default: title = "Albums"
             }
             return (title, { selectedAlbumID = nil })
@@ -1013,10 +1021,11 @@ private struct AlbumBrowseAvailability: View {
 struct AlbumArtworkImage: View {
     let path: String?
     @State private var image: NSImage?
+    @State private var loadedPath: String?
 
     var body: some View {
         Group {
-            if let image {
+            if let image, loadedPath == path {
                 Image(nsImage: image).resizable().scaledToFill()
             } else {
                 ZStack {
@@ -1034,9 +1043,12 @@ struct AlbumArtworkImage: View {
         .clipped()
         .task(id: path) {
             image = nil
+            loadedPath = nil
             guard let path else { return }
             let data = await Task.detached(priority: .utility) { try? Data(contentsOf: URL(fileURLWithPath: path)) }.value
+            guard !Task.isCancelled else { return }
             if let data { image = NSImage(data: data) }
+            loadedPath = path
         }
     }
 }
@@ -1065,10 +1077,29 @@ private struct AlbumSourceBadges: View {
 }
 
 private struct MiniPlayerBar: View {
+    @ObservedObject var library: LibraryStore
     @ObservedObject var playback: PlaybackController
+    let openAlbum: (AlbumID) -> Void
     let showMetadata: () -> Void
     @State private var showsOptions = false
     @State private var showsQueue = false
+    @State private var albumIDsByTrack: [TrackID: AlbumID] = [:]
+    @State private var resolvedIdentityRequest: IdentityRequest?
+
+    private struct IdentityRequest: Hashable {
+        let trackIDs: [TrackID]
+        let revision: Int64
+    }
+
+    private var identityRequest: IdentityRequest {
+        .init(trackIDs: playback.queue.trackIDs, revision: library.catalogueRevision)
+    }
+
+    private var currentAlbum: Album? {
+        guard resolvedIdentityRequest == identityRequest else { return nil }
+        guard let trackID = playback.currentTrackID, let albumID = albumIDsByTrack[trackID] else { return nil }
+        return library.catalogueAlbums.first { $0.id == albumID }
+    }
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
@@ -1101,29 +1132,58 @@ private struct MiniPlayerBar: View {
         .padding(.vertical, 9)
         .background(.bar)
         .overlay(alignment: .top) { Divider() }
+        .task(id: identityRequest) {
+            let request = identityRequest
+            do {
+                let values = try await library.playbackAlbumIDs(trackIDs: request.trackIDs)
+                guard !Task.isCancelled, request == identityRequest else { return }
+                albumIDsByTrack = values
+                resolvedIdentityRequest = request
+            } catch {
+                guard !Task.isCancelled, request == identityRequest else { return }
+                albumIDsByTrack = [:]
+                resolvedIdentityRequest = request
+            }
+        }
     }
 
     private var identity: some View {
-        HStack(spacing: 16) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 8).fill(.quaternary)
-                if playback.isLoading {
-                    ProgressView()
-                        .controlSize(.small)
-                } else {
-                    Image(systemName: playback.isPlaying ? "waveform" : "music.note")
-                        .foregroundStyle(.secondary)
+        Button {
+            if let album = currentAlbum { openAlbum(album.id) }
+        } label: {
+            HStack(spacing: 16) {
+                ZStack {
+                    AlbumArtworkImage(path: currentAlbum.flatMap { library.albumFrontArtworkPaths[$0.id] })
+                        .frame(width: 46, height: 46)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                    if playback.isLoading {
+                        ProgressView()
+                            .controlSize(.small)
+                            .padding(5)
+                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
+                    }
                 }
-            }
-            .frame(width: 46, height: 46)
+                .frame(width: 46, height: 46)
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text(playerTitle).font(.headline).lineLimit(1)
-                Text(playback.isLoading ? loadingDetail : (playback.audioFormatDescription ?? "Ready to play"))
-                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(playerTitle).font(.headline).lineLimit(1)
+                    Text(playback.isLoading ? loadingDetail : artistAndAlbum)
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+                .frame(minWidth: 100, maxWidth: 280, alignment: .leading)
             }
-            .frame(minWidth: 100, maxWidth: 280, alignment: .leading)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .disabled(currentAlbum == nil)
+        .help(currentAlbum.map { "Open \($0.displayTitle)" } ?? "Album unavailable")
+        .accessibilityLabel(currentAlbum.map { "Open album: \($0.displayTitle). \(playerTitle)" } ?? playerTitle)
+    }
+
+    private var artistAndAlbum: String {
+        guard let album = currentAlbum else { return playback.audioFormatDescription ?? "Ready to play" }
+        let artist = library.albumBrowseSummaries[album.id]?.artist
+        return [artist, album.displayTitle].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
     private var transport: some View {

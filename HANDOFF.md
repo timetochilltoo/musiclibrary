@@ -4,7 +4,23 @@ Last updated: 4 October 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — R6 compact player and queue entry
+## Current resume — R6 player artwork and album navigation
+
+Delivered release-configuration local app: **Music Library 0.34 (build 35)** at `build/Music Library 0.34.app`, versioned through `Packaging/MusicLibraryMac-Info.plist`. Schema remains **17**. Development checks used temporary catalogues only; no personal catalogue/source audio was opened or modified, no normal-app launch was performed, and no distribution archive/notarization was added.
+
+The mini-player replaces the generic music icon with the current track's selected album cover and shows credited album artist plus album/edition title. Cover/title is a keyboard-accessible Open Album button. Identity is keyed by PlaybackController.currentTrackID, never the album being browsed or filtered search results. The existing loading title, spinner, progress and DSF feedback remain. Absent artwork uses the existing placeholder; missing/deleted album identities or lookup errors disable album navigation rather than guessing a target. Playback order, queue selection, conversion and engine semantics are unchanged.
+
+`MusicDatabase.playbackAlbumIDs` performs catalogue-only identity reads in batches of at most 400 unique bound IDs, excludes deleted albums, checks cancellation between batches and rejects SQLite execution errors. LibraryStore exposes this read without reload, publication or source resolution. The player caches the returned map for its queue/revision request and joins existing full-catalogue artist and selected-artwork summaries. A request mismatch immediately hides the old identity, and cancelled/stale completions cannot republish it. The shared artwork image view renders only its loaded path and rejects cancelled reads, preventing an older cover response from overwriting a newer path. Reading selected artwork does not modify source files.
+
+Clicking identity opens Album Detail inside the originating workspace without starting/restarting playback. Playlists and Locations now use the retained album-route container like the other destinations, with correct Back labels; hidden origin controls remain disabled. Sidebar changes retain their existing route-clearing behavior. The Queue popover remains deliberately read-only in this slice.
+
+Relevant files: `SQLiteDatabase.swift`, `LibraryStore.swift`, `MusicLibraryMacApp.swift`, persistence/application identity regressions and the R6 manual checklist. `swift test` passes **149 tests across 24 suites**; `swift test -c release` passes **146 across 23** (three existing DEBUG fixture tests differ). Final incremental build, packaging and plist/version/strict signature/whitespace verification accompany delivery. Logs are under `/private/tmp/musiclibrary-034-*.log`. Temporary regressions cover multiple bind batches, same-title tracks from distinct albums, duplicate/missing IDs, unchanged revision, search independence, credited artist, absent cover paths and delete/restore. No test creates a live PlaybackController or probes personal media.
+
+Native compact/wide, artwork timing, keyboard/appearance and cross-origin playback navigation acceptance remain pending. The previously crashing automation helper was not retried and the personal app was not launched. A navigation fixture without digital assets cannot prove these audio checks. Follow `MAC_AND_NAS_TESTING.md` using disposable audio/catalogue fixtures; integrated R5 acceptance also remains open.
+
+Next: explicit Queue-entry selection preserving actual order, shuffle/repeat and latest-selection-wins loading through the existing resolved pipeline, with meaningful queue tests. Expanded player and lyrics follow. Queue editing/Play Next, import release-ID association, track-specific credits/IDs, large-library performance, NAS/destructive and iPad-device checks remain deferred.
+
+## Previous resume — R6 compact player and queue entry
 
 Delivered release-configuration local app: **Music Library 0.33 (build 34)** at `build/Music Library 0.33.app`, versioned through `Packaging/MusicLibraryMac-Info.plist`. Schema remains **17**. No personal catalogue/source audio was opened or modified during development validation; no normal-app launch, distribution archive or notarization was performed.
 

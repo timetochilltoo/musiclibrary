@@ -280,6 +280,10 @@ public final class LibraryStore: ObservableObject {
 
     public func discs(albumID: AlbumID) async throws -> [Disc] { guard let database else { throw DatabaseError.notFound("Catalogue database") }; return try await database.discs(albumID: albumID) }
     public func tracks(discID: DiscID) async throws -> [Track] { guard let database else { throw DatabaseError.notFound("Catalogue database") }; return try await database.tracks(discID: discID) }
+    public func playbackAlbumIDs(trackIDs: [TrackID]) async throws -> [TrackID: AlbumID] {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        return try await database.playbackAlbumIDs(trackIDs: trackIDs)
+    }
     public func albumContributors(albumID: AlbumID) async throws -> [ContributorCredit] { guard let database else { throw DatabaseError.notFound("Catalogue database") }; return try await database.albumContributors(albumID: albumID) }
     public func albums(creditedTo contributorID: ContributorID) async throws -> [Album] { guard let database else { throw DatabaseError.notFound("Catalogue database") }; return try await database.albums(creditedTo: contributorID) }
     public func trackContributors(trackID: TrackID) async throws -> [ContributorCredit] { guard let database else { throw DatabaseError.notFound("Catalogue database") }; return try await database.trackContributors(trackID: trackID) }
