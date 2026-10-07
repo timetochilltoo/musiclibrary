@@ -13,11 +13,13 @@ struct PlaybackQueueSelectionTests {
         let controller = fixture.controller
         let original = controller.queue
         #expect(fixture.loader.requests.isEmpty && !controller.isLoading && !controller.isPlaying)
+        #expect(controller.lyricsTime == nil) // Restored metadata is not an active audio clock.
         try controller.playQueueEntry(at: 2, expectedTrackID: original.trackIDs[2])
         #expect(controller.queue.currentIndex == 2)
         #expect(controller.queue.trackIDs == original.trackIDs)
         #expect(controller.queue.isShuffled && controller.queue.repeatMode == .one)
         #expect(controller.currentTitle == "First" && controller.isLoading)
+        #expect(controller.lyricsTime == nil) // Never highlight a CUE against the previous player's time.
         let data = try #require(fixture.preferences.data(forKey: "MusicLibrary.playbackQueue"))
         #expect(try JSONDecoder().decode(PlaybackQueue.self, from: data) == controller.queue)
         #expect(fixture.loader.requests.count == 1)
@@ -83,6 +85,7 @@ struct PlaybackQueueSelectionTests {
         try await Task.sleep(for: .milliseconds(30))
         #expect(controller.queue == selected && !controller.isLoading && !controller.isPlaying)
         #expect(controller.loadingProgress == nil && controller.errorMessage == nil)
+        #expect(controller.lyricsTime == nil)
     }
 
     private func waitUntil(_ predicate: () -> Bool) async throws {

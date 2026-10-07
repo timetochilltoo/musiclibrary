@@ -1,4 +1,5 @@
 import Combine
+import Foundation
 import MusicDomain
 
 public struct NowPlayingLyrics: Equatable, Sendable {
@@ -10,6 +11,7 @@ public struct NowPlayingLyrics: Equatable, Sendable {
 @MainActor
 public final class NowPlayingLyricsModel: ObservableObject {
     @Published public private(set) var snapshot: NowPlayingLyrics?
+    @Published public private(set) var timelines: [UUID: SynchronizedLyrics] = [:]
     @Published public private(set) var isLoading = false
     @Published public private(set) var errorMessage: String?
     public private(set) var revision: Int64?
@@ -23,6 +25,7 @@ public final class NowPlayingLyricsModel: ObservableObject {
         generation += 1
         let request = generation
         snapshot = nil
+        timelines = [:]
         errorMessage = nil
         self.revision = revision
         self.trackID = trackID
@@ -34,6 +37,9 @@ public final class NowPlayingLyricsModel: ObservableObject {
             guard !Task.isCancelled else { isLoading = false; return }
             // Never display a reader response belonging to another track.
             snapshot = value?.track.id == trackID && value?.entries.allSatisfy { $0.trackID == trackID } == true ? value : nil
+            for entry in snapshot?.entries ?? [] where entry.kind == .synchronized {
+                if let timeline = SynchronizedLyrics(text: entry.text) { timelines[entry.id] = timeline }
+            }
             isLoading = false
         } catch {
             guard request == generation else { return }

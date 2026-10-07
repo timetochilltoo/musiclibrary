@@ -7,7 +7,7 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 ## 1. Launch the packaged Mac app
 
 1. In Finder, open the project folder.
-2. Open the newest sequential package, currently `build/Music Library 0.38.app`. An older `/Applications/Music Library.app` installation is not automatically updated by packaging.
+2. Open the newest sequential package, currently `build/Music Library 0.39.app`. An older `/Applications/Music Library.app` installation is not automatically updated by packaging.
 3. If macOS blocks the first launch, Control-click the app, choose **Open**, then choose **Open** again.
 4. The app opens a catalogue in its Application Support folder. It does not use a SQLite database on the NAS.
 5. Keep the app open while following the tests below. If anything unexpected happens, take a screenshot and note the exact action just before it happened.
@@ -21,7 +21,9 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 
 ## 3. Phase 3 — Mac player and playlists
 
-### R6 responsive player acceptance (0.38)
+### R6 responsive player acceptance (0.39)
+
+For **0.39 timed lyrics**, use disposable media and saved LRC such as `[00:01]First`, `[00:03]Second`, `[00:05]` (blank boundary), and `[00:07]Last`. Confirm highlighting follows playback, holds on Pause, moves backward/forward after seek, and clears while loading or stopped. Follow Playback scrolls to changed cues; turn it off to inspect/select another passage without automatic repositioning. Original LRC preserves every saved timestamp/tag; returning to Timed Lyrics follows the current position. Switch languages/versions/tracks rapidly and edit/save: no previous timeline should remain visible. Test repeated stamps, translations at one timestamp, fractional times and signed offsets. Positive offset advances cues, negative delays them. Unsupported/malformed/mixed text must show complete original text with an explanatory caption, not partially parsed lyrics. For a CUE track starting well into a source file, `[00:01]` must highlight one second after that segment's start; seek before/after its bounds must clear highlighting. Existing whole-file seek/progress behavior is unchanged. Check DSF/loading/Stop, resize, light/dark, keyboard, text selection and Reduce Motion. No line click seeks, network lookup, timer or automatic save is introduced. Native and audible acceptance remains pending.
 
 For **0.38 manual lyrics editor**, use disposable catalogue tracks only. Open Lyrics from Album and Now Playing. Edit a saved plain/LRC version: text, language and kind must load; Save Changes replaces that version rather than adding a duplicate; unchanged Save is disabled. New Lyrics adds a separate version. Whitespace-only text cannot save; language is trimmed. Change playback while editing: Save/Delete remain bound to the original track. Dirty Close/New/Edit offers Discard/Keep Editing; keeping preserves the draft. Delete requires confirmation and removes only that version; cancelling leaves it intact. Exercise read failure/Retry and save/delete failure: errors stay visible, drafts survive, repeat clicks are blocked while pending, and retry does not duplicate a committed version. Confirm busy/dirty sheet dismissal, resizing, keyboard and light/dark behavior. No source tags or internet requests occur. Native checks remain pending; unit fixtures do not prove them.
 

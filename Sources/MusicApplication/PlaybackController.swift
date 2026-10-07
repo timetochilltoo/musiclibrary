@@ -134,6 +134,14 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
         updateProgress()
         updateNowPlayingInfo()
     }
+    /// Read-only lyric position; never reuse the whole-file progress fraction for CUE lyrics.
+    public var lyricsTime: TimeInterval? {
+        guard player != nil, !isLoading, let index = queue.currentIndex,
+              items.indices.contains(index), items[index].trackID == currentTrackID else { return nil }
+        let item = items[index]
+        return LyricsPlaybackClock.time(sourceTime: currentTime, cueStartMilliseconds: item.cueStartMilliseconds,
+                                        cueEndMilliseconds: item.cueEndMilliseconds)
+    }
     public func setVolume(_ value: Float) { volume = Double(min(max(0, value), 1)); player?.volume = Float(volume) }
     public func setRepeatMode(_ mode: RepeatMode) { queue.repeatMode = mode; persist() }
     public func toggleShuffle() {

@@ -1,10 +1,26 @@
 # Music Library — Project Handoff
 
-Last updated: 5 October 2026
+Last updated: 7 October 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — R6 shared manual lyrics editor
+## Current resume — R6 line-timed lyrics
+
+Delivered release-configuration local app: **Music Library 0.39 (build 40)** at `build/Music Library 0.39.app`, versioned through `Packaging/MusicLibraryMac-Info.plist`. Schema remains **17**. No personal catalogue/preferences/source media was opened or modified during development, no normal-app launch occurred, and no archive/notarization was added. No lyrics provider, catalogue mutation, source retagging or new audio engine is part of this slice.
+
+Now Playing highlights the current line of supported saved LRC. Follow Playback optionally scrolls changed cues into view; disabling Follow does not stop highlighting or playback. Original LRC always exposes the complete saved text; malformed/unsupported/mixed documents show only original text with an explanatory caption. Versions remain selectable and the shared captured-track editor remains unchanged. Current rows use a chevron, weight and accent background, not color alone; scrolling respects Reduce Motion. Native focus/text-selection/scrolling/resize behavior is not claimed verified.
+
+New pure `SynchronizedLyrics` accepts basic minute/second timestamps with 1–3 fractional digits, repeated stamps, same-time translations, standalone known metadata and one signed integer millisecond offset. Positive offset advances cues, negative delays; below-zero results clamp to zero and overflow rejects timing. Out-of-order cues are sorted, simultaneous text is grouped in original order and blank cues clear earlier words. Untimed nonblank lines, malformed/unknown tags or enhanced word-level timestamps reject timing for the whole document rather than dropping text. Original catalogue text is never rewritten. `IMPLEMENTATION_SPEC.md` records the exact supported subset and offset convention.
+
+`NowPlayingLyricsModel` parses/caches timelines only after accepted generation/track checks and clears them with snapshots. Playback ticks do not re-read or reparse lyrics. Read-only `PlaybackController.lyricsTime` requires an active player, current resolved queue position and no loading. `LyricsPlaybackClock` subtracts selected CUE start from whole-file player time and returns nil outside start-inclusive/end-exclusive segment bounds. Pause retains the current position; backward/forward seeking is a stateless binary lookup. Existing whole-file transport/progress, CUE timers and playback lifecycle are unchanged; no lyric click-to-seek command or independent timer was added.
+
+`swift test` passes **170 tests across 28 suites**; `swift test -c release` passes **167 across 27** (three existing DEBUG fixture checks differ). Five new domain tests cover parsing/metadata/fractions/repeated/grouped/blank cues, offsets/overflow, all-or-raw fallback, seek transitions and CUE bounds. One new application test covers cached versions/raw preservation/error clearing; existing stale-read and controller fixture tests now assert rejected timelines and nil restored/loading/Stop clocks. These use pure values, controlled callbacks and disposable catalogues/preferences, not actual audio. Final focused parser tests, incremental build, package and plist/version/strict signature/whitespace verification accompany delivery; logs are `/private/tmp/musiclibrary-039-*.log`. Existing metadata deprecation warnings remain unrelated.
+
+Native Follow/Original/version/editor/modal/accessibility and real-audio CUE/DSF acceptance remain pending; the previously crashing helper was not retried and the personal app was not launched. Follow the 0.39 disposable checklist in `MAC_AND_NAS_TESTING.md`. Large-document/performance and integrated R5/R6 acceptance remain open.
+
+Next: **R7 organization**, starting with contributor browsing/detail and role-filtered album navigation (BUILD_PLAN 12.12), while carrying pending native R5/R6 acceptance. Queue editing/Play Next, internet lyrics, import release-ID association, track-specific credits/IDs, NAS/destructive and iPad-device checks remain explicitly deferred.
+
+## Previous resume — R6 shared manual lyrics editor
 
 Delivered release-configuration local app: **Music Library 0.38 (build 39)** at `build/Music Library 0.38.app`, versioned through `Packaging/MusicLibraryMac-Info.plist`. Schema remains **17**. No PlaybackController/audio engine changes, provider/network lookup, tag writes, personal catalogue/preferences/media access or normal-app launch are part of this slice. All development mutations use disposable fixtures; no release archive/notarization is added.
 

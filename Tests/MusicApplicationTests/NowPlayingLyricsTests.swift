@@ -7,6 +7,20 @@ import MusicPersistence
 @Suite("Now Playing lyrics")
 @MainActor
 struct NowPlayingLyricsTests {
+    @Test("Timed versions are parsed once per accepted read and cleared on errors or target changes")
+    func cachedTimelines() async {
+        let model = NowPlayingLyricsModel(), value = track()
+        let valid = LyricsEntry(trackID: value.id, kind: .synchronized, text: "[00:01]First\n[00:02]Second")
+        let malformed = LyricsEntry(trackID: value.id, kind: .synchronized, text: "[00:01]Valid\nUntimed text")
+        let plain = LyricsEntry(trackID: value.id, text: "[00:01]Literal plain text")
+        await model.load(trackID: value.id, revision: 1) { _ in .init(track: value, entries: [valid, malformed, plain]) }
+        #expect(model.timelines.count == 1 && model.timelines[valid.id]?.cues.count == 2)
+        #expect(model.snapshot?.entries == [valid, malformed, plain]) // Original text never rewritten.
+        await model.load(trackID: value.id, revision: 2) { _ in throw LyricsReadGate.Failure.fixture }
+        #expect(model.timelines.isEmpty && model.errorMessage != nil)
+        await model.load(trackID: nil, revision: 3) { _ in Issue.record("No read without a track"); return nil }
+        #expect(model.timelines.isEmpty && model.errorMessage == nil)
+    }
     @Test("Newer track or revision wins over an older reader and its error")
     func latestReadWins() async throws {
         let model = NowPlayingLyricsModel()
@@ -24,9 +38,10 @@ struct NowPlayingLyricsTests {
         let stale = Task { await model.load(trackID: second.id, revision: 2) { _ in try await sameTrackGate.read() } }
         await sameTrackGate.waitUntilRequested()
         await model.load(trackID: second.id, revision: 3) { _ in .init(track: second, entries: []) }
-        await sameTrackGate.complete(.init(track: second, entries: [.init(trackID: second.id, text: "Outdated")]))
+        await sameTrackGate.complete(.init(track: second, entries: [.init(trackID: second.id, kind: .synchronized, text: "[00:01]Outdated")]))
         await stale.value
         #expect(model.revision == 3 && model.snapshot?.entries.isEmpty == true)
+        #expect(model.timelines.isEmpty)
     }
 
     @Test("No track and mismatched reader identities cannot display another song's lyrics")
