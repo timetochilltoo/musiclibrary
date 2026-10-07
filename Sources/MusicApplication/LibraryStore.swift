@@ -22,6 +22,7 @@ public final class LibraryStore: ObservableObject {
     @Published public private(set) var contributors: [Contributor] = []
     @Published public private(set) var locations: [PhysicalLocation] = []
     @Published public private(set) var boxSets: [BoxSet] = []
+    @Published public private(set) var boxAlbumIDs: [BoxSetID: [AlbumID]] = [:]
     @Published public private(set) var deletedBoxSets: [BoxSet] = []
     @Published public private(set) var storageRoots: [StorageRoot] = []
     @Published public private(set) var storageRootLocalities: [StorageRootID: StorageRootLocality] = [:]
@@ -127,6 +128,7 @@ public final class LibraryStore: ObservableObject {
         async let loadedContributors = database.contributors()
         async let loadedLocations = database.locations()
         async let loadedBoxSets = database.boxSets()
+        async let loadedBoxAlbumIDs = database.boxAlbumIDs()
         async let loadedDeletedBoxSets = database.deletedBoxSets()
         async let loadedStorageRoots = database.storageRoots()
         async let loadedLocalAlbumIDs = database.albumIDs(withAssetsIn: .localOnly)
@@ -147,6 +149,7 @@ public final class LibraryStore: ObservableObject {
         let nextContributorRoles = try await loadedContributorRoles
         let nextLocations = try await loadedLocations
         let nextBoxSets = try await loadedBoxSets
+        let nextBoxAlbumIDs = try await loadedBoxAlbumIDs
         let nextDeletedBoxSets = try await loadedDeletedBoxSets
         let nextRoots = try await loadedStorageRoots
         let nextLocalIDs = try await loadedLocalAlbumIDs
@@ -169,6 +172,7 @@ public final class LibraryStore: ObservableObject {
         contributorBrowseSummaries = ContributorBrowseSummary.index(contributors: nextContributors, albums: nextCatalogueAlbums, credits: nextContributorRoles)
         locations = nextLocations
         boxSets = nextBoxSets
+        boxAlbumIDs = nextBoxAlbumIDs
         deletedBoxSets = nextDeletedBoxSets
         // A restored/replaced root must be measured again, even if its ID survives.
         storageRootLocalities = StorageRootLocalityProbe.retainUnchanged(storageRootLocalities, previousRoots: storageRoots, currentRoots: nextRoots)

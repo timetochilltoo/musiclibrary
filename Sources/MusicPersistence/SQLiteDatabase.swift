@@ -2421,6 +2421,28 @@ public actor MusicDatabase {
         }
     }
 
+    /// Active box contents in membership order, read once for organization browsing.
+    public func boxAlbumIDs() throws -> [BoxSetID: [AlbumID]] {
+        let statement = try Self.prepare("""
+            SELECT m.box_set_id, m.album_id FROM box_set_album m
+            JOIN album a ON a.id = m.album_id AND a.deleted_at IS NULL
+            JOIN box_set b ON b.id = m.box_set_id AND b.deleted_at IS NULL
+            ORDER BY m.box_set_id, m.position, m.album_id;
+            """, on: connection)
+        defer { sqlite3_finalize(statement) }
+        var result = [BoxSetID: [AlbumID]]()
+        while true {
+            let step = sqlite3_step(statement)
+            if step == SQLITE_DONE { return result }
+            guard step == SQLITE_ROW else { throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(connection))) }
+            guard let boxRaw = Self.text(at: 0, from: statement), let box = UUID(uuidString: boxRaw),
+                  let albumRaw = Self.text(at: 1, from: statement), let album = UUID(uuidString: albumRaw) else {
+                throw DatabaseError.invalidIdentifier("box_set_album")
+            }
+            result[.init(rawValue: box), default: []].append(.init(rawValue: album))
+        }
+    }
+
     public func addAlbum(_ albumID: AlbumID, to boxSetID: BoxSetID, at position: Int) throws {
         try transaction {
             guard try Self.exists("SELECT 1 FROM album WHERE id = ? AND deleted_at IS NULL;", value: albumID.description, on: connection) else { throw DatabaseError.notFound("Album") }

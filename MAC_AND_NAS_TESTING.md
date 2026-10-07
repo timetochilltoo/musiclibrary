@@ -7,7 +7,7 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 ## 1. Launch the packaged Mac app
 
 1. In Finder, open the project folder.
-2. Open the newest sequential package, currently `build/Music Library 0.40.app`. An older `/Applications/Music Library.app` installation is not automatically updated by packaging.
+2. Open the newest sequential package, currently `build/Music Library 0.41.app`. An older `/Applications/Music Library.app` installation is not automatically updated by packaging.
 3. If macOS blocks the first launch, Control-click the app, choose **Open**, then choose **Open** again.
 4. The app opens a catalogue in its Application Support folder. It does not use a SQLite database on the NAS.
 5. Keep the app open while following the tests below. If anything unexpected happens, take a screenshot and note the exact action just before it happened.
@@ -20,6 +20,10 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 4. Do not move, rename, or edit the original media during this guide.
 
 ## 3. Phase 3 — Mac player and playlists
+
+### R7 location acceptance (0.41)
+
+Use a disposable catalogue only. Locations shows hierarchy and exact-location counts; the default safe navigation fixture has 228 standalone albums, one box set and 12 boxed albums. Open its shelf, inspect header and standalone rows, expand the box, open an album and Back: location, scroll and box expansion should remain. Search a full path, try no-match and Clear Search. Create nested rooms/cabinets/shelves using Add Location; child cards and ancestor breadcrumbs must navigate correctly. Parent counts do not include children. Rename/move a location and verify paths/contents refresh; move choices exclude self/descendants. Deleting a location with children/albums/boxes must show the existing refusal rather than changing placement. Test empty locations/empty boxes, same-name shelves, long paths, narrow/wide layout, keyboard, VoiceOver and light/dark. Use only disposable data for mutation checks. Current native evidence and pending checks are in HANDOFF; automated fixtures do not prove personal-library or NAS behavior.
 
 ### R7 contributor acceptance (0.40)
 

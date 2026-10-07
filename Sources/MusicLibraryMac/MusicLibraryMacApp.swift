@@ -453,7 +453,7 @@ private struct LibraryShellView: View {
                 }
             }
         case .locations:
-            LocationList(library: library)
+            LocationList(library: library, onShowAlbum: { selectedAlbumID = $0 })
         case .contributors:
             ContributorBrowserView(library: library, selection: $selectedContributorID, search: $contributorSearchText, role: $contributorRoleFilter)
         case .boxSets:
@@ -4063,32 +4063,15 @@ private func isLocationDescendant(_ candidate: PhysicalLocation, of ancestorID: 
 
 private struct LocationList: View {
     @ObservedObject var library: LibraryStore
+    let onShowAlbum: (AlbumID) -> Void
     @State private var locationToRename: PhysicalLocation?
     @State private var locationToMove: PhysicalLocation?
     @State private var locationToDelete: PhysicalLocation?
 
-    private var orderedLocations: [PhysicalLocation] {
-        library.locations.sorted { left, right in
-            locationPath(left, in: library.locations).localizedCaseInsensitiveCompare(locationPath(right, in: library.locations)) == .orderedAscending
-        }
-    }
-
     var body: some View {
-        List(orderedLocations) { location in
-            Text(locationPath(location, in: library.locations))
-                .padding(.leading, CGFloat(locationDepth(location, in: library.locations)) * 14)
-                .contextMenu {
-                    Button("Move…") { locationToMove = location }
-                    Button("Rename") { locationToRename = location }
-                    Divider()
-                    Button("Delete", role: .destructive) { locationToDelete = location }
-                }
-        }
-        .overlay {
-            if library.isReady && library.locations.isEmpty {
-                ContentUnavailableView("No locations", systemImage: "archivebox", description: Text("Create locations such as Living Room › Cabinet A › Shelf 2."))
-            }
-        }
+        LocationBrowserView(library: library, onShowAlbum: onShowAlbum,
+                            onRename: { locationToRename = $0 }, onMove: { locationToMove = $0 },
+                            onDelete: { locationToDelete = $0 })
         .sheet(item: $locationToRename) { location in
             RenameLocationEditor(library: library, location: location)
         }
