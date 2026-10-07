@@ -7,7 +7,7 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 ## 1. Launch the packaged Mac app
 
 1. In Finder, open the project folder.
-2. Open the newest sequential package, currently `build/Music Library 0.39.app`. An older `/Applications/Music Library.app` installation is not automatically updated by packaging.
+2. Open the newest sequential package, currently `build/Music Library 0.40.app`. An older `/Applications/Music Library.app` installation is not automatically updated by packaging.
 3. If macOS blocks the first launch, Control-click the app, choose **Open**, then choose **Open** again.
 4. The app opens a catalogue in its Application Support folder. It does not use a SQLite database on the NAS.
 5. Keep the app open while following the tests below. If anything unexpected happens, take a screenshot and note the exact action just before it happened.
@@ -20,6 +20,10 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 4. Do not move, rename, or edit the original media during this guide.
 
 ## 3. Phase 3 — Mac player and playlists
+
+### R7 contributor acceptance (0.40)
+
+Use disposable catalogue data with composer/conductor/performer album and track credits, repeated credits within an album, unused contributors and two separate same-name identities. Contributors should show initials, readable roles and unique active album counts. Combine name/sort-name search and role filter; no-match has Clear Search and Role. Open a contributor: header groups name/sort name/roles/count; role choices show unique counts and cover rows identify their credit roles. Track-only credits must be included; repeated tracks and album+track copies of one role must not duplicate albums. Open a row, then Back: contributor identity and selected role remain; Back to Contributors retains browser search/role. Global Albums search must not narrow contributor counts. Shared Edit must retain its scope warning and update all uses of that identity, not merge another same-name contributor or write source tags. Delete/restore an album in disposable data and verify summaries refresh; disappearing roles clear from selection. Test long names, sparse/no-cover/uncredited entries, compact/wide layout, keyboard, VoiceOver, light/dark and rapid contributor changes. Native journey/appearance checks remain pending; fixture tests are not visual proof.
 
 ### R6 responsive player acceptance (0.39)
 

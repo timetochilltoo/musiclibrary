@@ -196,6 +196,8 @@ private struct LibraryShellView: View {
     @AppStorage("MusicLibrary.browse.sort") private var albumSort: AlbumSort = .title
     @AppStorage("MusicLibrary.browse.favourites") private var showsFavouriteAlbumsOnly = false
     @State private var contributorSearchText = ""
+    @State private var contributorRoleFilter: ContributorRole?
+    @State private var contributorDetailRole: ContributorRole?
     @State private var showsAlbumEditor = false
     @State private var showsLocationEditor = false
     @State private var showsBoxSetEditor = false
@@ -256,6 +258,7 @@ private struct LibraryShellView: View {
                 self.selectedImportBatchID = latestImportBatchesByRoot.first?.id
             }
         }
+        .onChange(of: selectedContributorID) { _, _ in contributorDetailRole = nil }
         .onChange(of: section) { _, newSection in
             // Album links stay inside their originating workspace. A sidebar
             // change always closes that route, even when moving to Albums.
@@ -452,14 +455,7 @@ private struct LibraryShellView: View {
         case .locations:
             LocationList(library: library)
         case .contributors:
-            List(filteredContributors, selection: $selectedContributorID) { contributor in
-                VStack(alignment: .leading) {
-                    Text(contributor.name)
-                    if let sortName = contributor.sortName, sortName != contributor.name { Text(sortName).font(.caption).foregroundStyle(.secondary) }
-                }.tag(contributor.id)
-            }
-            .searchable(text: $contributorSearchText, prompt: "Contributor name or sort name")
-            .overlay { if library.isReady && library.contributors.isEmpty { ContentUnavailableView("No contributors", systemImage: "person.2", description: Text("Add contributors from an album or track credit.")) } }
+            ContributorBrowserView(library: library, selection: $selectedContributorID, search: $contributorSearchText, role: $contributorRoleFilter)
         case .boxSets:
             List(library.boxSets, selection: $selectedBoxSetID) { box in
                 VStack(alignment: .leading) {
@@ -531,12 +527,6 @@ private struct LibraryShellView: View {
         default:
             ContentUnavailableView(section?.title ?? "Music Library", systemImage: section?.symbol ?? "music.note")
         }
-    }
-
-    private var filteredContributors: [Contributor] {
-        let term = contributorSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !term.isEmpty else { return library.contributors }
-        return library.contributors.filter { $0.name.localizedCaseInsensitiveContains(term) || ($0.sortName?.localizedCaseInsensitiveContains(term) ?? false) }
     }
 
     private var scopedAlbums: [Album] {
@@ -629,7 +619,7 @@ private struct LibraryShellView: View {
             )
             .navigationTitle("Settings")
         } else if section == .contributors, let selectedContributorID, let contributor = library.contributors.first(where: { $0.id == selectedContributorID }) {
-            ContributorDetail(library: library, contributor: contributor, onShowAlbum: { selectedAlbumID = $0 })
+            ContributorDetailView(library: library, contributor: contributor, selectedRole: $contributorDetailRole, onShowAlbum: { selectedAlbumID = $0 })
         } else if section == .boxSets, let selectedBoxSetID, let box = library.boxSets.first(where: { $0.id == selectedBoxSetID }) {
             BoxSetDetail(library: library, boxSet: box, isActive: selectedAlbumID == nil, onShowAlbum: { selectedAlbumID = $0 })
         } else if section == .importInbox, let selectedImportBatchID, let batch = library.importBatches.first(where: { $0.id == selectedImportBatchID }) {
@@ -1472,43 +1462,6 @@ private extension View {
         labelStyle(.iconOnly)
             .buttonStyle(.borderedProminent)
             .tint(active ? .accentColor : Color.gray.opacity(0.18))
-    }
-}
-
-private struct ContributorDetail: View {
-    @ObservedObject var library: LibraryStore
-    let contributor: Contributor
-    let onShowAlbum: (AlbumID) -> Void
-    @State private var albums: [Album] = []
-
-    var body: some View {
-        List {
-            Section("Contributor") {
-                Text(contributor.name)
-                if let sortName = contributor.sortName, sortName != contributor.name { LabeledContent("Sort name", value: sortName) }
-            }
-            Section("Credited albums") {
-                if albums.isEmpty { Text("No active album credits").foregroundStyle(.secondary) }
-                ForEach(albums) { album in
-                    Button { onShowAlbum(album.id) } label: {
-                        VStack(alignment: .leading) {
-                            Text(album.displayTitle)
-                            Text("Includes album or track credits").font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
-        .task(id: contributor.id) { await loadAlbums() }
-    }
-
-    private func loadAlbums() async {
-        do {
-            albums = try await library.albums(creditedTo: contributor.id)
-        } catch {
-            library.presentError(error)
-        }
     }
 }
 
@@ -3947,7 +3900,7 @@ private struct AddContributorEditor: View {
     private func add() { Task { do { try await library.addAlbumContributor(albumID: albumID, name: name, role: role, creditedName: creditedName.nilIfBlank); await onAdded(); dismiss() } catch { library.presentError(error) } } }
 }
 
-private struct EditContributorEditor: View {
+struct EditContributorEditor: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var library: LibraryStore
     let contributor: Contributor

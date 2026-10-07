@@ -846,6 +846,30 @@ public actor MusicDatabase {
         return values
     }
 
+    /// One read for all active album/track role edges; UNION removes duplicate credits.
+    public func contributorAlbumRoles() throws -> [ContributorAlbumRole] {
+        let statement = try Self.prepare("""
+            SELECT ac.contributor_id, ac.album_id, ac.role FROM album_contributor ac
+            JOIN album a ON a.id = ac.album_id WHERE a.deleted_at IS NULL
+            UNION
+            SELECT tc.contributor_id, d.album_id, tc.role FROM track_contributor tc
+            JOIN track t ON t.id = tc.track_id JOIN disc d ON d.id = t.disc_id
+            JOIN album a ON a.id = d.album_id WHERE a.deleted_at IS NULL;
+            """, on: connection)
+        defer { sqlite3_finalize(statement) }
+        var values: [ContributorAlbumRole] = []
+        var status = sqlite3_step(statement)
+        while status == SQLITE_ROW {
+            guard let contributor = Self.text(at: 0, from: statement).flatMap(UUID.init(uuidString:)),
+                  let album = Self.text(at: 1, from: statement).flatMap(UUID.init(uuidString:)),
+                  let role = Self.text(at: 2, from: statement).flatMap(ContributorRole.init(rawValue:)) else { throw DatabaseError.invalidIdentifier("Contributor role summary") }
+            values.append(.init(contributorID: ContributorID(rawValue: contributor), albumID: AlbumID(rawValue: album), role: role))
+            status = sqlite3_step(statement)
+        }
+        guard status == SQLITE_DONE else { throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(connection))) }
+        return values
+    }
+
     public func saveLyrics(_ entry: LyricsEntry) throws {
         try transaction {
             guard try track(id: entry.trackID) != nil else { throw DatabaseError.notFound("Track") }

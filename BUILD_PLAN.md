@@ -870,6 +870,8 @@ Lyrics use existing manual/plain/LRC storage. Empty state offers Add lyrics on M
 
 Artists & Contributors:
 
+R7 contributor checkpoint (7 October 2026): role-filtered, name/sort-name-searchable browsing shows initials, readable roles and unique active album counts. Detail groups identity/sort name/roles/count with role-filtered cover rows, including album and track credits. One batched active-credit read per catalogue reload replaces detail-specific asynchronous album reads; duplicate role edges and repeated tracks never multiply albums. Summaries use the full active catalogue independently of album search. Shared identity edits retain the existing scope explanation and do not merge same-name people. Browser filters and detail role stay in shell state for Back navigation; removed role choices clear after refresh. No portraits/provider, SQL in views, source media or schema changes. Native keyboard/resize/Back and live shared-edit acceptance remain pending; next R7 slice is hierarchical location browsing.
+
 - Searchable names with role filters; use initials/placeholders where no portraits exist rather than adding an unsolicited image service.
 - Detail shows name, roles, album count, and credited album covers.
 - Role-filtered album navigation supports classical collections.

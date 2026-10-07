@@ -32,6 +32,7 @@ public final class LibraryStore: ObservableObject {
     @Published public private(set) var localAlbumIDs: Set<AlbumID> = []
     @Published public private(set) var publishedAlbumIDs: Set<AlbumID> = []
     @Published public private(set) var albumFrontArtworkPaths: [AlbumID: String] = [:]
+    @Published public private(set) var contributorBrowseSummaries: [ContributorID: ContributorBrowseSummary] = [:]
     @Published public private(set) var albumBrowseSummaries: [AlbumID: AlbumBrowseSummary] = [:]
     @Published public private(set) var albumMusicBrainzReleaseIDs: [AlbumID: String] = [:]
     @Published public private(set) var importBatches: [ImportBatch] = []
@@ -132,6 +133,7 @@ public final class LibraryStore: ObservableObject {
         async let loadedPublishedAlbumIDs = database.albumIDs(withAssetsIn: .nasPublished)
         async let loadedAlbumFrontArtworkPaths = database.selectedFrontArtworkPaths()
         async let loadedBrowseSummaries = database.albumBrowseSummaries()
+        async let loadedContributorRoles = database.contributorAlbumRoles()
         async let loadedReleaseIDs = database.musicBrainzReleaseIDs()
         async let loadedImportBatches = database.importBatches()
         async let loadedHealth = database.libraryHealthIssues()
@@ -142,6 +144,7 @@ public final class LibraryStore: ObservableObject {
         let nextReleaseIDs = try await loadedReleaseIDs
         let nextDeletedAlbums = try await loadedDeletedAlbums
         let nextContributors = try await loadedContributors
+        let nextContributorRoles = try await loadedContributorRoles
         let nextLocations = try await loadedLocations
         let nextBoxSets = try await loadedBoxSets
         let nextDeletedBoxSets = try await loadedDeletedBoxSets
@@ -163,6 +166,7 @@ public final class LibraryStore: ObservableObject {
         albumMusicBrainzReleaseIDs = nextReleaseIDs
         deletedAlbums = nextDeletedAlbums
         contributors = nextContributors
+        contributorBrowseSummaries = ContributorBrowseSummary.index(contributors: nextContributors, albums: nextCatalogueAlbums, credits: nextContributorRoles)
         locations = nextLocations
         boxSets = nextBoxSets
         deletedBoxSets = nextDeletedBoxSets
