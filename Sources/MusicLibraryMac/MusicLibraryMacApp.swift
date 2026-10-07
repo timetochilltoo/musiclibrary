@@ -185,6 +185,7 @@ private struct LibraryShellView: View {
     @State private var selectedAlbumID: AlbumID?
     @State private var selectedContributorID: ContributorID?
     @State private var selectedBoxSetID: BoxSetID?
+    @State private var boxSetSearchText = ""
     @State private var selectedImportBatchID: ImportBatchID?
     @State private var importBatchToAnalyzeAfterScan: ImportBatchID?
     @State private var selectedPlaylistID: PlaylistID?
@@ -267,6 +268,9 @@ private struct LibraryShellView: View {
             if newSection != .boxSets { selectedBoxSetID = nil }
             if newSection != .importInbox { selectedImportBatchID = nil }
             if newSection != .playlists { selectedPlaylistID = nil }
+        }
+        .onChange(of: library.boxSets) { _, boxes in
+            if let selectedBoxSetID, !boxes.contains(where: { $0.id == selectedBoxSetID }) { self.selectedBoxSetID = nil }
         }
         .sheet(isPresented: $showsAlbumEditor) {
             AlbumEditor(library: library) { album in
@@ -457,15 +461,12 @@ private struct LibraryShellView: View {
         case .contributors:
             ContributorBrowserView(library: library, selection: $selectedContributorID, search: $contributorSearchText, role: $contributorRoleFilter)
         case .boxSets:
-            List(library.boxSets, selection: $selectedBoxSetID) { box in
-                VStack(alignment: .leading) {
-                    Text(box.title).font(.headline)
-                    if let edition = box.editionLabel, !edition.isEmpty { Text(edition).foregroundStyle(.secondary) }
-                }.tag(box.id).contextMenu {
-                    Button("Move Empty Box Set to Recently Deleted", role: .destructive) { Task { do { try await library.softDeleteEmptyBoxSet(box.id); if selectedBoxSetID == box.id { selectedBoxSetID = nil } } catch { library.presentError(error) } } }
+            BoxSetBrowserView(library: library, selection: $selectedBoxSetID, search: $boxSetSearchText) { box in
+                Task {
+                    do { try await library.softDeleteEmptyBoxSet(box.id); if selectedBoxSetID == box.id { selectedBoxSetID = nil } }
+                    catch { library.presentError(error) }
                 }
             }
-            .overlay { if library.isReady && library.boxSets.isEmpty { ContentUnavailableView("No box sets", systemImage: "shippingbox", description: Text("Create a box set to group its member albums at one location.")) } }
         case .importInbox:
             List(latestImportBatchesByRoot, selection: $selectedImportBatchID) { batch in
                 HStack(spacing: 10) {
@@ -621,7 +622,7 @@ private struct LibraryShellView: View {
         } else if section == .contributors, let selectedContributorID, let contributor = library.contributors.first(where: { $0.id == selectedContributorID }) {
             ContributorDetailView(library: library, contributor: contributor, selectedRole: $contributorDetailRole, onShowAlbum: { selectedAlbumID = $0 })
         } else if section == .boxSets, let selectedBoxSetID, let box = library.boxSets.first(where: { $0.id == selectedBoxSetID }) {
-            BoxSetDetail(library: library, boxSet: box, isActive: selectedAlbumID == nil, onShowAlbum: { selectedAlbumID = $0 })
+            BoxSetDetailView(library: library, boxSet: box, onShowAlbum: { selectedAlbumID = $0 }).id(box.id)
         } else if section == .importInbox, let selectedImportBatchID, let batch = library.importBatches.first(where: { $0.id == selectedImportBatchID }) {
             ImportBatchDetail(
                 library: library,
@@ -4891,59 +4892,8 @@ private struct EditAlbumEditor: View {
     }
 }
 
-private struct BoxSetDetail: View {
-    @ObservedObject var library: LibraryStore
-    let boxSet: BoxSet
-    let isActive: Bool
-    let onShowAlbum: (AlbumID) -> Void
-    @State private var members: [BoxSetMembership] = []
-    @State private var memberToRemove: BoxSetMembership?
-    @State private var showsAddMember = false
-    @State private var errorMessage: String?
 
-    var body: some View {
-        List {
-            Section("Albums") {
-                ForEach(members) { member in
-                    HStack {
-                        Button { onShowAlbum(member.album.id) } label: {
-                            Text("\(member.position). \(member.album.displayTitle)")
-                        }
-                        .buttonStyle(.plain)
-                        .help("Open album")
-                        Spacer()
-                        Button("Up", systemImage: "arrow.up") { reorder(member, to: member.position - 1) }.disabled(member.position == 1)
-                        Button("Down", systemImage: "arrow.down") { reorder(member, to: member.position + 1) }.disabled(member.position == members.count)
-                        Button("Remove", systemImage: "minus.circle", role: .destructive) { memberToRemove = member }
-                    }
-                }
-            }
-        }
-        .toolbar {
-            if isActive { Button("Add Existing Album", systemImage: "plus") { showsAddMember = true } }
-        }
-        .task(id: boxSet.id) { await reloadMembers() }
-        .sheet(isPresented: $showsAddMember) { AddBoxMemberEditor(library: library, boxSet: boxSet, onAdded: { await reloadMembers() }) }
-        .sheet(item: $memberToRemove) { member in RemoveBoxMemberEditor(library: library, boxSet: boxSet, member: member, onRemoved: { await reloadMembers() }) }
-        .alert("Unable to update box set", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
-            Button("OK", role: .cancel) { errorMessage = nil }
-        } message: { Text(errorMessage ?? "") }
-    }
-
-    private func reloadMembers() async {
-        do { members = try await library.boxMembers(of: boxSet.id) }
-        catch { errorMessage = error.localizedDescription }
-    }
-
-    private func reorder(_ member: BoxSetMembership, to position: Int) {
-        Task {
-            do { try await library.reorderAlbum(member.album.id, in: boxSet.id, to: position); await reloadMembers() }
-            catch { errorMessage = error.localizedDescription }
-        }
-    }
-}
-
-private struct AddBoxMemberEditor: View {
+struct AddBoxMemberEditor: View {
     private struct PendingMove: Identifiable {
         let albumID: AlbumID
         let sourceBoxTitle: String
@@ -4957,54 +4907,92 @@ private struct AddBoxMemberEditor: View {
     @State private var selectedAlbumID: AlbumID?
     @State private var pendingMove: PendingMove?
     @State private var errorMessage: String?
+    @State private var search = ""
+    @State private var isBusy = false
+
+    private var availableAlbums: [Album] {
+        let currentIDs = Set(library.boxAlbumIDs[boxSet.id] ?? [])
+        let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
+        return library.catalogueAlbums.filter { album in
+            !currentIDs.contains(album.id) && (query.isEmpty || album.displayTitle.localizedCaseInsensitiveContains(query)
+                || (library.albumBrowseSummaries[album.id]?.artistDisplayName.localizedCaseInsensitiveContains(query) == true))
+        }
+    }
 
     var body: some View {
         VStack {
             Text("Choose an album to add or move into \(boxSet.title).")
                 .font(.headline).padding()
-            List(library.albums, selection: $selectedAlbumID) { album in Text(album.displayTitle).tag(album.id) }
+            TextField("Search albums or artists", text: $search).textFieldStyle(.roundedBorder).padding(.horizontal)
+                .disabled(isBusy || pendingMove != nil)
+            List(availableAlbums, selection: $selectedAlbumID) { album in
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(album.displayTitle).font(.headline)
+                    if let artist = library.albumBrowseSummaries[album.id]?.artistDisplayName { Text(artist).font(.caption).foregroundStyle(.secondary) }
+                }.tag(album.id)
+            }.disabled(isBusy || pendingMove != nil)
+                .overlay {
+                    if availableAlbums.isEmpty {
+                        ContentUnavailableView("No Available Albums", systemImage: "opticaldisc", description: Text("Albums already in this box are excluded. Try another search."))
+                    }
+                }
+            if isBusy { ProgressView("Updating box…").padding() }
         }
         .frame(width: 440, height: 420)
         .toolbar {
-            ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-            ToolbarItem(placement: .confirmationAction) { Button("Add or Move") { requestAdd() }.disabled(selectedAlbumID == nil) }
+            ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(isBusy) }
+            ToolbarItem(placement: .confirmationAction) { Button("Add or Move") { requestAdd() }.disabled(isBusy || selectedAlbumID == nil || !availableAlbums.contains(where: { $0.id == selectedAlbumID })) }
         }
         .alert("Unable to add album", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
             Button("OK", role: .cancel) { errorMessage = nil }
         } message: { Text(errorMessage ?? "") }
         .confirmationDialog("Move album to this box set?", isPresented: Binding(get: { pendingMove != nil }, set: { if !$0 { pendingMove = nil } })) {
             Button("Move Album", role: .destructive) {
-                if let pendingMove { performMove(pendingMove.albumID) }
+                if let pendingMove { startMove(pendingMove.albumID) }
             }
             Button("Cancel", role: .cancel) { pendingMove = nil }
         } message: {
             Text("This album is currently in \(pendingMove?.sourceBoxTitle ?? "another box set"). It will be removed there and added to \(boxSet.title).")
         }
+        .interactiveDismissDisabled(isBusy)
+        .onChange(of: search) { _, _ in selectedAlbumID = nil }
     }
 
     private func requestAdd() {
-        guard let selectedAlbumID else { return }
+        guard !isBusy, let selectedAlbumID, availableAlbums.contains(where: { $0.id == selectedAlbumID }) else { return }
+        isBusy = true
         Task {
+            defer { isBusy = false }
             do {
                 if let existing = try await library.boxPlacement(for: selectedAlbumID), existing.boxSetID != boxSet.id {
                     pendingMove = .init(albumID: selectedAlbumID, sourceBoxTitle: existing.boxSetTitle)
                 } else {
-                    performMove(selectedAlbumID)
+                    try await performMove(selectedAlbumID)
                 }
             }
             catch { errorMessage = error.localizedDescription }
         }
     }
 
-    private func performMove(_ albumID: AlbumID) {
+    private func startMove(_ albumID: AlbumID) {
+        guard !isBusy else { return }
+        isBusy = true
+        pendingMove = nil
         Task {
-            do { try await library.moveAlbum(albumID, to: boxSet.id); await onAdded(); dismiss() }
+            defer { isBusy = false }
+            do { try await performMove(albumID) }
             catch { errorMessage = error.localizedDescription }
         }
     }
+
+    private func performMove(_ albumID: AlbumID) async throws {
+        try await library.moveAlbum(albumID, to: boxSet.id)
+        await onAdded()
+        dismiss()
+    }
 }
 
-private struct RemoveBoxMemberEditor: View {
+struct RemoveBoxMemberEditor: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var library: LibraryStore
     let boxSet: BoxSet
@@ -5013,6 +5001,7 @@ private struct RemoveBoxMemberEditor: View {
     @State private var locationID: PhysicalLocationID?
     @State private var locationUnknown = false
     @State private var errorMessage: String?
+    @State private var isBusy = false
 
     var body: some View {
         Form {
@@ -5021,23 +5010,31 @@ private struct RemoveBoxMemberEditor: View {
                 Text("Choose a location").tag(PhysicalLocationID?.none)
                 ForEach(library.locations.sorted { locationPath($0, in: library.locations) < locationPath($1, in: library.locations) }) { location in Text(locationPath(location, in: library.locations)).tag(Optional(location.id)) }
             }
+            .onChange(of: locationID) { _, id in if id != nil { locationUnknown = false } }
             Toggle("Physical location is unknown", isOn: $locationUnknown)
                 .onChange(of: locationUnknown) { _, unknown in if unknown { locationID = nil } }
         }
+        .disabled(isBusy)
         .padding()
         .frame(width: 440)
         .toolbar {
-            ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-            ToolbarItem(placement: .confirmationAction) { Button("Remove from Box", role: .destructive) { remove() }.disabled(locationID == nil && !locationUnknown) }
+            ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(isBusy) }
+            ToolbarItem(placement: .confirmationAction) { Button(isBusy ? "Removing…" : "Remove from Box", role: .destructive) { remove() }.disabled(isBusy || (locationID == nil && !locationUnknown)) }
         }
         .alert("Unable to remove album", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
             Button("OK", role: .cancel) { errorMessage = nil }
         } message: { Text(errorMessage ?? "") }
+        .interactiveDismissDisabled(isBusy)
     }
 
     private func remove() {
+        guard !isBusy, locationID != nil || locationUnknown else { return }
+        isBusy = true
+        let destination = locationID
+        let unknown = locationUnknown
         Task {
-            do { try await library.removeAlbum(member.album.id, from: boxSet.id, assigning: locationID, locationUnknown: locationUnknown); await onRemoved(); dismiss() }
+            defer { isBusy = false }
+            do { try await library.removeAlbum(member.album.id, from: boxSet.id, assigning: destination, locationUnknown: unknown); await onRemoved(); dismiss() }
             catch { errorMessage = error.localizedDescription }
         }
     }

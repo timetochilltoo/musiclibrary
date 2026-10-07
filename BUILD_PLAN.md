@@ -886,6 +886,8 @@ Locations:
 
 Box sets:
 
+R7 box-set checkpoint (7 October 2026): searchable title/edition/location cards show counts and existing member artwork or a box placeholder. Detail groups title/edition/inherited location/count with ordered cover rows. Explicit Organize mode exposes earlier/later and Remove from Box; it stays retained across album Back. Removal retains the placement decision, not album deletion. Adjacent movement validates the displayed active order atomically and resolves actual stored order across deleted-member gaps. Full-catalogue Add/Move search excludes current members, keeps cross-box confirmation and does not inherit global album search. Busy guards cover reorder/add/remove; stale reorder shows refresh/error recovery. Dragging, editing box identity/location and broad accessibility/appearance acceptance are not claimed. Next: playlist browsing/detail and in-place track organization.
+
 - Header with title, edition, inherited location, member count, and optional available artwork.
 - Members are ordered cover rows/cards that open album pages.
 - Organize mode supports reorder and remove; retain keyboard-accessible movement commands alongside dragging.

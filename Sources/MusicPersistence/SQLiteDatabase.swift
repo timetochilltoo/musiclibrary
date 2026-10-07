@@ -2512,24 +2512,45 @@ public actor MusicDatabase {
 
     public func reorderAlbum(_ albumID: AlbumID, in boxSetID: BoxSetID, to newPosition: Int) throws {
         try transaction {
-            var orderedIDs = try Self.boxMemberIDs(for: boxSetID, on: connection)
-            guard let currentIndex = orderedIDs.firstIndex(of: albumID) else { throw DatabaseError.notFound("Box-set membership") }
-            orderedIDs.remove(at: currentIndex)
-            orderedIDs.insert(albumID, at: min(max(0, newPosition - 1), orderedIDs.count))
-            let negate = try Self.prepare("UPDATE box_set_album SET position = -position WHERE box_set_id = ?;", on: connection)
-            defer { sqlite3_finalize(negate) }
-            try Self.bind(boxSetID.description, at: 1, to: negate)
-            try Self.stepDone(negate, connection: connection)
-            for (index, memberID) in orderedIDs.enumerated() {
-                let statement = try Self.prepare("UPDATE box_set_album SET position = ? WHERE box_set_id = ? AND album_id = ?;", on: connection)
-                defer { sqlite3_finalize(statement) }
-                try Self.bind(Int64(index + 1), at: 1, to: statement)
-                try Self.bind(boxSetID.description, at: 2, to: statement)
-                try Self.bind(memberID.description, at: 3, to: statement)
-                try Self.stepDone(statement, connection: connection)
-            }
-            try incrementRevision()
+            try reorderBoxMember(albumID, in: boxSetID, to: newPosition)
         }
+    }
+
+    /// Move one visible member across its visible neighbor, preserving deleted memberships.
+    /// Validate the displayed order atomically so a stale row cannot move the wrong album.
+    public func reorderAlbum(_ albumID: AlbumID, in boxSetID: BoxSetID, adjacentTo neighborID: AlbumID, expectedAlbumIDs: [AlbumID]) throws {
+        try transaction {
+            guard try Self.exists("SELECT 1 FROM box_set WHERE id = ? AND deleted_at IS NULL;", value: boxSetID.description, on: connection) else { throw DatabaseError.notFound("Box set") }
+            let activeIDs = try boxAlbumIDs()[boxSetID] ?? []
+            guard activeIDs == expectedAlbumIDs,
+                  let current = activeIDs.firstIndex(of: albumID), let neighbor = activeIDs.firstIndex(of: neighborID),
+                  abs(current - neighbor) == 1 else {
+                throw DatabaseError.invalidOperation("Box contents changed. Refresh the box and try again.")
+            }
+            let allIDs = try Self.boxMemberIDs(for: boxSetID, on: connection)
+            guard let target = allIDs.firstIndex(of: neighborID) else { throw DatabaseError.notFound("Box-set membership") }
+            try reorderBoxMember(albumID, in: boxSetID, to: target + 1)
+        }
+    }
+
+    private func reorderBoxMember(_ albumID: AlbumID, in boxSetID: BoxSetID, to newPosition: Int) throws {
+        var orderedIDs = try Self.boxMemberIDs(for: boxSetID, on: connection)
+        guard let currentIndex = orderedIDs.firstIndex(of: albumID) else { throw DatabaseError.notFound("Box-set membership") }
+        orderedIDs.remove(at: currentIndex)
+        orderedIDs.insert(albumID, at: min(max(0, newPosition - 1), orderedIDs.count))
+        let negate = try Self.prepare("UPDATE box_set_album SET position = -position WHERE box_set_id = ?;", on: connection)
+        defer { sqlite3_finalize(negate) }
+        try Self.bind(boxSetID.description, at: 1, to: negate)
+        try Self.stepDone(negate, connection: connection)
+        for (index, memberID) in orderedIDs.enumerated() {
+            let statement = try Self.prepare("UPDATE box_set_album SET position = ? WHERE box_set_id = ? AND album_id = ?;", on: connection)
+            defer { sqlite3_finalize(statement) }
+            try Self.bind(Int64(index + 1), at: 1, to: statement)
+            try Self.bind(boxSetID.description, at: 2, to: statement)
+            try Self.bind(memberID.description, at: 3, to: statement)
+            try Self.stepDone(statement, connection: connection)
+        }
+        try incrementRevision()
     }
 
     private func transaction(_ work: () throws -> Void) throws {
@@ -3075,10 +3096,13 @@ public actor MusicDatabase {
         defer { sqlite3_finalize(statement) }
         try bind(boxSetID.description, at: 1, to: statement)
         var ids: [AlbumID] = []
-        while sqlite3_step(statement) == SQLITE_ROW {
+        var status = sqlite3_step(statement)
+        while status == SQLITE_ROW {
             guard let rawID = text(at: 0, from: statement), let uuid = UUID(uuidString: rawID) else { throw DatabaseError.invalidIdentifier("box_set_album.album_id") }
             ids.append(.init(rawValue: uuid))
+            status = sqlite3_step(statement)
         }
+        guard status == SQLITE_DONE else { throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(connection))) }
         return ids
     }
 

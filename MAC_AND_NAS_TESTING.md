@@ -7,7 +7,7 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 ## 1. Launch the packaged Mac app
 
 1. In Finder, open the project folder.
-2. Open the newest sequential package, currently `build/Music Library 0.41.app`. An older `/Applications/Music Library.app` installation is not automatically updated by packaging.
+2. Open the newest sequential package, currently `build/Music Library 0.42.app`. An older `/Applications/Music Library.app` installation is not automatically updated by packaging.
 3. If macOS blocks the first launch, Control-click the app, choose **Open**, then choose **Open** again.
 4. The app opens a catalogue in its Application Support folder. It does not use a SQLite database on the NAS.
 5. Keep the app open while following the tests below. If anything unexpected happens, take a screenshot and note the exact action just before it happened.
@@ -20,6 +20,10 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 4. Do not move, rename, or edit the original media during this guide.
 
 ## 3. Phase 3 — Mac player and playlists
+
+### R7 box-set acceptance (0.42)
+
+Use disposable catalogue data. Search boxes by title, edition and full location path; no-match has Clear Search. The default navigation fixture has one box with 12 members. Its header should show inherited location/count; first-member artwork is labelled Member cover, not claimed as separate box artwork. Open an album and Back: box/scroll/Organize state remains. Enable Organize: first Earlier and last Later are disabled; moving a middle row changes order/count stays fixed. Remove requires a location or explicit unknown, cancelling preserves membership, and completing changes only placement (album stays active). Add Existing Album searches the full catalogue even after a global Albums search, excludes current members and requires confirmation when moving from another box. Test save/read failure, repeat clicks, switching route while reordering, stale contents and deleted-member gaps. Stale/nonadjacent reorder must refuse changes and offer Refresh Contents. Check empty/no-cover/same-name/long-title boxes, compact/wide, keyboard, VoiceOver and light/dark. No source audio should change. Current evidence/limits are in HANDOFF.
 
 ### R7 location acceptance (0.41)
 

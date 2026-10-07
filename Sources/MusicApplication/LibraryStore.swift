@@ -286,6 +286,12 @@ public final class LibraryStore: ObservableObject {
         try await reload()
     }
 
+    public func reorderAlbum(_ albumID: AlbumID, in boxSetID: BoxSetID, adjacentTo neighborID: AlbumID, expectedAlbumIDs: [AlbumID]) async throws {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        try await database.reorderAlbum(albumID, in: boxSetID, adjacentTo: neighborID, expectedAlbumIDs: expectedAlbumIDs)
+        try await reload()
+    }
+
     public func discs(albumID: AlbumID) async throws -> [Disc] { guard let database else { throw DatabaseError.notFound("Catalogue database") }; return try await database.discs(albumID: albumID) }
     public func tracks(discID: DiscID) async throws -> [Track] { guard let database else { throw DatabaseError.notFound("Catalogue database") }; return try await database.tracks(discID: discID) }
     public func playbackAlbumIDs(trackIDs: [TrackID]) async throws -> [TrackID: AlbumID] {

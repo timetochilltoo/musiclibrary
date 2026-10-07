@@ -4,7 +4,23 @@ Last updated: 7 October 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — R7 hierarchical Locations
+## Current resume — R7 box-set browsing and organization
+
+Delivered Release local app: **Music Library 0.42 (build 43)** at `build/Music Library 0.42.app`, versioned through `Packaging/MusicLibraryMac-Info.plist` and packaged with the existing script. Schema remains **17**. Development checks used disposable catalogues only; no personal catalogue/source media or normal-app launch was used. No source retagging/movement, provider, distribution archive or notarization was introduced.
+
+Box Sets now has title/edition/full-location-path search, counts and member artwork or a box placeholder. Separate same-name IDs remain separate. Detail groups title, edition, inherited location and member count above ordered cover-led album rows. First-member art is explicitly labelled Member cover, not separate box artwork. Organize reveals Earlier/Later and Remove from Box controls; normal browsing stays uncluttered. The shared shell route retains box, scroll and Organize state across album Back. Disappearing box IDs clear the route. Member contents use the full active catalogue and shared ordered `boxAlbumIDs` index; the old asynchronous detail-specific reader is removed, avoiding stale target results and refresh gaps.
+
+The new adjacent-member reorder overload validates displayed active order and adjacency atomically inside MusicDatabase, resolves the neighbor against all memberships including deleted albums, then uses the existing position writer. Stale/nonadjacent commands roll back without a revision change; deleted memberships stay restorable. Existing absolute-position callers retain behavior. The shared order reader now propagates SQLite stepping failures. LibraryStore remains the use-case boundary; no SQL or direct persistence mutation is in views. Reorder blocks repeat commands while working and offers Refresh Contents/error recovery.
+
+Add Existing Album now searches title/artist against the full catalogue, independent of global Albums search, and excludes current members. Cross-box move confirmation remains. Add/Move and Remove capture their selected target/destination and block repeat submissions/cancellation while saving. Removal still requires a destination or explicit unknown, keeps those choices mutually exclusive and never deletes the album. Existing catalogue placement/deletion safeguards remain; box identity/location editing and dragging were not added.
+
+Relevant new files: `BoxSetBrowseSummary.swift`, `BoxSetBrowserView.swift`, `BoxSetDetailView.swift`, domain and application organization tests. Two new tests cover title/edition/path search, separate IDs, stable membership resolution, deleted-member gaps, stale/nonadjacent rollback, revision invariants and restoration. `swift test` passes **178 tests across 34 suites**; Release passes **175 across 33** (three DEBUG fixture checks differ). Incremental build, Release package, plist/version/build, strict deep signature and whitespace checks passed. Logs: `/private/tmp/musiclibrary-042-*.log`.
+
+Native synthetic checks at 980-point width inspected browser/header/placeholders/Organize, moved the second album earlier, opened it and Back with Organize/order retained, and confirmed full-catalogue Add search after global Albums search was limited to Album 013. Adding Album 014 raised count 12→13. Remove was disabled until explicit unknown placement; removal returned count to 12 and the removed album remained available. Box no-match/Clear Search passed. A temporary inactive helper connection recovered with AX refresh; fixture closed. Real member artwork, cross-box confirmation, failure/busy races, resize, keyboard/VoiceOver and light/dark remain pending, along with earlier R5/R6 audio, NAS and iPad-device acceptance. See `MAC_AND_NAS_TESTING.md`.
+
+Next: **R7 playlist browsing/detail and in-place track organization**, retaining explicit queue/playback semantics. Queue editing/Play Next, internet lyrics, import release-ID association, track-specific credits/IDs, destructive acceptance and other deferred scope remain unchanged.
+
+## Previous resume — R7 hierarchical Locations
 
 Delivered Release local app: **Music Library 0.41 (build 42)** at `build/Music Library 0.41.app`, versioned through `Packaging/MusicLibraryMac-Info.plist`, packaged with the existing script. Schema remains **17**. Development checks use temporary catalogues only, never the personal Application Support catalogue or source media; the normal app is not launched. No tagging, file movement, network provider, release archive or notarization is introduced.
 
