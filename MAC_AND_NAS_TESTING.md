@@ -7,7 +7,7 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 ## 1. Launch the packaged Mac app
 
 1. In Finder, open the project folder.
-2. Open the newest sequential package, currently `build/Music Library 0.43.app`. An older `/Applications/Music Library.app` installation is not automatically updated by packaging.
+2. Open the newest sequential package, currently `build/Music Library 0.44.app`. An older `/Applications/Music Library.app` installation is not automatically updated by packaging.
 3. If macOS blocks the first launch, Control-click the app, choose **Open**, then choose **Open** again.
 4. The app opens a catalogue in its Application Support folder. It does not use a SQLite database on the NAS.
 5. Keep the app open while following the tests below. If anything unexpected happens, take a screenshot and note the exact action just before it happened.
@@ -20,6 +20,10 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 4. Do not move, rename, or edit the original media during this guide.
 
 ## 3. Phase 3 — Mac player and playlists
+
+### R7 in-place Add Tracks acceptance (0.44)
+
+Use the disposable navigation fixture (three synthetic, audio-free tracks in Fixture Album 240) or an isolated test catalogue. Create a playlist, open Add Tracks and search by title, album or album artist, including after restricting the global Albums search. Select a row; Cancel leaves contents unchanged, Add Selected Track closes the sheet and refreshes the playlist count/album/album-artist/duration. Reopen and add the same track: two distinct entries remain. Unknown duration is omitted, not invented. Search with a hidden selection cannot add that hidden row. Test no-match recovery, deleted targets, repeat clicks, busy dismissal and refresh failure; retry must keep the same entry UUID and not duplicate a committed add. The picker is single-selection; cover collage, track-specific credits/availability and Shuffle are pending. Native evidence is recorded in HANDOFF, separately from integration and real-audio acceptance.
 
 ### R7 playlist foundation acceptance (0.43)
 

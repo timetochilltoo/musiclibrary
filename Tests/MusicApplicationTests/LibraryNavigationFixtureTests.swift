@@ -87,7 +87,9 @@ struct LibraryNavigationFixtureTests {
         #expect(store.storageRoots.isEmpty)
         #expect(store.albumFrontArtworkPaths.isEmpty)
         #expect(store.localAlbumIDs.isEmpty)
-        #expect(store.libraryHealthIssues.count == 240)
+        // 240 absent covers plus the synthetic playlist album's absent audio.
+        #expect(store.libraryHealthIssues.count == 241)
+        #expect(store.trackBrowseSummaries.count == 3)
         let contributor = try #require(store.contributors.first)
         #expect(try await store.albums(creditedTo: contributor.id).count == 240)
         let box = try #require(store.boxSets.first)

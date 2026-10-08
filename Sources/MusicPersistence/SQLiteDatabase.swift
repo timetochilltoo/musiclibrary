@@ -1209,11 +1209,20 @@ public actor MusicDatabase {
         }
     }
 
-    public func addTrack(_ trackID: TrackID, to playlistID: PlaylistID) throws {
-        let itemID = UUID()
+    public func addTrack(_ trackID: TrackID, to playlistID: PlaylistID, itemID: UUID = UUID()) throws {
         try transaction {
             guard try Self.exists("SELECT 1 FROM playlist WHERE id = ? AND deleted_at IS NULL;", value: playlistID.description, on: connection) else { throw DatabaseError.notFound("Playlist") }
-            guard try Self.exists("SELECT 1 FROM track WHERE id = ?;", value: trackID.description, on: connection) else { throw DatabaseError.notFound("Track") }
+            guard try Self.exists("SELECT 1 FROM track t JOIN disc d ON d.id = t.disc_id JOIN album a ON a.id = d.album_id WHERE t.id = ? AND a.deleted_at IS NULL;", value: trackID.description, on: connection) else { throw DatabaseError.notFound("Active track") }
+            let existing = try Self.prepare("SELECT playlist_id, track_id FROM playlist_item WHERE id = ?;", on: connection)
+            defer { sqlite3_finalize(existing) }
+            try Self.bind(itemID.uuidString.lowercased(), at: 1, to: existing)
+            let status = sqlite3_step(existing)
+            if status == SQLITE_ROW {
+                guard Self.text(at: 0, from: existing) == playlistID.description,
+                      Self.text(at: 1, from: existing) == trackID.description else { throw DatabaseError.invalidOperation("Playlist entry identity belongs to another selection.") }
+                return
+            }
+            guard status == SQLITE_DONE else { throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(connection))) }
             let position = try Self.nextNumber("SELECT COALESCE(MAX(position), 0) + 1 FROM playlist_item WHERE playlist_id = ?;", ownerID: playlistID.description, on: connection)
             let statement = try Self.prepare("INSERT INTO playlist_item (id, playlist_id, track_id, position) VALUES (?, ?, ?, ?);", on: connection)
             defer { sqlite3_finalize(statement) }
@@ -1271,6 +1280,25 @@ public actor MusicDatabase {
         let statement = try Self.prepare("SELECT playlist_item.id, playlist_item.track_id, playlist_item.position, track.title FROM playlist_item JOIN track ON track.id = playlist_item.track_id WHERE playlist_item.playlist_id = ? ORDER BY playlist_item.position;", on: connection); defer { sqlite3_finalize(statement) }; try Self.bind(playlistID.description, at: 1, to: statement); var values: [PlaylistItem] = []
         while sqlite3_step(statement) == SQLITE_ROW { guard let raw = Self.text(at: 0, from: statement), let id = UUID(uuidString: raw), let rawTrack = Self.text(at: 1, from: statement), let trackUUID = UUID(uuidString: rawTrack) else { throw DatabaseError.invalidIdentifier("playlist_item") }; values.append(.init(id: id, playlistID: playlistID, trackID: .init(rawValue: trackUUID), position: Int(Self.int(at: 2, from: statement) ?? 0), title: Self.text(at: 3, from: statement) ?? "")) }
         return values
+    }
+
+    /// Full active catalogue, independent of the Albums browser's search.
+    public func trackBrowseSummaries() throws -> [TrackBrowseSummary] {
+        let statement = try Self.prepare("""
+            SELECT t.id, a.id, t.title, a.title, d.number, t.number, t.duration_ms
+            FROM track t JOIN disc d ON d.id = t.disc_id JOIN album a ON a.id = d.album_id
+            WHERE a.deleted_at IS NULL ORDER BY a.title, a.id, d.number, t.number, t.id;
+            """, on: connection)
+        defer { sqlite3_finalize(statement) }
+        var result = [TrackBrowseSummary]()
+        while true {
+            let status = sqlite3_step(statement)
+            if status == SQLITE_DONE { return result }
+            guard status == SQLITE_ROW else { throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(connection))) }
+            guard let track = Self.text(at: 0, from: statement).flatMap(UUID.init(uuidString:)),
+                  let album = Self.text(at: 1, from: statement).flatMap(UUID.init(uuidString:)) else { throw DatabaseError.invalidIdentifier("Track browse summary") }
+            result.append(.init(id: .init(rawValue: track), albumID: .init(rawValue: album), title: Self.text(at: 2, from: statement) ?? "", albumTitle: Self.text(at: 3, from: statement) ?? "", discNumber: Int(Self.int(at: 4, from: statement) ?? 0), trackNumber: Int(Self.int(at: 5, from: statement) ?? 0), durationMilliseconds: Self.int(at: 6, from: statement).map(Int.init)))
+        }
     }
 
     /// One active-playlist read for browsing; duplicate track entries retain their item IDs.

@@ -4,7 +4,21 @@ Last updated: 8 October 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — R7 playlist browsing foundation
+## Current resume — R7 in-place playlist Add Tracks
+
+Delivered Release local app: **Music Library 0.44 (build 45)** at `build/Music Library 0.44.app`, versioned through `Packaging/MusicLibraryMac-Info.plist` and the existing packaging script. Schema remains **17**. Only disposable fixtures were used; the personal catalogue, normal app and source media were not opened. No provider lookup, media probing/movement/retagging, distribution archive or notarization was added.
+
+Playlist detail now shows album title, explicitly labelled album artist and duration where recorded. Missing/soft-deleted album metadata is labelled Album not in active catalogue; unknown duration is omitted. Add Tracks opens a single-selection sheet in place, searching track title, album title or album artist across the full active catalogue independently of global Albums search. Rows include disc/track number and known duration. Cancel keeps contents; Add returns to the same playlist with its refreshed count. Duplicate additions remain permitted and are described explicitly. Hidden search selections cannot be submitted. This is a first picker slice, not multi-selection or complete playlist design.
+
+New `TrackBrowseSummary` and one read-only MusicDatabase query join active album/disc/track metadata without touching assets or files. LibraryStore publishes the full track snapshot under its existing reload-generation guard. Detail builds its ID index once per body evaluation. Artist comes from the existing album summary, not a claimed track credit. The picker captures its playlist, entry UUID and attempted selection; busy state blocks repeat commands/dismissal, and attempted selection is locked for retry. `addTrack` now validates the active playlist and track/album within its transaction. An already-saved matching entry UUID succeeds without another revision; a UUID belonging to another selection is rejected. Existing callers generate new UUIDs by default. This prevents duplicate writes when a successful insert is followed by a refresh failure; deliberate reopened additions still create distinct entries.
+
+Relevant files: `TrackBrowseSummary.swift`, `PlaylistTrackPicker.swift`, shell/PlaylistDetail, LibraryStore, SQLiteDatabase and playlist integration tests. The DEBUG navigation fixture now has three synthetic audio-free tracks in Album 240; its safety regression expects those metadata rows and the extra missing-audio health issue. `swift test` passes **180 tests across 35 suites**; Release passes **177 across 34** (three DEBUG checks differ). Final incremental build, Release package, plist/version/build, strict deep signature and whitespace checks passed. Logs: `/private/tmp/musiclibrary-044-*.log`. Packaging's first permission review timed out; the one allowed retry succeeded.
+
+Native disposable checks inspected picker/detail screenshots, three matches and omitted unknown duration, title search/no-match, blocked hidden selection, Cancel leaving 0 entries, Add refreshing 1 entry, and reopening/adding the same track yielding 2 rows. AX setValue did not trigger picker filtering until normal typing; typing recovered without an app change. Fixture closed. Native album-artist search, busy/error/retry races, deleted targets, reorder/removal, large-library performance, resize, VoiceOver/light-dark and real-audio acceptance remain pending; integration checks are not audio proof. No personal app was controlled.
+
+Next: **playlist entry-identity playback-start and stale/gapped reorder audit**, then catalogue-only track availability, cover collage/total duration and further playlist polish. Playback resolution/queue semantics were not changed here. Multi-select, Shuffle, queue editing/Play Next, internet lyrics, import release-ID association, track-specific credits/IDs, NAS/destructive and iPad-device acceptance remain deferred; see BUILD_PLAN and MAC_AND_NAS_TESTING.
+
+## Previous resume — R7 playlist browsing foundation
 
 Delivered Release local app: **Music Library 0.43 (build 44)** at `build/Music Library 0.43.app`, versioned through `Packaging/MusicLibraryMac-Info.plist` and assembled with the existing packaging script. Schema remains **17**. Checks used disposable catalogues only; the personal Application Support catalogue, source audio and normal app were not opened. No provider, source retagging/movement, release archive or notarization was added.
 

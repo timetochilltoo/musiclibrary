@@ -41,6 +41,7 @@ public final class LibraryStore: ObservableObject {
     @Published public private(set) var libraryHealthIssues: [LibraryHealthIssue] = []
     @Published public private(set) var playlists: [Playlist] = []
     @Published public private(set) var playlistContents: [PlaylistID: [PlaylistItem]] = [:]
+    @Published public private(set) var trackBrowseSummaries: [TrackBrowseSummary] = []
     @Published public private(set) var deletedPlaylists: [Playlist] = []
     @Published public private(set) var duplicateAssets: [AssetDuplicate] = []
     @Published public private(set) var relinkProposals: [AssetRelinkProposal] = []
@@ -142,6 +143,7 @@ public final class LibraryStore: ObservableObject {
         async let loadedHealth = database.libraryHealthIssues()
         async let loadedPlaylists = database.playlists()
         async let loadedPlaylistContents = database.playlistContents()
+        async let loadedTrackSummaries = database.trackBrowseSummaries()
         async let loadedDeletedPlaylists = database.deletedPlaylists()
         let nextCatalogueAlbums = try await loadedCatalogueAlbums
         let nextSummaries = try await loadedBrowseSummaries
@@ -161,6 +163,7 @@ public final class LibraryStore: ObservableObject {
         let nextHealth = try await loadedHealth
         let nextPlaylists = try await loadedPlaylists
         let nextPlaylistContents = try await loadedPlaylistContents
+        let nextTrackSummaries = try await loadedTrackSummaries
         let nextDeletedPlaylists = try await loadedDeletedPlaylists
         let nextDuplicates = try await database.duplicateAssets()
         let nextRelinks = try await database.relinkProposals()
@@ -187,6 +190,7 @@ public final class LibraryStore: ObservableObject {
         libraryHealthIssues = nextHealth
         playlists = nextPlaylists
         playlistContents = nextPlaylistContents
+        trackBrowseSummaries = nextTrackSummaries
         deletedPlaylists = nextDeletedPlaylists
         duplicateAssets = nextDuplicates
         relinkProposals = nextRelinks
@@ -814,7 +818,7 @@ public final class LibraryStore: ObservableObject {
     public func tagWriteBackupDirectory() throws -> URL {
         try applicationSupportDirectory().appending(path: "TagWriteBackups", directoryHint: .isDirectory)
     }
-    public func addTrack(_ trackID: TrackID, toPlaylist id: PlaylistID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.addTrack(trackID, to: id); try await reload() }
+    public func addTrack(_ trackID: TrackID, toPlaylist id: PlaylistID, itemID: UUID = UUID()) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.addTrack(trackID, to: id, itemID: itemID); try await reload() }
     public func removePlaylistItem(_ id: UUID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.removePlaylistItem(id); try await reload() }
     public func movePlaylistItem(_ id: UUID, to position: Int) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.movePlaylistItem(id, to: position); try await reload() }
     public func softDeleteAlbum(_ id: AlbumID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.softDeleteAlbum(id); try await reload() }

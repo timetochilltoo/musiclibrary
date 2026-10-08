@@ -895,6 +895,8 @@ R7 box-set checkpoint (7 October 2026): searchable title/edition/location cards 
 
 Playlists:
 
+R7 in-place track checkpoint (8 October 2026): detail now shows album title, explicitly labelled album artist and known duration. Add Tracks opens a searchable single-selection sheet over the current playlist, covering track/album/album-artist metadata from the full active catalogue. Duplicate entries remain permitted. A stable entry UUID makes retry idempotent after a committed write followed by refresh failure; the attempted selection is locked until retry or dismissal. Adds revalidate active playlist and album/track inside the transaction. Cover collage, track-specific artist/availability, total duration, multi-selection and Shuffle remain subsequent work. Existing duplicate-entry playback-start and ordering-gap audits remain open.
+
 R7 playlist foundation checkpoint (8 October 2026): name search, counts and no-match recovery now follow the organization browser pattern. Counts/detail share one batched active-playlist contents snapshot, preserve duplicate-entry identities and are independent of global Albums search. Empty detail keeps identity/count/controls visible. Explicit Organize mode reveals existing movement/removal controls; removal confirms entry-only scope and busy guards block repeat mutations. Playback/queue resolution is unchanged. This is not the complete playlist design: cover collage, track artist/album/duration/availability summaries, in-place Add Tracks and richer organization remain next.
 
 - Header uses a collage of existing album covers, count, duration when known, Play and Shuffle.

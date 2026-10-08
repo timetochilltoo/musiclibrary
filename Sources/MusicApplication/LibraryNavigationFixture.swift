@@ -25,6 +25,12 @@ extension LibraryStore {
             ))
             try await database.addAlbumContributor(contributor.id, to: album.id, role: .albumArtist)
             if index <= 12 { try await database.addAlbum(album.id, to: box.id, at: index) }
+            if index == 240 {
+                let disc = try await database.createDisc(albumID: album.id)
+                _ = try await database.createTrack(discID: disc.id, draft: .init(title: "Synthetic playlist opening", durationMilliseconds: 123456))
+                _ = try await database.createTrack(discID: disc.id, draft: .init(title: "Synthetic playlist adagio", durationMilliseconds: 62000))
+                _ = try await database.createTrack(discID: disc.id, draft: .init(title: "Synthetic untimed finale"))
+            }
         }
         if includeImportReview { try await seedImportReview(database: database, directory: directory) }
         let store = LibraryStore(database: database, metadataLookupProvider: NavigationMetadataFixture())

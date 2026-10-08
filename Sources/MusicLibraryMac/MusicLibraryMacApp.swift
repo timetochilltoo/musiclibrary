@@ -2388,7 +2388,12 @@ private struct PlaylistDetail: View {
     @State private var isOrganizing = false
     @State private var isUpdating = false
     @State private var itemToRemove: PlaylistItem?
+    @State private var showsTrackPicker = false
+    private var trackSummaries: [TrackID: TrackBrowseSummary] {
+        Dictionary(uniqueKeysWithValues: library.trackBrowseSummaries.map { ($0.id, $0) })
+    }
     var body: some View {
+        let summaries = trackSummaries
         ScrollView {
             LazyVStack(spacing: 0) {
                 HStack(spacing: 18) {
@@ -2405,13 +2410,14 @@ private struct PlaylistDetail: View {
                             .buttonStyle(.borderedProminent)
                             .disabled(items.isEmpty)
                         Toggle("Organize Tracks", isOn: $isOrganizing).toggleStyle(.checkbox).disabled(isUpdating)
+                        Button("Add Tracks…", systemImage: "plus") { showsTrackPicker = true }
                     }
                     Spacer()
                 }
                 .padding(24)
                 Divider()
                 if items.isEmpty {
-                    ContentUnavailableView("Empty Playlist", systemImage: "music.note.list", description: Text("Add tracks from an album. This playlist stays ready for your collection."))
+                    ContentUnavailableView("Empty Playlist", systemImage: "music.note.list", description: Text("Use Add Tracks above to choose music without leaving this playlist."))
                         .padding(.vertical, 24)
                 }
                 if isOrganizing { Text("Change playlist order or remove an entry. Source tracks and files are kept.").font(.caption).foregroundStyle(.secondary).padding(16) }
@@ -2426,8 +2432,21 @@ private struct PlaylistDetail: View {
                             .labelStyle(.iconOnly)
                             .buttonStyle(.borderless)
                             .help("Play this track and continue through the playlist")
-                        Text(item.title).font(.body.weight(.medium)).lineLimit(2)
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(item.title).font(.body.weight(.medium)).lineLimit(2)
+                            if let summary = summaries[item.trackID] {
+                                Text(summary.albumTitle).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                                if let artist = library.albumBrowseSummaries[summary.albumID]?.artist {
+                                    Text("Album artist: \(artist)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                }
+                            } else {
+                                Text("Album not in active catalogue").font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
                         Spacer()
+                        if let duration = summaries[item.trackID]?.durationLabel {
+                            Text(duration).font(.callout.monospacedDigit()).foregroundStyle(.secondary)
+                        }
                         if isOrganizing {
                         Button("Move Earlier", systemImage: "arrow.up") { move(item, to: item.position - 1) }
                             .labelStyle(.iconOnly).disabled(item.position == 1).help("Move earlier")
@@ -2444,6 +2463,7 @@ private struct PlaylistDetail: View {
             }.disabled(isUpdating).padding(.bottom, 32)
         }
         .navigationTitle(playlist.name)
+        .sheet(isPresented: $showsTrackPicker) { PlaylistTrackPicker(library: library, playlist: playlist) }
         .safeAreaInset(edge: .bottom) {
             if isUpdating { HStack { ProgressView().controlSize(.small); Text("Updating playlist…").font(.caption); Spacer() }.padding(12).background(.bar) }
         }
