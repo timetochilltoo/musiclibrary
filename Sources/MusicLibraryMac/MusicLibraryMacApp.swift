@@ -2389,6 +2389,7 @@ private struct PlaylistDetail: View {
     @State private var isUpdating = false
     @State private var itemToRemove: PlaylistItem?
     @State private var showsTrackPicker = false
+    @State private var organizationError: String?
     private var trackSummaries: [TrackID: TrackBrowseSummary] {
         Dictionary(uniqueKeysWithValues: library.trackBrowseSummaries.map { ($0.id, $0) })
     }
@@ -2421,10 +2422,16 @@ private struct PlaylistDetail: View {
                         .padding(.vertical, 24)
                 }
                 if isOrganizing { Text("Change playlist order or remove an entry. Source tracks and files are kept.").font(.caption).foregroundStyle(.secondary).padding(16) }
+                if let organizationError {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label(organizationError, systemImage: "exclamationmark.triangle").foregroundStyle(.red)
+                        Button("Refresh Contents") { refresh() }
+                    }.padding(16)
+                }
 
-                ForEach(items) { item in
+                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                     HStack(spacing: 12) {
-                        Text(String(item.position))
+                        Text(String(index + 1))
                             .font(.callout.monospacedDigit())
                             .foregroundStyle(.secondary)
                             .frame(width: 30, alignment: .trailing)
@@ -2448,10 +2455,10 @@ private struct PlaylistDetail: View {
                             Text(duration).font(.callout.monospacedDigit()).foregroundStyle(.secondary)
                         }
                         if isOrganizing {
-                        Button("Move Earlier", systemImage: "arrow.up") { move(item, to: item.position - 1) }
-                            .labelStyle(.iconOnly).disabled(item.position == 1).help("Move earlier")
-                        Button("Move Later", systemImage: "arrow.down") { move(item, to: item.position + 1) }
-                            .labelStyle(.iconOnly).disabled(item.position == items.count).help("Move later")
+                        Button("Move Earlier", systemImage: "arrow.up") { move(item, earlier: true) }
+                            .labelStyle(.iconOnly).disabled(index == 0).help("Move earlier")
+                        Button("Move Later", systemImage: "arrow.down") { move(item, earlier: false) }
+                            .labelStyle(.iconOnly).disabled(index == items.count - 1).help("Move later")
                         Button("Remove from Playlist", systemImage: "minus.circle", role: .destructive) { itemToRemove = item }
                             .labelStyle(.iconOnly).help("Remove from playlist")
                         }
@@ -2475,13 +2482,27 @@ private struct PlaylistDetail: View {
         }
     }
 
-    private func move(_ item: PlaylistItem, to position: Int) {
+    private func move(_ item: PlaylistItem, earlier: Bool) {
+        let ids = items.map(\.id)
+        guard !isUpdating, let index = ids.firstIndex(of: item.id) else { return }
+        let neighbor = index + (earlier ? -1 : 1)
+        guard ids.indices.contains(neighbor) else { return }
+        organizationError = nil
+        isUpdating = true
+        Task {
+            defer { isUpdating = false }
+            do { try await library.movePlaylistItem(item.id, in: playlist.id, adjacentTo: ids[neighbor], expectedItemIDs: ids) }
+            catch { organizationError = error.localizedDescription }
+        }
+    }
+
+    private func refresh() {
         guard !isUpdating else { return }
         isUpdating = true
         Task {
             defer { isUpdating = false }
-            do { try await library.movePlaylistItem(item.id, to: position) }
-            catch { library.presentError(error) }
+            do { try await library.reload(); organizationError = nil }
+            catch { organizationError = error.localizedDescription }
         }
     }
 
@@ -2508,11 +2529,8 @@ private struct PlaylistDetail: View {
     private func play(_ item: PlaylistItem) {
         Task {
             do {
-                let playableItems = try await library.playbackURLs(playlistID: playlist.id)
-                guard let index = playableItems.firstIndex(where: { $0.trackID == item.trackID }) else {
-                    throw NSError(domain: "MusicLibrary", code: 3, userInfo: [NSLocalizedDescriptionKey: "This playlist item has no currently playable audio file."])
-                }
-                try playback.play(items: playableItems, startingAt: index)
+                let plan = try await library.playlistPlaybackPlan(playlistID: playlist.id, selectedItemID: item.id)
+                try playback.play(items: plan.items, startingAt: plan.startingIndex)
             } catch {
                 library.presentError(error)
             }

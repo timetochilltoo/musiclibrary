@@ -745,16 +745,19 @@ public final class LibraryStore: ObservableObject {
         return results
     }
     public func playbackURLs(playlistID: PlaylistID) async throws -> [(url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?)] {
+        try await playlistPlaybackPlan(playlistID: playlistID).items
+    }
+    public func playlistPlaybackPlan(playlistID: PlaylistID, selectedItemID: UUID? = nil) async throws -> PlaylistPlaybackPlan {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
         try await refreshStorageRootAccess()
-        var results: [(url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?)] = []
+        guard try await database.playlists().contains(where: { $0.id == playlistID }) else { throw DatabaseError.notFound("Active playlist") }
+        var results: [PlaylistPlaybackPlan.Entry] = []
         for item in try await playlistItems(playlistID) {
             if let asset = try? await database.playbackAsset(trackID: item.trackID), let resolved = try? playbackURL(for: asset) {
-                results.append((resolved.url, item.trackID, resolved.title, resolved.cueStartMilliseconds, resolved.cueEndMilliseconds))
+                results.append((item.id, (resolved.url, item.trackID, resolved.title, resolved.cueStartMilliseconds, resolved.cueEndMilliseconds)))
             }
         }
-        guard !results.isEmpty else { throw DatabaseError.invalidOperation("This playlist has no currently playable tracks.") }
-        return results
+        return try .init(entries: results, selectedItemID: selectedItemID)
     }
     public func playbackURLs(trackIDs: [TrackID]) async -> [(url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?)] {
         guard let database else { return [] }
@@ -821,6 +824,11 @@ public final class LibraryStore: ObservableObject {
     public func addTrack(_ trackID: TrackID, toPlaylist id: PlaylistID, itemID: UUID = UUID()) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.addTrack(trackID, to: id, itemID: itemID); try await reload() }
     public func removePlaylistItem(_ id: UUID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.removePlaylistItem(id); try await reload() }
     public func movePlaylistItem(_ id: UUID, to position: Int) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.movePlaylistItem(id, to: position); try await reload() }
+    public func movePlaylistItem(_ id: UUID, in playlistID: PlaylistID, adjacentTo neighborID: UUID, expectedItemIDs: [UUID]) async throws {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        try await database.movePlaylistItem(id, in: playlistID, adjacentTo: neighborID, expectedItemIDs: expectedItemIDs)
+        try await reload()
+    }
     public func softDeleteAlbum(_ id: AlbumID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.softDeleteAlbum(id); try await reload() }
     public func permanentlyDeleteAlbum(_ id: AlbumID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.permanentlyDeleteAlbum(id); try await reload() }
     public func exportCatalogue(to url: URL) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; let json = try await database.catalogueExportJSON(); try json.write(to: url, atomically: true, encoding: .utf8) }

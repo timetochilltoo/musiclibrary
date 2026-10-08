@@ -7,7 +7,7 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 ## 1. Launch the packaged Mac app
 
 1. In Finder, open the project folder.
-2. Open the newest sequential package, currently `build/Music Library 0.44.app`. An older `/Applications/Music Library.app` installation is not automatically updated by packaging.
+2. Open the newest sequential package, currently `build/Music Library 0.45.app`. An older `/Applications/Music Library.app` installation is not automatically updated by packaging.
 3. If macOS blocks the first launch, Control-click the app, choose **Open**, then choose **Open** again.
 4. The app opens a catalogue in its Application Support folder. It does not use a SQLite database on the NAS.
 5. Keep the app open while following the tests below. If anything unexpected happens, take a screenshot and note the exact action just before it happened.
@@ -20,6 +20,10 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 4. Do not move, rename, or edit the original media during this guide.
 
 ## 3. Phase 3 — Mac player and playlists
+
+### R7 playlist identity/ordering acceptance (0.45)
+
+Use disposable data. Add one track twice with a different track between them; playing the second duplicate must start at that entry, not the first, and keep the existing forward queue order/CUE boundaries. Include an unavailable track before the selected row and confirm the resolved starting index; selecting an unavailable or removed entry must show an error rather than start another copy. Soft-deleted playlists cannot be started. In Organize, first Earlier and last Later are disabled according to visible order. Remove a temporary catalogue track to create a position gap, then move adjacent remaining entries both ways: numbering/order must be contiguous after movement. Concurrently alter contents to test stale command rejection without revision changes, then Refresh Contents and retry. Test duplicate entries, wrong-playlist/nonadjacent requests, busy failures and modal cancellation. Pure plan/integration tests are not real-audio/native race proof; see HANDOFF for exact native coverage.
 
 ### R7 in-place Add Tracks acceptance (0.44)
 

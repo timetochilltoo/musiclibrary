@@ -1276,10 +1276,36 @@ public actor MusicDatabase {
         }
     }
 
+    /// Swap displayed neighbors, validating identity/order in the same write transaction.
+    public func movePlaylistItem(_ id: UUID, in playlistID: PlaylistID, adjacentTo neighborID: UUID, expectedItemIDs: [UUID]) throws {
+        try transaction {
+            guard try Self.exists("SELECT 1 FROM playlist WHERE id = ? AND deleted_at IS NULL;", value: playlistID.description, on: connection) else { throw DatabaseError.notFound("Active playlist") }
+            let entries = try playlistItems(playlistID: playlistID)
+            var ids = try playlistItemIDs(playlistID)
+            guard ids == expectedItemIDs, entries.map(\.id) == ids,
+                  let current = ids.firstIndex(of: id), let neighbor = ids.firstIndex(of: neighborID),
+                  abs(current - neighbor) == 1 else {
+                throw DatabaseError.invalidOperation("Playlist contents changed. Refresh the playlist and try again.")
+            }
+            ids.swapAt(current, neighbor)
+            try renumberPlaylistItems(playlistID, orderedItemIDs: ids)
+            let oldPositions = Dictionary(uniqueKeysWithValues: entries.map { ($0.id, $0.position) })
+            let changes = ids.enumerated().compactMap { index, itemID in
+                Self.revisionChange(entityType: "playlist_item", entityID: itemID.uuidString.lowercased(), fieldName: "position", oldValue: oldPositions[itemID].map(String.init), newValue: String(index + 1))
+            }
+            try incrementRevision(changes: changes)
+        }
+    }
+
     public func playlistItems(playlistID: PlaylistID) throws -> [PlaylistItem] {
         let statement = try Self.prepare("SELECT playlist_item.id, playlist_item.track_id, playlist_item.position, track.title FROM playlist_item JOIN track ON track.id = playlist_item.track_id WHERE playlist_item.playlist_id = ? ORDER BY playlist_item.position;", on: connection); defer { sqlite3_finalize(statement) }; try Self.bind(playlistID.description, at: 1, to: statement); var values: [PlaylistItem] = []
-        while sqlite3_step(statement) == SQLITE_ROW { guard let raw = Self.text(at: 0, from: statement), let id = UUID(uuidString: raw), let rawTrack = Self.text(at: 1, from: statement), let trackUUID = UUID(uuidString: rawTrack) else { throw DatabaseError.invalidIdentifier("playlist_item") }; values.append(.init(id: id, playlistID: playlistID, trackID: .init(rawValue: trackUUID), position: Int(Self.int(at: 2, from: statement) ?? 0), title: Self.text(at: 3, from: statement) ?? "")) }
-        return values
+        while true {
+            let status = sqlite3_step(statement)
+            if status == SQLITE_DONE { return values }
+            guard status == SQLITE_ROW else { throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(connection))) }
+            guard let raw = Self.text(at: 0, from: statement), let id = UUID(uuidString: raw), let rawTrack = Self.text(at: 1, from: statement), let trackUUID = UUID(uuidString: rawTrack) else { throw DatabaseError.invalidIdentifier("playlist_item") }
+            values.append(.init(id: id, playlistID: playlistID, trackID: .init(rawValue: trackUUID), position: Int(Self.int(at: 2, from: statement) ?? 0), title: Self.text(at: 3, from: statement) ?? ""))
+        }
     }
 
     /// Full active catalogue, independent of the Albums browser's search.
@@ -1328,11 +1354,13 @@ public actor MusicDatabase {
         defer { sqlite3_finalize(statement) }
         try Self.bind(playlistID.description, at: 1, to: statement)
         var values: [UUID] = []
-        while sqlite3_step(statement) == SQLITE_ROW {
+        while true {
+            let status = sqlite3_step(statement)
+            if status == SQLITE_DONE { return values }
+            guard status == SQLITE_ROW else { throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(connection))) }
             guard let raw = Self.text(at: 0, from: statement), let id = UUID(uuidString: raw) else { throw DatabaseError.invalidIdentifier("playlist_item") }
             values.append(id)
         }
-        return values
     }
 
     private func renumberPlaylistItems(_ playlistID: PlaylistID, orderedItemIDs: [UUID]) throws {
