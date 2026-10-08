@@ -1,10 +1,24 @@
 # Music Library — Project Handoff
 
-Last updated: 7 October 2026
+Last updated: 8 October 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — R7 box-set browsing and organization
+## Current resume — R7 playlist browsing foundation
+
+Delivered Release local app: **Music Library 0.43 (build 44)** at `build/Music Library 0.43.app`, versioned through `Packaging/MusicLibraryMac-Info.plist` and assembled with the existing packaging script. Schema remains **17**. Checks used disposable catalogues only; the personal Application Support catalogue, source audio and normal app were not opened. No provider, source retagging/movement, release archive or notarization was added.
+
+Playlists now has name search, count-labelled rows, an explicit empty-playlist label and no-match/Clear Search recovery. Localized name sorting retains separate same-name IDs. Existing rename and recoverable playlist deletion remain in the row menu. Detail keeps the identity, entry count and controls above its empty state instead of overlaying them. Organize Tracks reveals existing Earlier/Later and entry removal; listening mode hides those controls. Removal confirms that only the playlist entry is removed, with catalogue tracks and files retained. Busy state blocks repeat mutation commands and shows Updating playlist; rows retain 32-point bottom spacing.
+
+One read-only `MusicDatabase.playlistContents` query joins active playlists and existing tracks in stored order, preserves duplicate entries by item UUID and propagates invalid identifiers/SQLite stepping errors. LibraryStore publishes this map under the existing reload-generation guard alongside playlists. Counts and detail use that shared snapshot independently of global Albums search; the former unguarded detail-specific asynchronous reader is removed. Existing service mutation and playback/queue resolution semantics are unchanged. No SQL or direct persistence writes are introduced in SwiftUI. Selection clears when its playlist disappears and per-playlist local detail state uses stable identity.
+
+Relevant files: `PlaylistBrowserView.swift`, shell/PlaylistDetail, LibraryStore, SQLiteDatabase and `PlaylistBrowseIntegrationTests.swift`. The new temporary SQLite integration covers duplicate item identities, read-only revision stability, search-independent contents, movement/removal of one duplicate, retained catalogue track and deletion/restoration refresh. `swift test` passes **179 tests across 35 suites**; `swift test -c release` passes **176 across 34** (three DEBUG fixture checks differ). Final incremental build, Release packaging, plist/version/build, strict deep signature and whitespace checks passed. Logs: `/private/tmp/musiclibrary-043-*.log`.
+
+Native disposable checks inspected the empty browser, created Fixture Listening, confirmed 1 playlist/Empty playlist, opened its visible header/0 tracks/disabled Play/Organize controls and inspected a screenshot with the empty state below the header. Returning, unmatched search and Clear Search restored the row/count. The fixture was closed. Populated row appearance, native reorder/removal/cancellation, busy/error races, duplicate playback starts, long/same-name cases, resize, keyboard/VoiceOver and light/dark remain pending; integration coverage is not native playback proof. Earlier R5/R6 audio, NAS and iPad-device acceptance remains open. See `MAC_AND_NAS_TESTING.md`.
+
+Next: **R7 richer playlist rows and in-place Add Tracks** using full-catalogue metadata/availability and existing artwork. Audit existing duplicate-entry playback-start resolution and absolute-position ordering with gaps/stale contents before extending organization; this foundation does not change them. Cover collage, duration/artist/album summaries and Shuffle remain planned, not delivered. Queue editing/Play Next, internet lyrics, import release-ID association, track-specific credits/IDs and destructive acceptance remain deferred.
+
+## Previous resume — R7 box-set browsing and organization
 
 Delivered Release local app: **Music Library 0.42 (build 43)** at `build/Music Library 0.42.app`, versioned through `Packaging/MusicLibraryMac-Info.plist` and packaged with the existing script. Schema remains **17**. Development checks used disposable catalogues only; no personal catalogue/source media or normal-app launch was used. No source retagging/movement, provider, distribution archive or notarization was introduced.
 

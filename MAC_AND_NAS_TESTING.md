@@ -7,7 +7,7 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 ## 1. Launch the packaged Mac app
 
 1. In Finder, open the project folder.
-2. Open the newest sequential package, currently `build/Music Library 0.42.app`. An older `/Applications/Music Library.app` installation is not automatically updated by packaging.
+2. Open the newest sequential package, currently `build/Music Library 0.43.app`. An older `/Applications/Music Library.app` installation is not automatically updated by packaging.
 3. If macOS blocks the first launch, Control-click the app, choose **Open**, then choose **Open** again.
 4. The app opens a catalogue in its Application Support folder. It does not use a SQLite database on the NAS.
 5. Keep the app open while following the tests below. If anything unexpected happens, take a screenshot and note the exact action just before it happened.
@@ -20,6 +20,10 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 4. Do not move, rename, or edit the original media during this guide.
 
 ## 3. Phase 3 — Mac player and playlists
+
+### R7 playlist foundation acceptance (0.43)
+
+Use disposable catalogue data. Create playlists with long/same names, an empty playlist and duplicate entries for one track. Search by name; no-match offers Clear Search. Counts include each entry, not unique tracks, and do not inherit global album search. Open an empty playlist: its header and controls stay visible above the empty state. Normal listening hides reorder/remove controls; Organize reveals them. Move a duplicate entry and remove one only: the other stays, and catalogue tracks/audio are untouched. Cancel removal, test repeat submissions/slow failures and confirm busy feedback. Adding/removing from album context or restoring a playlist must refresh the shared contents; switching playlists must not show the previous reader's results. Playback behavior is unchanged and real-audio acceptance remains separate. Cover collage, detailed track metadata/availability and in-place Add Tracks are not implemented in this foundation. See HANDOFF for current native evidence.
 
 ### R7 box-set acceptance (0.42)
 

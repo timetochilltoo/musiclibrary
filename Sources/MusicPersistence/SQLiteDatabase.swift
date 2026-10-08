@@ -1273,6 +1273,28 @@ public actor MusicDatabase {
         return values
     }
 
+    /// One active-playlist read for browsing; duplicate track entries retain their item IDs.
+    public func playlistContents() throws -> [PlaylistID: [PlaylistItem]] {
+        let statement = try Self.prepare("""
+            SELECT p.id, i.id, i.track_id, i.position, t.title
+            FROM playlist p JOIN playlist_item i ON i.playlist_id = p.id
+            JOIN track t ON t.id = i.track_id WHERE p.deleted_at IS NULL
+            ORDER BY p.id, i.position, i.id;
+            """, on: connection)
+        defer { sqlite3_finalize(statement) }
+        var result = [PlaylistID: [PlaylistItem]]()
+        while true {
+            let status = sqlite3_step(statement)
+            if status == SQLITE_DONE { return result }
+            guard status == SQLITE_ROW else { throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(connection))) }
+            guard let playlist = Self.text(at: 0, from: statement).flatMap(UUID.init(uuidString:)),
+                  let item = Self.text(at: 1, from: statement).flatMap(UUID.init(uuidString:)),
+                  let track = Self.text(at: 2, from: statement).flatMap(UUID.init(uuidString:)) else { throw DatabaseError.invalidIdentifier("Playlist contents") }
+            let id = PlaylistID(rawValue: playlist)
+            result[id, default: []].append(.init(id: item, playlistID: id, trackID: .init(rawValue: track), position: Int(Self.int(at: 3, from: statement) ?? 0), title: Self.text(at: 4, from: statement) ?? ""))
+        }
+    }
+
     private func playlistItemIDs(_ playlistID: PlaylistID) throws -> [UUID] {
         let statement = try Self.prepare("SELECT id FROM playlist_item WHERE playlist_id = ? ORDER BY position;", on: connection)
         defer { sqlite3_finalize(statement) }

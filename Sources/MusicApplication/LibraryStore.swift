@@ -40,6 +40,7 @@ public final class LibraryStore: ObservableObject {
     @Published public private(set) var importScanProgress: [ImportBatchID: ImportScanProgress] = [:]
     @Published public private(set) var libraryHealthIssues: [LibraryHealthIssue] = []
     @Published public private(set) var playlists: [Playlist] = []
+    @Published public private(set) var playlistContents: [PlaylistID: [PlaylistItem]] = [:]
     @Published public private(set) var deletedPlaylists: [Playlist] = []
     @Published public private(set) var duplicateAssets: [AssetDuplicate] = []
     @Published public private(set) var relinkProposals: [AssetRelinkProposal] = []
@@ -140,6 +141,7 @@ public final class LibraryStore: ObservableObject {
         async let loadedImportBatches = database.importBatches()
         async let loadedHealth = database.libraryHealthIssues()
         async let loadedPlaylists = database.playlists()
+        async let loadedPlaylistContents = database.playlistContents()
         async let loadedDeletedPlaylists = database.deletedPlaylists()
         let nextCatalogueAlbums = try await loadedCatalogueAlbums
         let nextSummaries = try await loadedBrowseSummaries
@@ -158,6 +160,7 @@ public final class LibraryStore: ObservableObject {
         let nextBatches = try await loadedImportBatches
         let nextHealth = try await loadedHealth
         let nextPlaylists = try await loadedPlaylists
+        let nextPlaylistContents = try await loadedPlaylistContents
         let nextDeletedPlaylists = try await loadedDeletedPlaylists
         let nextDuplicates = try await database.duplicateAssets()
         let nextRelinks = try await database.relinkProposals()
@@ -183,6 +186,7 @@ public final class LibraryStore: ObservableObject {
         importBatches = nextBatches
         libraryHealthIssues = nextHealth
         playlists = nextPlaylists
+        playlistContents = nextPlaylistContents
         deletedPlaylists = nextDeletedPlaylists
         duplicateAssets = nextDuplicates
         relinkProposals = nextRelinks

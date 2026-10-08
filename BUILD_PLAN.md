@@ -895,6 +895,8 @@ R7 box-set checkpoint (7 October 2026): searchable title/edition/location cards 
 
 Playlists:
 
+R7 playlist foundation checkpoint (8 October 2026): name search, counts and no-match recovery now follow the organization browser pattern. Counts/detail share one batched active-playlist contents snapshot, preserve duplicate-entry identities and are independent of global Albums search. Empty detail keeps identity/count/controls visible. Explicit Organize mode reveals existing movement/removal controls; removal confirms entry-only scope and busy guards block repeat mutations. Playback/queue resolution is unchanged. This is not the complete playlist design: cover collage, track artist/album/duration/availability summaries, in-place Add Tracks and richer organization remain next.
+
 - Header uses a collage of existing album covers, count, duration when known, Play and Shuffle.
 - Add Tracks opens a searchable picker inside the playlist workflow; selected tracks are added without navigating away.
 - Rows show track, artist, album, duration and availability, with one secondary menu.

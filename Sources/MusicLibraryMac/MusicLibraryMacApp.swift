@@ -189,6 +189,7 @@ private struct LibraryShellView: View {
     @State private var selectedImportBatchID: ImportBatchID?
     @State private var importBatchToAnalyzeAfterScan: ImportBatchID?
     @State private var selectedPlaylistID: PlaylistID?
+    @State private var playlistSearchText = ""
     @State private var searchText = ""
     @AppStorage("MusicLibrary.browse.ownership") private var albumOwnershipFilter: AlbumOwnershipFilter = .all
     @AppStorage("MusicLibrary.browse.availability") private var albumAvailabilityFilter: AlbumAvailabilityFilter = .any
@@ -271,6 +272,9 @@ private struct LibraryShellView: View {
         }
         .onChange(of: library.boxSets) { _, boxes in
             if let selectedBoxSetID, !boxes.contains(where: { $0.id == selectedBoxSetID }) { self.selectedBoxSetID = nil }
+        }
+        .onChange(of: library.playlists) { _, playlists in
+            if let selectedPlaylistID, !playlists.contains(where: { $0.id == selectedPlaylistID }) { self.selectedPlaylistID = nil }
         }
         .sheet(isPresented: $showsAlbumEditor) {
             AlbumEditor(library: library) { album in
@@ -486,32 +490,13 @@ private struct LibraryShellView: View {
             }
             .overlay { if library.isReady && latestImportBatchesByRoot.isEmpty { ContentUnavailableView("No library changes", systemImage: "tray", description: Text("Rescan a registered music folder when you want to review new or changed albums.")) } }
         case .playlists:
-            List(library.playlists, selection: $selectedPlaylistID) { playlist in
-                HStack(spacing: 10) {
-                    Image(systemName: "music.note.list")
-                        .font(.title3)
-                        .foregroundStyle(.tint)
-                        .frame(width: 30, height: 30)
-                        .background(.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 7))
-                    Text(playlist.name).font(.headline).lineLimit(1)
+            PlaylistBrowserView(library: library, selection: $selectedPlaylistID, search: $playlistSearchText,
+                                onRename: { playlistToRename = $0 }) { playlist in
+                Task {
+                    do { try await library.deletePlaylist(playlist.id); if selectedPlaylistID == playlist.id { selectedPlaylistID = nil } }
+                    catch { library.presentError(error) }
                 }
-                    .padding(.vertical, 5)
-                    .tag(playlist.id)
-                    .contextMenu {
-                        Button("Rename") { playlistToRename = playlist }
-                        Button("Delete", role: .destructive) {
-                            Task {
-                                do {
-                                    try await library.deletePlaylist(playlist.id)
-                                    if selectedPlaylistID == playlist.id { selectedPlaylistID = nil }
-                                } catch {
-                                    library.presentError(error)
-                                }
-                            }
-                        }
-                    }
             }
-            .overlay { if library.isReady && library.playlists.isEmpty { ContentUnavailableView("No playlists", systemImage: "music.note.list", description: Text("Create a playlist, then add tracks from an album.")) } }
         case .settings:
             List(LibrarySettingsCategory.allCases, selection: $settingsCategory) { category in
                 Label {
@@ -638,7 +623,7 @@ private struct LibraryShellView: View {
                 }
             )
         } else if section == .playlists, let selectedPlaylistID, let playlist = library.playlists.first(where: { $0.id == selectedPlaylistID }) {
-            PlaylistDetail(library: library, playback: playback, playlist: playlist)
+            PlaylistDetail(library: library, playback: playback, playlist: playlist).id(playlist.id)
         } else if section == .albums, selectedAlbumID != nil {
             albumDetail
         } else if section == .importInbox {
@@ -2399,7 +2384,10 @@ private struct PlaylistDetail: View {
     @ObservedObject var library: LibraryStore
     @ObservedObject var playback: PlaybackController
     let playlist: Playlist
-    @State private var items: [PlaylistItem] = []
+    private var items: [PlaylistItem] { library.playlistContents[playlist.id] ?? [] }
+    @State private var isOrganizing = false
+    @State private var isUpdating = false
+    @State private var itemToRemove: PlaylistItem?
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 0) {
@@ -2416,11 +2404,17 @@ private struct PlaylistDetail: View {
                         Button("Play Playlist", systemImage: "play.fill") { play() }
                             .buttonStyle(.borderedProminent)
                             .disabled(items.isEmpty)
+                        Toggle("Organize Tracks", isOn: $isOrganizing).toggleStyle(.checkbox).disabled(isUpdating)
                     }
                     Spacer()
                 }
                 .padding(24)
                 Divider()
+                if items.isEmpty {
+                    ContentUnavailableView("Empty Playlist", systemImage: "music.note.list", description: Text("Add tracks from an album. This playlist stays ready for your collection."))
+                        .padding(.vertical, 24)
+                }
+                if isOrganizing { Text("Change playlist order or remove an entry. Source tracks and files are kept.").font(.caption).foregroundStyle(.secondary).padding(16) }
 
                 ForEach(items) { item in
                     HStack(spacing: 12) {
@@ -2434,43 +2428,49 @@ private struct PlaylistDetail: View {
                             .help("Play this track and continue through the playlist")
                         Text(item.title).font(.body.weight(.medium)).lineLimit(2)
                         Spacer()
+                        if isOrganizing {
                         Button("Move Earlier", systemImage: "arrow.up") { move(item, to: item.position - 1) }
                             .labelStyle(.iconOnly).disabled(item.position == 1).help("Move earlier")
                         Button("Move Later", systemImage: "arrow.down") { move(item, to: item.position + 1) }
                             .labelStyle(.iconOnly).disabled(item.position == items.count).help("Move later")
-                        Button("Remove from Playlist", systemImage: "trash", role: .destructive) { remove(item) }
+                        Button("Remove from Playlist", systemImage: "minus.circle", role: .destructive) { itemToRemove = item }
                             .labelStyle(.iconOnly).help("Remove from playlist")
+                        }
                     }
                     .padding(.horizontal, 24)
                     .padding(.vertical, 11)
                     Divider().padding(.leading, 66)
                 }
-            }
+            }.disabled(isUpdating).padding(.bottom, 32)
         }
         .navigationTitle(playlist.name)
-        .overlay {
-            if items.isEmpty {
-                ContentUnavailableView("Empty playlist", systemImage: "music.note.list", description: Text("Add tracks from an album, then play them here."))
-            }
+        .safeAreaInset(edge: .bottom) {
+            if isUpdating { HStack { ProgressView().controlSize(.small); Text("Updating playlist…").font(.caption); Spacer() }.padding(12).background(.bar) }
         }
-        .task(id: playlist.id) { await load() }
-    }
-
-    private func load() async {
-        do { items = try await library.playlistItems(playlist.id) }
-        catch { library.presentError(error) }
+        .confirmationDialog("Remove this playlist entry?", isPresented: Binding(get: { itemToRemove != nil }, set: { if !$0 { itemToRemove = nil } }), titleVisibility: .visible) {
+            Button("Remove from Playlist", role: .destructive) { if let itemToRemove { remove(itemToRemove); self.itemToRemove = nil } }
+            Button("Cancel", role: .cancel) { itemToRemove = nil }
+        } message: {
+            Text("\(itemToRemove?.title ?? "This track") remains in the catalogue and other playlists. No audio file is deleted.")
+        }
     }
 
     private func move(_ item: PlaylistItem, to position: Int) {
+        guard !isUpdating else { return }
+        isUpdating = true
         Task {
-            do { try await library.movePlaylistItem(item.id, to: position); await load() }
+            defer { isUpdating = false }
+            do { try await library.movePlaylistItem(item.id, to: position) }
             catch { library.presentError(error) }
         }
     }
 
     private func remove(_ item: PlaylistItem) {
+        guard !isUpdating else { return }
+        isUpdating = true
         Task {
-            do { try await library.removePlaylistItem(item.id); await load() }
+            defer { isUpdating = false }
+            do { try await library.removePlaylistItem(item.id) }
             catch { library.presentError(error) }
         }
     }
