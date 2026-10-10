@@ -1210,28 +1210,48 @@ public actor MusicDatabase {
     }
 
     public func addTrack(_ trackID: TrackID, to playlistID: PlaylistID, itemID: UUID = UUID()) throws {
+        try addTracks([PlaylistTrackAddition(id: itemID, trackID: trackID)], to: playlistID)
+    }
+
+    public func addTracks(_ additions: [PlaylistTrackAddition], to playlistID: PlaylistID) throws {
+        guard !additions.isEmpty else { throw DatabaseError.invalidOperation("Choose at least one track.") }
+        guard Set(additions.map(\.id)).count == additions.count else { throw DatabaseError.invalidOperation("Playlist entry identities must be distinct.") }
         try transaction {
             guard try Self.exists("SELECT 1 FROM playlist WHERE id = ? AND deleted_at IS NULL;", value: playlistID.description, on: connection) else { throw DatabaseError.notFound("Playlist") }
-            guard try Self.exists("SELECT 1 FROM track t JOIN disc d ON d.id = t.disc_id JOIN album a ON a.id = d.album_id WHERE t.id = ? AND a.deleted_at IS NULL;", value: trackID.description, on: connection) else { throw DatabaseError.notFound("Active track") }
-            let existing = try Self.prepare("SELECT playlist_id, track_id FROM playlist_item WHERE id = ?;", on: connection)
-            defer { sqlite3_finalize(existing) }
-            try Self.bind(itemID.uuidString.lowercased(), at: 1, to: existing)
-            let status = sqlite3_step(existing)
-            if status == SQLITE_ROW {
-                guard Self.text(at: 0, from: existing) == playlistID.description,
-                      Self.text(at: 1, from: existing) == trackID.description else { throw DatabaseError.invalidOperation("Playlist entry identity belongs to another selection.") }
-                return
+            var saved = 0
+            for addition in additions {
+                guard try Self.exists("SELECT 1 FROM track t JOIN disc d ON d.id = t.disc_id JOIN album a ON a.id = d.album_id WHERE t.id = ? AND a.deleted_at IS NULL;", value: addition.trackID.description, on: connection) else { throw DatabaseError.notFound("Active track") }
+                let existing = try Self.prepare("SELECT playlist_id, track_id FROM playlist_item WHERE id = ?;", on: connection)
+                defer { sqlite3_finalize(existing) }
+                try Self.bind(addition.id.uuidString.lowercased(), at: 1, to: existing)
+                let status = sqlite3_step(existing)
+                if status == SQLITE_ROW {
+                    guard Self.text(at: 0, from: existing) == playlistID.description,
+                          Self.text(at: 1, from: existing) == addition.trackID.description else { throw DatabaseError.invalidOperation("Playlist entry identity belongs to another selection.") }
+                    saved += 1
+                } else if status != SQLITE_DONE {
+                    throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(connection)))
+                }
             }
-            guard status == SQLITE_DONE else { throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(connection))) }
-            let position = try Self.nextNumber("SELECT COALESCE(MAX(position), 0) + 1 FROM playlist_item WHERE playlist_id = ?;", ownerID: playlistID.description, on: connection)
-            let statement = try Self.prepare("INSERT INTO playlist_item (id, playlist_id, track_id, position) VALUES (?, ?, ?, ?);", on: connection)
-            defer { sqlite3_finalize(statement) }
-            try Self.bind(itemID.uuidString.lowercased(), at: 1, to: statement); try Self.bind(playlistID.description, at: 2, to: statement); try Self.bind(trackID.description, at: 3, to: statement); try Self.bind(Int64(position), at: 4, to: statement)
-            try Self.stepDone(statement, connection: connection)
-            let changes = [
-                Self.revisionChange(entityType: "playlist_item", entityID: itemID.uuidString.lowercased(), fieldName: "track_id", oldValue: nil, newValue: trackID.description),
-                Self.revisionChange(entityType: "playlist_item", entityID: itemID.uuidString.lowercased(), fieldName: "position", oldValue: nil, newValue: String(position))
-            ].compactMap { $0 }
+            if saved == additions.count { return }
+            guard saved == 0 else { throw DatabaseError.invalidOperation("Only part of this selection remains saved. Close the picker and review the playlist before adding again.") }
+            var position = try Self.nextNumber("SELECT COALESCE(MAX(position), 0) + 1 FROM playlist_item WHERE playlist_id = ?;", ownerID: playlistID.description, on: connection)
+            var changes: [RevisionChange] = []
+            for addition in additions {
+                let statement = try Self.prepare("INSERT INTO playlist_item (id, playlist_id, track_id, position) VALUES (?, ?, ?, ?);", on: connection)
+                defer { sqlite3_finalize(statement) }
+                try Self.bind(addition.id.uuidString.lowercased(), at: 1, to: statement); try Self.bind(playlistID.description, at: 2, to: statement); try Self.bind(addition.trackID.description, at: 3, to: statement); try Self.bind(Int64(position), at: 4, to: statement)
+                try Self.stepDone(statement, connection: connection)
+                changes += [
+                    Self.revisionChange(entityType: "playlist_item", entityID: addition.id.uuidString.lowercased(), fieldName: "track_id", oldValue: nil, newValue: addition.trackID.description),
+                    Self.revisionChange(entityType: "playlist_item", entityID: addition.id.uuidString.lowercased(), fieldName: "position", oldValue: nil, newValue: String(position))
+                ].compactMap { $0 }
+                if addition != additions.last {
+                    let next = position.addingReportingOverflow(1)
+                    guard !next.overflow else { throw DatabaseError.invalidOperation("Playlist is too large.") }
+                    position = next.partialValue
+                }
+            }
             try incrementRevision(changes: changes)
         }
     }

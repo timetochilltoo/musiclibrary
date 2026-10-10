@@ -7,7 +7,7 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 ## 1. Launch the packaged Mac app
 
 1. In Finder, open the project folder.
-2. Open the newest sequential package, currently `build/Music Library 0.47.app`. An older `/Applications/Music Library.app` installation is not automatically updated by packaging.
+2. Open the newest sequential package, currently `build/Music Library 0.48.app`. An older `/Applications/Music Library.app` installation is not automatically updated by packaging.
 3. If macOS blocks the first launch, Control-click the app, choose **Open**, then choose **Open** again.
 4. The app opens a catalogue in its Application Support folder. It does not use a SQLite database on the NAS.
 5. Keep the app open while following the tests below. If anything unexpected happens, take a screenshot and note the exact action just before it happened.
@@ -20,6 +20,10 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 4. Do not move, rename, or edit the original media during this guide.
 
 ## 3. Phase 3 — Mac player and playlists
+
+### R7 multi-track selection acceptance (0.48)
+
+Use the disposable navigation fixture or another isolated catalogue. Open Add Tracks, select two rows in reverse order and search until one or both selections are hidden: selected and hidden counts must remain explicit, and Add includes all selected tracks. Select Matching adds the current results to the selection without clearing hidden choices; Clear Selection clears all and disables Add. Cancel writes nothing. Submit several tracks: the sheet closes and all entries appear in catalogue browse order, with correct totals; adding them again makes distinct duplicate entries. Exercise keyboard/checkbox accessibility and long labels at compact widths. For failure acceptance, invalidate one selected active track or delete the target playlist: the batch must leave no partial entries or revision. Retry after a committed batch and a reload failure must reuse captured UUIDs, not append duplicates. After an attempted save, selection/search are locked for retry; Cancel is available after failure but disabled while saving, as is interactive dismissal. A partly saved request is refused for review rather than silently completed. See HANDOFF for native versus integration evidence; no real audio is required for this workflow.
 
 ### R7 playlist artwork/header acceptance (0.47)
 

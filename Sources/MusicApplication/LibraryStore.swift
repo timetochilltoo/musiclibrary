@@ -822,6 +822,7 @@ public final class LibraryStore: ObservableObject {
         try applicationSupportDirectory().appending(path: "TagWriteBackups", directoryHint: .isDirectory)
     }
     public func addTrack(_ trackID: TrackID, toPlaylist id: PlaylistID, itemID: UUID = UUID()) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.addTrack(trackID, to: id, itemID: itemID); try await reload() }
+    public func addTracks(_ additions: [PlaylistTrackAddition], toPlaylist id: PlaylistID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.addTracks(additions, to: id); try await reload() }
     public func removePlaylistItem(_ id: UUID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.removePlaylistItem(id); try await reload() }
     public func movePlaylistItem(_ id: UUID, to position: Int) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.movePlaylistItem(id, to: position); try await reload() }
     public func movePlaylistItem(_ id: UUID, in playlistID: PlaylistID, adjacentTo neighborID: UUID, expectedItemIDs: [UUID]) async throws {
