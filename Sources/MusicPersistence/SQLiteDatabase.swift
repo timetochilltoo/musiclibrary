@@ -1311,8 +1311,10 @@ public actor MusicDatabase {
     /// Full active catalogue, independent of the Albums browser's search.
     public func trackBrowseSummaries() throws -> [TrackBrowseSummary] {
         let statement = try Self.prepare("""
-            SELECT t.id, a.id, t.title, a.title, d.number, t.number, t.duration_ms
+            SELECT t.id, a.id, t.title, a.title, d.number, t.number, t.duration_ms, asset.id, asset.availability, root.status
             FROM track t JOIN disc d ON d.id = t.disc_id JOIN album a ON a.id = d.album_id
+            LEFT JOIN digital_asset asset ON asset.id = (SELECT id FROM digital_asset WHERE track_id = t.id ORDER BY id LIMIT 1)
+            LEFT JOIN storage_root root ON root.id = asset.storage_root_id
             WHERE a.deleted_at IS NULL ORDER BY a.title, a.id, d.number, t.number, t.id;
             """, on: connection)
         defer { sqlite3_finalize(statement) }
@@ -1323,7 +1325,10 @@ public actor MusicDatabase {
             guard status == SQLITE_ROW else { throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(connection))) }
             guard let track = Self.text(at: 0, from: statement).flatMap(UUID.init(uuidString:)),
                   let album = Self.text(at: 1, from: statement).flatMap(UUID.init(uuidString:)) else { throw DatabaseError.invalidIdentifier("Track browse summary") }
-            result.append(.init(id: .init(rawValue: track), albumID: .init(rawValue: album), title: Self.text(at: 2, from: statement) ?? "", albumTitle: Self.text(at: 3, from: statement) ?? "", discNumber: Int(Self.int(at: 4, from: statement) ?? 0), trackNumber: Int(Self.int(at: 5, from: statement) ?? 0), durationMilliseconds: Self.int(at: 6, from: statement).map(Int.init)))
+            let audioStatus = TrackAudioStatus.derive(hasAsset: Self.text(at: 7, from: statement) != nil,
+                                               asset: Self.text(at: 8, from: statement).flatMap(DigitalAssetAvailability.init(rawValue:)),
+                                               root: Self.text(at: 9, from: statement).flatMap(StorageRootStatus.init(rawValue:)))
+            result.append(.init(id: .init(rawValue: track), albumID: .init(rawValue: album), title: Self.text(at: 2, from: statement) ?? "", albumTitle: Self.text(at: 3, from: statement) ?? "", discNumber: Int(Self.int(at: 4, from: statement) ?? 0), trackNumber: Int(Self.int(at: 5, from: statement) ?? 0), durationMilliseconds: Self.int(at: 6, from: statement).map(Int.init), audioStatus: audioStatus))
         }
     }
 

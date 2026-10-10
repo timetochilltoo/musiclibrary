@@ -7,6 +7,41 @@ import MusicPersistence
 @Suite("Playlist browse contents")
 @MainActor
 struct PlaylistBrowseIntegrationTests {
+    @Test("Track status reads stored asset/root state and leaves offline references unchanged")
+    func recordedAvailability() async throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: "PlaylistStatus-\(UUID())")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let database = try MusicDatabase(url: directory.appending(path: "fixture.sqlite"))
+        try await database.migrate()
+        let root = try await database.createStorageRoot(.init(displayName: "Synthetic audio-free root", lastKnownPath: directory.path, bookmarkData: nil))
+        try await database.updateStorageRootAccess(root.id, status: .available)
+        let batch = try await database.createImportBatch(storageRootID: root.id, sourceDescription: "Fixture")
+        try await database.recordImportCandidate(batchID: batch.id, payload: .init(relativePath: "not-a-real-audio.flac", fileName: "not-a-real-audio.flac", contentTypeIdentifier: "org.xiph.flac", fileSize: 1, modifiedAt: nil))
+        let candidate = try #require(await database.importCandidates(batchID: batch.id).first)
+        try await database.saveEmbeddedMetadata(.init(title: "Synthetic", albumTitle: "Album", artist: nil, albumArtist: nil, discNumber: 1, trackNumber: 1, durationMilliseconds: 1000, rawTags: [:]), for: candidate.id)
+        try await database.rebuildImportReleaseProposals(batchID: batch.id, drafts: [.init(title: "Album", artist: nil, discCount: 1, confidence: 1, candidateIDs: [candidate.id])])
+        let proposal = try #require(await database.importReleaseProposals(batchID: batch.id).first)
+        let albumID = try await database.confirmImportReleaseProposal(proposal.id)
+        let assetID = try #require(await database.digitalAssetIDs(albumID: albumID).first)
+        try await database.updateAssetAvailability(assetID, to: .available)
+        let revision = try await database.currentRevision()
+        let available = try #require(await database.trackBrowseSummaries().first)
+        #expect(available.audioStatus == .available) // No actual file exists; this is recorded status only.
+        #expect(try await database.currentRevision() == revision)
+        try await database.updateStorageRootAccess(root.id, status: .permissionRequired)
+        #expect(try await database.trackBrowseSummaries().first?.audioStatus == .permissionRequired)
+        try await database.updateStorageRootAccess(root.id, status: .available)
+        try await database.updateAssetAvailability(assetID, to: .missing)
+        #expect(try await database.trackBrowseSummaries().first?.audioStatus == .unavailable)
+        try await database.updateStorageRootAccess(root.id, status: .offline)
+        let offlineRevision = try await database.currentRevision()
+        #expect(try await database.trackBrowseSummaries().first?.audioStatus == .offline)
+        #expect(try await database.playbackAsset(trackID: available.id)?.availability == .missing)
+        #expect(try await database.digitalAssetIDs(albumID: albumID) == [assetID])
+        #expect(try await database.currentRevision() == offlineRevision)
+    }
+
     @Test("Track picker metadata stays read-only, full-catalogue and active, with duplicate adds")
     func trackPicker() async throws {
         let directory = FileManager.default.temporaryDirectory.appending(path: "PlaylistPicker-\(UUID())")

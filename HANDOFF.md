@@ -1,10 +1,24 @@
 # Music Library — Project Handoff
 
-Last updated: 8 October 2026
+Last updated: 10 October 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — R7 playlist playback identity and guarded ordering
+## Current resume — R7 recorded playlist status and duration
+
+Delivered Release local app: **Music Library 0.46 (build 47)** at `build/Music Library 0.46.app`, versioned through `Packaging/MusicLibraryMac-Info.plist` and the existing packaging script. Schema remains **17**. Only disposable fixtures were used; the normal app, personal catalogue and source media were not opened. No provider, file scanning/probing, retagging/movement, distribution archive or notarization was introduced.
+
+Playlist and Add Tracks rows now distinguish Audio available (catalogue), Music folder offline, Folder permission required, Audio unavailable, No digital copy and unknown status. The track browse query joins the same first asset ordered by ID that the current playback resolver selects, plus its stored root status. This is not any-available-copy selection or a live file check. Offline/permission root state takes precedence over stored asset state, and rendering never rewrites or removes an asset reference. Playback remains explicit and still resolves/verifies files through existing services; no controller, engine or queue behavior changes are included.
+
+New pure `PlaylistBrowseSummary` totals durations per entry, including repeated tracks, and counts recorded-available entries. Empty playlists omit totals; all-unrecorded durations say Duration not recorded; incomplete data says Known duration with a recorded/total-entry fraction. Integer overflow is guarded and displays an unavailable-total explanation rather than wrapping. Deleted/out-of-snapshot album metadata contributes unknown duration/status, not a fabricated zero duration. Track duration formatting also avoids truncating very large minute values. Browser rows and detail use the same summary; detail adds recorded available-entry counts, with catalogue status explicitly labelled. Existing guarded LibraryStore metadata reload supplies the values independently of global Albums search.
+
+Relevant files: `TrackBrowseSummary.swift`, new `PlaylistBrowseSummary.swift`, SQLiteDatabase, PlaylistBrowserView/PlaylistTrackPicker and shell/PlaylistDetail. Two new domain checks cover status precedence, absent/unknown cases, duplicate totals, partial/all-missing/empty duration and overflow. One disposable SQLite integration uses synthetic metadata-only import references to verify available/permission/missing/offline transitions, read-only revision stability and preserved stored asset state/reference after disconnecting the root. It intentionally has no actual audio file: this proves recorded status, not playback. `swift test` passes **185 tests across 37 suites**; Release passes **182 across 36** (three DEBUG checks differ). Final incremental build, Release packaging, plist/version/build, strict deep signature and whitespace checks passed. Logs: `/private/tmp/musiclibrary-046-*.log`.
+
+Native disposable checks created Fixture duration, confirmed empty totals omitted and all three picker rows labelled No digital copy, added the known-duration opening (Duration: 2:03, 0/1 recorded available), then an untimed finale. Screenshot inspection confirmed Known duration: 2:03 (1/2 entries), 0/2 recorded available, both no-copy row labels and omitted unknown row duration. Back confirmed the matching browser summary. Fixture closed; no helper failure occurred. Native offline/permission/available styling, duplicate duration totals, all-unknown/overflow layout, multiple assets, large-library performance, resizing, VoiceOver/light-dark and real-audio/NAS/iPad acceptance remain pending. See MAC_AND_NAS_TESTING.
+
+Next: **playlist cover collage and header/action visual polish**, reusing existing managed front artwork with deterministic distinct-album selection and an empty/no-cover fallback. Do not fetch, generate or edit covers automatically. Track-specific credits, multi-selection, Shuffle, queue editing/Play Next, internet lyrics, import release-ID association and destructive/device acceptance remain deferred.
+
+## Previous resume — R7 playlist playback identity and guarded ordering
 
 Delivered Release local app: **Music Library 0.45 (build 46)** at `build/Music Library 0.45.app`, versioned through `Packaging/MusicLibraryMac-Info.plist` and assembled by the existing script. Schema remains **17**. Development checks used disposable synthetic catalogues only; no normal-app launch, personal catalogue or source audio was used. No provider, retagging, source-file mutation, release archive or notarization was added.
 

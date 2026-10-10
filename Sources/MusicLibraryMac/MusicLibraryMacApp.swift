@@ -2395,6 +2395,7 @@ private struct PlaylistDetail: View {
     }
     var body: some View {
         let summaries = trackSummaries
+        let summary = PlaylistBrowseSummary(items: items, tracks: summaries)
         ScrollView {
             LazyVStack(spacing: 0) {
                 HStack(spacing: 18) {
@@ -2407,6 +2408,8 @@ private struct PlaylistDetail: View {
                         Text(playlist.name).font(.largeTitle.bold())
                         Text("\(items.count) track\(items.count == 1 ? "" : "s")")
                             .foregroundStyle(.secondary)
+                        if let duration = summary.durationLabel { Text(duration).font(.callout).foregroundStyle(.secondary) }
+                        if let availability = summary.availabilityLabel { Text(availability).font(.caption).foregroundStyle(.secondary) }
                         Button("Play Playlist", systemImage: "play.fill") { play() }
                             .buttonStyle(.borderedProminent)
                             .disabled(items.isEmpty)
@@ -2446,6 +2449,7 @@ private struct PlaylistDetail: View {
                                 if let artist = library.albumBrowseSummaries[summary.albumID]?.artist {
                                     Text("Album artist: \(artist)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
                                 }
+                                Text(summary.audioStatus.label).font(.caption).foregroundStyle(.secondary)
                             } else {
                                 Text("Album not in active catalogue").font(.caption).foregroundStyle(.secondary)
                             }

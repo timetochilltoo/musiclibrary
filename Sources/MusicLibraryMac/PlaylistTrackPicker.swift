@@ -35,6 +35,7 @@ struct PlaylistTrackPicker: View {
                     if let artist = library.albumBrowseSummaries[track.albumID]?.artist {
                         Text("Album artist: \(artist)").font(.caption).foregroundStyle(.secondary)
                     }
+                    Text(track.audioStatus.label).font(.caption).foregroundStyle(.secondary)
                 }.padding(.vertical, 5).tag(track.id)
             }.disabled(attemptedSelection != nil).overlay {
                 if tracks.isEmpty {

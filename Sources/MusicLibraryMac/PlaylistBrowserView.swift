@@ -16,6 +16,7 @@ struct PlaylistBrowserView: View {
         }
     }
     var body: some View {
+        let tracks = Dictionary(uniqueKeysWithValues: library.trackBrowseSummaries.map { ($0.id, $0) })
         VStack(spacing: 0) {
             HStack {
                 Text("\(playlists.count) playlist\(playlists.count == 1 ? "" : "s")").font(.callout)
@@ -31,6 +32,8 @@ struct PlaylistBrowserView: View {
                             Text(playlist.name).font(.headline)
                             let count = library.playlistContents[playlist.id]?.count ?? 0
                             Text(count == 0 ? "Empty playlist" : "\(count) track\(count == 1 ? "" : "s")").font(.caption).foregroundStyle(.secondary)
+                            let summary = PlaylistBrowseSummary(items: library.playlistContents[playlist.id] ?? [], tracks: tracks)
+                            if let duration = summary.durationLabel { Text(duration).font(.caption).foregroundStyle(.secondary) }
                         }.frame(maxWidth: .infinity, alignment: .leading)
                         Image(systemName: "chevron.right").foregroundStyle(.secondary)
                     }.padding(.vertical, 10).contentShape(Rectangle())

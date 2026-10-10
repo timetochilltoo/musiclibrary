@@ -7,7 +7,7 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 ## 1. Launch the packaged Mac app
 
 1. In Finder, open the project folder.
-2. Open the newest sequential package, currently `build/Music Library 0.45.app`. An older `/Applications/Music Library.app` installation is not automatically updated by packaging.
+2. Open the newest sequential package, currently `build/Music Library 0.46.app`. An older `/Applications/Music Library.app` installation is not automatically updated by packaging.
 3. If macOS blocks the first launch, Control-click the app, choose **Open**, then choose **Open** again.
 4. The app opens a catalogue in its Application Support folder. It does not use a SQLite database on the NAS.
 5. Keep the app open while following the tests below. If anything unexpected happens, take a screenshot and note the exact action just before it happened.
@@ -20,6 +20,10 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 4. Do not move, rename, or edit the original media during this guide.
 
 ## 3. Phase 3 — Mac player and playlists
+
+### R7 playlist recorded status/duration acceptance (0.46)
+
+Use disposable catalogue data. The navigation fixture's three audio-free tracks show No digital copy. Add a known-duration track twice and an untimed track: header/browser should total both copies and label Known duration with the recorded-entry fraction, never imply a complete duration. An empty playlist omits duration, and all unknown entries show Duration not recorded. Check available/offline/permission/missing/invalid states using synthetic references, preserving the stored asset and root-relative path when a root disconnects. The label is recorded catalogue state: no file probe, scanning, relinking or retagging occurs while browsing; Play still resolves/verifies audio explicitly. Multiple assets use the same first-ID selection as the current playback resolver, not any-available-copy semantics. Check long titles, compact/wide, keyboard/VoiceOver and light/dark separately. Cover collage is not part of 0.46. See HANDOFF for evidence and remaining native acceptance.
 
 ### R7 playlist identity/ordering acceptance (0.45)
 
