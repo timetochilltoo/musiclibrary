@@ -2485,6 +2485,9 @@ private struct PlaylistDetail: View {
     @ViewBuilder private var playlistActions: some View {
         Button("Play Playlist", systemImage: "play.fill") { play() }
             .buttonStyle(.borderedProminent).disabled(items.isEmpty)
+        Button("Shuffle", systemImage: "shuffle") { play(shuffled: true) }
+            .buttonStyle(.bordered).disabled(items.isEmpty)
+            .help("Play available playlist entries in random order without changing the saved playlist")
         Button("Add Tracks…", systemImage: "plus") { showsTrackPicker = true }
             .buttonStyle(.bordered)
         Toggle("Organize Tracks", isOn: $isOrganizing).toggleStyle(.checkbox).disabled(isUpdating)
@@ -2524,10 +2527,10 @@ private struct PlaylistDetail: View {
         }
     }
 
-    private func play() {
+    private func play(shuffled: Bool = false) {
         Task {
             do {
-                try playback.play(items: try await library.playbackURLs(playlistID: playlist.id), startingAt: 0)
+                try playback.play(items: try await library.playbackURLs(playlistID: playlist.id), startingAt: 0, shuffled: shuffled)
             } catch {
                 library.presentError(error)
             }

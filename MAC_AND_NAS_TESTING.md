@@ -7,7 +7,7 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 ## 1. Launch the packaged Mac app
 
 1. In Finder, open the project folder.
-2. Open the newest sequential package, currently `build/Music Library 0.48.app`. An older `/Applications/Music Library.app` installation is not automatically updated by packaging.
+2. Open the newest sequential package, currently `build/Music Library 0.49.app`. An older `/Applications/Music Library.app` installation is not automatically updated by packaging.
 3. If macOS blocks the first launch, Control-click the app, choose **Open**, then choose **Open** again.
 4. The app opens a catalogue in its Application Support folder. It does not use a SQLite database on the NAS.
 5. Keep the app open while following the tests below. If anything unexpected happens, take a screenshot and note the exact action just before it happened.
@@ -20,6 +20,10 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 4. Do not move, rename, or edit the original media during this guide.
 
 ## 3. Phase 3 — Mac player and playlists
+
+### R7 playlist Shuffle acceptance (0.49)
+
+Use an isolated catalogue and copied audio, with repeated tracks and a CUE segment if available. Empty playlists disable Shuffle. Add several entries, including duplicates and one unavailable item, then Shuffle: all resolved occurrences remain in the queue, randomization includes the starting song, and the saved playlist order/count remain unchanged. A random permutation can legitimately match the original order; do not require every run to differ. Toggle shuffle off from the player: restore the original resolved order at the same duplicate occurrence without restarting audio or changing CUE bounds. Toggle repeatedly, skip/select queue entries, and verify repeat mode stays unchanged. Normal Play Playlist or a direct row start restores supplied order and resets shuffle. All-unplayable playlists report the existing error without replacing an existing queue; the audio-free navigation fixture covers this refusal, not successful playback. Check compact/wide header actions, keyboard/VoiceOver, light/dark, pending-load callbacks and actual audio independently. On app restart, the existing restored queue snapshot is the original-order baseline; this slice does not persist the pre-shuffle permutation or add queue editing.
 
 ### R7 multi-track selection acceptance (0.48)
 

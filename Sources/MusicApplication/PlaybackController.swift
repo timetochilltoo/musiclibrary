@@ -25,6 +25,7 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
     private var player: AVAudioPlayer?
     private var items: [(url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?)] = []
     private var originalItems: [(url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?)] = []
+    private var originalIndices: [Int] = []
     private let preloader = PlaybackPreloader()
     private let loader = PlaybackLoader()
     private var preparedNext: (trackID: TrackID, prepared: PreparedAudioPlayer)?
@@ -55,16 +56,21 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
         super.init()
         if systemIntegrationEnabled { configureRemoteCommands() }
     }
-    public func play(items: [(url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?)], startingAt index: Int) throws {
+    /// A shuffled start randomizes every resolved occurrence before preparing audio.
+    public func play(items: [(url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?)], startingAt index: Int, shuffled: Bool = false) throws {
         guard !isManagingDSFPlaybackCache else {
             throw NSError(domain: "MusicLibrary", code: 4, userInfo: [NSLocalizedDescriptionKey: "DSF cache maintenance is finishing. Try playback again in a moment."])
         }
         guard items.indices.contains(index) else { throw NSError(domain: "MusicLibrary", code: 1, userInfo: [NSLocalizedDescriptionKey: "No playable queue item was selected."]) }
-        self.items = items
         originalItems = items
-        queue.replace(with: items.map(\.trackID), startingAt: index)
+        originalIndices = Array(items.indices)
+        if shuffled { originalIndices.shuffle() }
+        self.items = originalIndices.map { items[$0] }
+        let startingIndex = shuffled ? 0 : index
+        queue.replace(with: self.items.map(\.trackID), startingAt: startingIndex)
+        queue.isShuffled = shuffled
         persist()
-        beginLoading(index: index)
+        beginLoading(index: startingIndex)
     }
     public func toggle() {
         guard !isLoading, !isManagingDSFPlaybackCache else { return }
@@ -145,18 +151,21 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
     public func setVolume(_ value: Float) { volume = Double(min(max(0, value), 1)); player?.volume = Float(volume) }
     public func setRepeatMode(_ mode: RepeatMode) { queue.repeatMode = mode; persist() }
     public func toggleShuffle() {
-        guard !items.isEmpty else { return }
-        let currentID = queue.currentTrackID
+        guard !isManagingDSFPlaybackCache, let index = queue.currentIndex,
+              items.indices.contains(index), originalIndices.indices.contains(index) else { return }
+        let originalIndex = originalIndices[index]
         if queue.isShuffled {
             items = originalItems
+            originalIndices = Array(originalItems.indices)
             queue.trackIDs = items.map(\.trackID)
-            queue.currentIndex = currentID.flatMap { id in items.firstIndex(where: { $0.trackID == id }) } ?? 0
+            queue.currentIndex = originalIndex
             queue.isShuffled = false
         } else {
-            let current = currentID.flatMap { id in items.first(where: { $0.trackID == id }) } ?? items[0]
-            var remaining = items.filter { $0.trackID != current.trackID }
+            var remaining = originalIndices
+            remaining.remove(at: index)
             remaining.shuffle()
-            items = [current] + remaining
+            originalIndices = [originalIndex] + remaining
+            items = originalIndices.map { originalItems[$0] }
             queue.trackIDs = items.map(\.trackID)
             queue.currentIndex = 0
             queue.isShuffled = true
@@ -175,6 +184,7 @@ public final class PlaybackController: NSObject, ObservableObject, AVAudioPlayer
             return
         }
         originalItems = items
+        originalIndices = Array(items.indices)
         queue.trackIDs = items.map(\.trackID)
         queue.currentIndex = min(max(0, queue.currentIndex ?? 0), items.count - 1)
         currentTitle = items[queue.currentIndex ?? 0].title
