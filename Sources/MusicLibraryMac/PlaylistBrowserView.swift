@@ -26,8 +26,7 @@ struct PlaylistBrowserView: View {
             List(playlists) { playlist in
                 Button { selection = playlist.id } label: {
                     HStack(spacing: 16) {
-                        Image(systemName: "music.note.list").font(.title).foregroundStyle(Color.accentColor)
-                            .frame(width: 64, height: 64).background(Color.accentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
+                        PlaylistArtworkView(paths: PlaylistArtworkSelection(items: library.playlistContents[playlist.id] ?? [], tracks: tracks, frontPaths: library.albumFrontArtworkPaths).paths, size: 64)
                         VStack(alignment: .leading, spacing: 6) {
                             Text(playlist.name).font(.headline)
                             let count = library.playlistContents[playlist.id]?.count ?? 0
@@ -46,7 +45,7 @@ struct PlaylistBrowserView: View {
                     ContentUnavailableView {
                         Label(library.playlists.isEmpty ? "No Playlists" : "No Matching Playlists", systemImage: "music.note.list")
                     } description: {
-                        Text(library.playlists.isEmpty ? "Use Add Playlist, then add tracks from an album." : "Try another name or clear your search.")
+                        Text(library.playlists.isEmpty ? "Use Add Playlist, then open it to choose tracks." : "Try another name or clear your search.")
                     } actions: {
                         if !search.isEmpty { Button("Clear Search") { search = "" } }
                     }

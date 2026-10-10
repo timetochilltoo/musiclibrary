@@ -2398,25 +2398,21 @@ private struct PlaylistDetail: View {
         let summary = PlaylistBrowseSummary(items: items, tracks: summaries)
         ScrollView {
             LazyVStack(spacing: 0) {
-                HStack(spacing: 18) {
-                    Image(systemName: "music.note.list")
-                        .font(.system(size: 42))
-                        .foregroundStyle(.tint)
-                        .frame(width: 92, height: 92)
-                        .background(.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(playlist.name).font(.largeTitle.bold())
-                        Text("\(items.count) track\(items.count == 1 ? "" : "s")")
-                            .foregroundStyle(.secondary)
-                        if let duration = summary.durationLabel { Text(duration).font(.callout).foregroundStyle(.secondary) }
-                        if let availability = summary.availabilityLabel { Text(availability).font(.caption).foregroundStyle(.secondary) }
-                        Button("Play Playlist", systemImage: "play.fill") { play() }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(items.isEmpty)
-                        Toggle("Organize Tracks", isOn: $isOrganizing).toggleStyle(.checkbox).disabled(isUpdating)
-                        Button("Add Tracks…", systemImage: "plus") { showsTrackPicker = true }
+                VStack(alignment: .leading, spacing: 20) {
+                    HStack(alignment: .top, spacing: 20) {
+                        PlaylistArtworkView(paths: PlaylistArtworkSelection(items: items, tracks: summaries, frontPaths: library.albumFrontArtworkPaths).paths, size: 128)
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("PLAYLIST").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                            Text(playlist.name).font(.largeTitle.bold()).fixedSize(horizontal: false, vertical: true)
+                            Text("\(items.count) track\(items.count == 1 ? "" : "s")").foregroundStyle(.secondary)
+                            if let duration = summary.durationLabel { Text(duration).font(.callout).foregroundStyle(.secondary) }
+                            if let availability = summary.availabilityLabel { Text(availability).font(.caption).foregroundStyle(.secondary) }
+                        }.frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    Spacer()
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 12) { playlistActions }
+                        VStack(alignment: .leading, spacing: 12) { playlistActions }
+                    }
                 }
                 .padding(24)
                 Divider()
@@ -2484,6 +2480,14 @@ private struct PlaylistDetail: View {
         } message: {
             Text("\(itemToRemove?.title ?? "This track") remains in the catalogue and other playlists. No audio file is deleted.")
         }
+    }
+
+    @ViewBuilder private var playlistActions: some View {
+        Button("Play Playlist", systemImage: "play.fill") { play() }
+            .buttonStyle(.borderedProminent).disabled(items.isEmpty)
+        Button("Add Tracks…", systemImage: "plus") { showsTrackPicker = true }
+            .buttonStyle(.bordered)
+        Toggle("Organize Tracks", isOn: $isOrganizing).toggleStyle(.checkbox).disabled(isUpdating)
     }
 
     private func move(_ item: PlaylistItem, earlier: Bool) {

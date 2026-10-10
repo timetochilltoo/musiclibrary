@@ -7,7 +7,7 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 ## 1. Launch the packaged Mac app
 
 1. In Finder, open the project folder.
-2. Open the newest sequential package, currently `build/Music Library 0.46.app`. An older `/Applications/Music Library.app` installation is not automatically updated by packaging.
+2. Open the newest sequential package, currently `build/Music Library 0.47.app`. An older `/Applications/Music Library.app` installation is not automatically updated by packaging.
 3. If macOS blocks the first launch, Control-click the app, choose **Open**, then choose **Open** again.
 4. The app opens a catalogue in its Application Support folder. It does not use a SQLite database on the NAS.
 5. Keep the app open while following the tests below. If anything unexpected happens, take a screenshot and note the exact action just before it happened.
@@ -20,6 +20,10 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 4. Do not move, rename, or edit the original media during this guide.
 
 ## 3. Phase 3 — Mac player and playlists
+
+### R7 playlist artwork/header acceptance (0.47)
+
+Use an isolated catalogue with existing selected managed fronts. Check empty/no-cover playlists, then one, two, three and four covered albums: a single full cover becomes halves, an asymmetric three-tile layout, then four quadrants. Additional albums do not add tiles; repeated entries and different tracks on the same album do not duplicate its tile. Reordering should change the chosen fronts deterministically, and removing a selected album should promote the next covered album. Missing/deleted metadata and absent/blank covers are skipped. An unreadable selected cover shows the existing artwork fallback, without a fetch or repair. Browser and header must agree; global Albums search must not restrict selection. Long titles and recorded duration/status labels wrap above Play/Add/Organize. At compact widths actions stack instead of overlapping. Confirm Add opens the in-place picker, Organize still exposes boundary-aware movement, and normal listening hides organization controls. Check VoiceOver identity (decorative collage is hidden), keyboard, resizing and light/dark separately. The audio-free navigation fixture proves the no-cover path, not real multi-cover rendering or playback; current evidence is in HANDOFF.
 
 ### R7 playlist recorded status/duration acceptance (0.46)
 

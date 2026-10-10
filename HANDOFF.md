@@ -4,7 +4,21 @@ Last updated: 10 October 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — R7 recorded playlist status and duration
+## Current resume — R7 playlist cover collage and header polish
+
+Delivered Release local app: **Music Library 0.47 (build 48)** at `build/Music Library 0.47.app`, versioned through the canonical packaging plist and existing script. Schema remains **17**. Only the separately identified disposable Debug navigation fixture was launched; the normal app, personal catalogue and source media were not opened. No provider request, artwork fetch/generation/mutation, audio probe, retagging, distribution archive or notarization was added.
+
+New pure `PlaylistArtworkSelection` chooses up to four existing selected managed album-front paths in displayed playlist order. Album IDs are deduplicated, so repeated entries and different tracks on one album occupy one tile. Missing active-track metadata, absent fronts and whitespace-only paths are skipped; additional covered albums beyond four are ignored. Selection uses the full active metadata/cache, not global Albums search. It does not check file existence while selecting or repair references. An unreadable selected image uses the existing renderer's fallback rather than selecting another cover silently.
+
+Browser and detail share new `PlaylistArtworkView`, with a single full cover, two halves, asymmetric three tiles or four quadrants. No-cover/empty playlists use a gradient playlist placeholder. Existing `AlbumArtworkImage` performs the file reads and retains loaded-path/cancellation guards. Covers are decorative and accessibility-hidden beside the accessible playlist identity. Detail now groups title, count, duration and recorded audio totals beside a larger cover, with Play/Add/Organize in a separate action strip that falls back to a vertical layout when horizontal space is insufficient. Long title text wraps. Empty-browser guidance now describes opening the playlist to add tracks in place. Entry identity, mutation guards, duration/status calculation and playback/controller semantics are unchanged.
+
+Relevant files: new domain selection, shared Mac artwork view and domain tests; PlaylistBrowserView and shell/PlaylistDetail; packaging plist; BUILD_PLAN, IMPLEMENTATION_SPEC and MAC_AND_NAS_TESTING. Three pure regressions cover deterministic order/four-cover cap, repeated entries/same-album tracks, missing metadata/fronts/blank paths and empty selection. `swift test` passes **188 tests across 38 suites**; Release passes **185 across 37** (three DEBUG fixture checks differ). Incremental `swift build`, Release packaging, plist/version/build, strict deep signature and whitespace checks passed. Logs: `/private/tmp/musiclibrary-047-*.log`.
+
+Native disposable evidence: created a long-name playlist, inspected the wrapped empty header/placeholder and disabled Play, opened Add Tracks and added the synthetic opening. Screenshot confirmed Duration: 2:03, 0/1 recorded available, separated actions, readable row and no overlap. Organize revealed disabled first/last movement controls and Remove; Back showed the matching browser placeholder/count/duration. Fixture closed; no helper failure. Real one/two/three/four-cover rendering and unreadable-image fallback, compact-width stacking, resizing, VoiceOver/light-dark, rapid cover/order changes, large libraries and real audio/NAS/iPad acceptance remain pending; pure selection tests are not native rendering proof.
+
+Next: **multi-selection in Add Tracks**, with clear selected-count feedback, deterministic insertion order and atomic/idempotent persistence/retry protections. Keep duplicate-entry semantics, active-target/track validation, busy dismissal protections and no source-file writes. Track-specific credits, Shuffle, queue editing/Play Next, internet lyrics, import release-ID association and destructive/device acceptance remain deferred.
+
+## Previous resume — R7 recorded playlist status and duration
 
 Delivered Release local app: **Music Library 0.46 (build 47)** at `build/Music Library 0.46.app`, versioned through `Packaging/MusicLibraryMac-Info.plist` and the existing packaging script. Schema remains **17**. Only disposable fixtures were used; the normal app, personal catalogue and source media were not opened. No provider, file scanning/probing, retagging/movement, distribution archive or notarization was introduced.
 
