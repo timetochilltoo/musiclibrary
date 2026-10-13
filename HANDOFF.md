@@ -1,10 +1,24 @@
 # Music Library — Project Handoff
 
-Last updated: 10 October 2026
+Last updated: 13 October 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — R7 playlist Shuffle and duplicate-occurrence safety
+## Current resume — R7 guarded playlist drag reorder; native gesture acceptance pending
+
+Delivered Release local app: **Music Library 0.50 (build 51)** at `build/Music Library 0.50.app`, versioned through the canonical packaging plist and existing script. Schema remains **17**. Only the separately identified disposable Debug navigation fixture was launched; the normal app, personal catalogue and source media were not opened. No provider, audio/file mutation, queue editing, distribution archive or notarization was added.
+
+Organize mode now shows entry drag handles, a before-row insertion highlight and an explicit Drop here to move to end area. Earlier/Later and entry-only Remove remain available. Listening mode hides handles/end target and refuses drop mutations. New app-specific Codable/Transferable `PlaylistDragPayload` carries only playlist/entry UUIDs plus the drag-start expected entry order, not audio, artwork or file URLs. The view refuses busy, multiple or cross-playlist payloads and detects changed displayed order before submitting. Accepted asynchronous work uses the existing busy banner and inline error/Refresh Contents recovery; visual order is refreshed from LibraryStore, not optimistically rewritten.
+
+New MusicDatabase before-target/end overload validates active playlist, complete expected UUID order, reader consistency and source/target membership inside one write transaction. Removing the source before computing the target index provides predictable insertion-before semantics in either direction; nil target means end. Successful moves preserve duplicate track occurrence UUIDs, normalize deletion-created position gaps and journal changed positions in one revision. Self-drops and unchanged-order drops return without a revision or gap-only rewrite. Invalid/stale/foreign requests make no writes. Existing adjacent and absolute-position callers retain their behavior. Views still contain no SQL; LibraryStore remains the mutation/reload boundary. Saved playback queue and source files are unchanged.
+
+Relevant files: new Mac payload, PlaylistDetail, LibraryStore, SQLiteDatabase, new `PlaylistDragReorderTests`, packaging plist and implementation/build/test guides. Two disposable integration regressions cover moving a duplicate occurrence before the first row and to end, entry identity/count/order, gap normalization, one-revision movement, self/adjacent-unchanged/end no-ops, stale/reversed/incomplete order, missing/foreign source or target and deleted-playlist refusal. They verify saved order/revision and source track preservation, but do not exercise native drag decoding or gesture delivery. `swift test` passes **194 tests across 41 suites**; Release passes **191 across 40** (three DEBUG fixture checks differ). Incremental build, Release packaging, plist/version/build, strict deep signature and whitespace checks passed. Logs: `/private/tmp/musiclibrary-050-*.log`.
+
+Native disposable evidence: created Fixture drag order, added all three synthetic tracks and inspected visible handles, end target, explanatory text and boundary controls in Organize. Three coordinate drag attempts (including raising the window before retry) produced no order change, so native drag acceptance is **inconclusive**, not passed; no helper crash occurred and the cause is not diagnosed as a tool versus app issue. Earlier moved finale before adagio; Later restored opening/adagio/finale. Count and duration stayed constant. Disabling Organize hid handles/end/move/remove controls. Fixture closed. Before-row/end gesture success, hover feedback, cancellation, stale/cross-playlist/native external-drop refusal, scrolling, busy/error races, keyboard/VoiceOver and appearance/resize acceptance remain pending.
+
+Next: **manually validate the 0.50 drag gesture before claiming this slice fully accepted**: Organize, drag a handle before another entry, then onto the end area. If it fails manually, inspect native drag/provider/hit-testing before continuing. After that, consolidate playlist row secondary actions in listening mode while preserving organize controls and entry-only removal. Queue editing/Play Next, track-specific credits, internet lyrics, import release-ID association and destructive/device acceptance remain deferred.
+
+## Previous resume — R7 playlist Shuffle and duplicate-occurrence safety
 
 Delivered Release local app: **Music Library 0.49 (build 50)** at `build/Music Library 0.49.app`, versioned through the canonical packaging plist and existing script. Schema remains **17**. Only the separately identified disposable Debug navigation fixture was launched; the normal app, personal catalogue and source music were not opened. No provider, source-file mutation, queue editor, distribution archive or notarization was introduced.
 

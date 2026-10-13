@@ -825,6 +825,11 @@ public final class LibraryStore: ObservableObject {
     public func addTracks(_ additions: [PlaylistTrackAddition], toPlaylist id: PlaylistID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.addTracks(additions, to: id); try await reload() }
     public func removePlaylistItem(_ id: UUID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.removePlaylistItem(id); try await reload() }
     public func movePlaylistItem(_ id: UUID, to position: Int) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.movePlaylistItem(id, to: position); try await reload() }
+    public func movePlaylistItem(_ id: UUID, in playlistID: PlaylistID, before targetID: UUID?, expectedItemIDs: [UUID]) async throws {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        try await database.movePlaylistItem(id, in: playlistID, before: targetID, expectedItemIDs: expectedItemIDs)
+        try await reload()
+    }
     public func movePlaylistItem(_ id: UUID, in playlistID: PlaylistID, adjacentTo neighborID: UUID, expectedItemIDs: [UUID]) async throws {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
         try await database.movePlaylistItem(id, in: playlistID, adjacentTo: neighborID, expectedItemIDs: expectedItemIDs)

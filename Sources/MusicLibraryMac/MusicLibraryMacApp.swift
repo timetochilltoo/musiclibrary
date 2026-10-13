@@ -2390,6 +2390,8 @@ private struct PlaylistDetail: View {
     @State private var itemToRemove: PlaylistItem?
     @State private var showsTrackPicker = false
     @State private var organizationError: String?
+    @State private var dropTargetID: UUID?
+    @State private var isEndDropTargeted = false
     private var trackSummaries: [TrackID: TrackBrowseSummary] {
         Dictionary(uniqueKeysWithValues: library.trackBrowseSummaries.map { ($0.id, $0) })
     }
@@ -2420,7 +2422,7 @@ private struct PlaylistDetail: View {
                     ContentUnavailableView("Empty Playlist", systemImage: "music.note.list", description: Text("Use Add Tracks above to choose music without leaving this playlist."))
                         .padding(.vertical, 24)
                 }
-                if isOrganizing { Text("Change playlist order or remove an entry. Source tracks and files are kept.").font(.caption).foregroundStyle(.secondary).padding(16) }
+                if isOrganizing { Text("Drag a handle to place an entry before another row, or use Earlier/Later. Source tracks and files are kept.").font(.caption).foregroundStyle(.secondary).padding(16) }
                 if let organizationError {
                     VStack(alignment: .leading, spacing: 8) {
                         Label(organizationError, systemImage: "exclamationmark.triangle").foregroundStyle(.red)
@@ -2430,6 +2432,13 @@ private struct PlaylistDetail: View {
 
                 ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                     HStack(spacing: 12) {
+                        if isOrganizing {
+                            Image(systemName: "line.3.horizontal")
+                                .foregroundStyle(.secondary).frame(width: 18, height: 28)
+                                .draggable(PlaylistDragPayload(playlistID: playlist.id, itemID: item.id, expectedItemIDs: items.map(\.id)))
+                                .help("Drag \(item.title) before another entry or to the end")
+                                .accessibilityLabel("Drag handle for \(item.title)")
+                        }
                         Text(String(index + 1))
                             .font(.callout.monospacedDigit())
                             .foregroundStyle(.secondary)
@@ -2465,7 +2474,27 @@ private struct PlaylistDetail: View {
                     }
                     .padding(.horizontal, 24)
                     .padding(.vertical, 11)
+                    .contentShape(Rectangle())
+                    .overlay(alignment: .top) {
+                        if isOrganizing && dropTargetID == item.id { Rectangle().fill(Color.accentColor).frame(height: 2) }
+                    }
+                    .dropDestination(for: PlaylistDragPayload.self) { payloads, _ in
+                        acceptDrop(payloads, before: item.id)
+                    } isTargeted: { targeted in
+                        if targeted && isOrganizing && !isUpdating { dropTargetID = item.id }
+                        else if dropTargetID == item.id { dropTargetID = nil }
+                    }
                     Divider().padding(.leading, 66)
+                }
+                if isOrganizing && !items.isEmpty {
+                    Text("Drop here to move to end")
+                        .font(.callout).foregroundStyle(isEndDropTargeted ? Color.accentColor : Color.secondary)
+                        .frame(maxWidth: .infinity).padding(20)
+                        .background(isEndDropTargeted ? Color.accentColor.opacity(0.12) : Color.secondary.opacity(0.05))
+                        .contentShape(Rectangle())
+                        .dropDestination(for: PlaylistDragPayload.self) { payloads, _ in
+                            acceptDrop(payloads, before: nil)
+                        } isTargeted: { isEndDropTargeted = $0 && isOrganizing && !isUpdating }
                 }
             }.disabled(isUpdating).padding(.bottom, 32)
         }
@@ -2491,6 +2520,24 @@ private struct PlaylistDetail: View {
         Button("Add Tracks…", systemImage: "plus") { showsTrackPicker = true }
             .buttonStyle(.bordered)
         Toggle("Organize Tracks", isOn: $isOrganizing).toggleStyle(.checkbox).disabled(isUpdating)
+    }
+
+    private func acceptDrop(_ payloads: [PlaylistDragPayload], before targetID: UUID?) -> Bool {
+        guard isOrganizing, !isUpdating, payloads.count == 1,
+              let payload = payloads.first, payload.playlistID == playlist.id else { return false }
+        dropTargetID = nil; isEndDropTargeted = false
+        guard payload.expectedItemIDs == items.map(\.id) else {
+            organizationError = "Playlist contents changed. Refresh the playlist and try again."
+            return false
+        }
+        organizationError = nil
+        isUpdating = true
+        Task {
+            defer { isUpdating = false }
+            do { try await library.movePlaylistItem(payload.itemID, in: playlist.id, before: targetID, expectedItemIDs: payload.expectedItemIDs) }
+            catch { organizationError = error.localizedDescription }
+        }
+        return true
     }
 
     private func move(_ item: PlaylistItem, earlier: Bool) {

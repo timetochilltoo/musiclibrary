@@ -7,7 +7,7 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 ## 1. Launch the packaged Mac app
 
 1. In Finder, open the project folder.
-2. Open the newest sequential package, currently `build/Music Library 0.49.app`. An older `/Applications/Music Library.app` installation is not automatically updated by packaging.
+2. Open the newest sequential package, currently `build/Music Library 0.50.app`. An older `/Applications/Music Library.app` installation is not automatically updated by packaging.
 3. If macOS blocks the first launch, Control-click the app, choose **Open**, then choose **Open** again.
 4. The app opens a catalogue in its Application Support folder. It does not use a SQLite database on the NAS.
 5. Keep the app open while following the tests below. If anything unexpected happens, take a screenshot and note the exact action just before it happened.
@@ -20,6 +20,10 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 4. Do not move, rename, or edit the original media during this guide.
 
 ## 3. Phase 3 — Mac player and playlists
+
+### R7 playlist drag reorder acceptance (0.50)
+
+Use a disposable playlist with several entries and a repeated track. Enable Organize: each entry has a handle, hovered rows show an insertion line, and the bottom has Drop here to move to end. Drop a later entry onto an earlier row: it inserts before that row; dropping onto the end area moves it last. Dropping onto itself, immediately before its existing next row, or already-last onto the end leaves revision/order unchanged. Earlier/Later remain boundary-aware and usable without dragging. Disable Organize: handles and the end area disappear, and drops cannot mutate the playlist. Try cancellation, external file/text drops, multiple payloads and another playlist's entry: no files or entries are imported, and no cross-playlist movement occurs. Change order/membership while a drag is in progress: stale drop must refuse with Refresh Contents, then allow a fresh drag after refresh. Verify duplicate UUIDs remain distinct, track count and totals stay unchanged, and deletion-created gaps normalize only on successful movement. Test busy/failed save, long lists with scroll, compact widths, keyboard/VoiceOver and light/dark separately. No audio or source-file mutation is required; current native versus integration evidence is in HANDOFF.
 
 ### R7 playlist Shuffle acceptance (0.49)
 
