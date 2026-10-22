@@ -623,7 +623,7 @@ private struct LibraryShellView: View {
                 }
             )
         } else if section == .playlists, let selectedPlaylistID, let playlist = library.playlists.first(where: { $0.id == selectedPlaylistID }) {
-            PlaylistDetail(library: library, playback: playback, playlist: playlist).id(playlist.id)
+            PlaylistDetail(library: library, playback: playback, playlist: playlist, onShowAlbum: { selectedAlbumID = $0 }).id(playlist.id)
         } else if section == .albums, selectedAlbumID != nil {
             albumDetail
         } else if section == .importInbox {
@@ -2384,6 +2384,7 @@ private struct PlaylistDetail: View {
     @ObservedObject var library: LibraryStore
     @ObservedObject var playback: PlaybackController
     let playlist: Playlist
+    let onShowAlbum: (AlbumID) -> Void
     private var items: [PlaylistItem] { library.playlistContents[playlist.id] ?? [] }
     @State private var isOrganizing = false
     @State private var isUpdating = false
@@ -2464,12 +2465,21 @@ private struct PlaylistDetail: View {
                             Text(duration).font(.callout.monospacedDigit()).foregroundStyle(.secondary)
                         }
                         if isOrganizing {
-                        Button("Move Earlier", systemImage: "arrow.up") { move(item, earlier: true) }
-                            .labelStyle(.iconOnly).disabled(index == 0).help("Move earlier")
-                        Button("Move Later", systemImage: "arrow.down") { move(item, earlier: false) }
-                            .labelStyle(.iconOnly).disabled(index == items.count - 1).help("Move later")
-                        Button("Remove from Playlist", systemImage: "minus.circle", role: .destructive) { itemToRemove = item }
-                            .labelStyle(.iconOnly).help("Remove from playlist")
+                            Button("Move Earlier", systemImage: "arrow.up") { move(item, earlier: true) }
+                                .labelStyle(.iconOnly).disabled(index == 0).help("Move earlier")
+                            Button("Move Later", systemImage: "arrow.down") { move(item, earlier: false) }
+                                .labelStyle(.iconOnly).disabled(index == items.count - 1).help("Move later")
+                            Button("Remove from Playlist", systemImage: "minus.circle", role: .destructive) { itemToRemove = item }
+                                .labelStyle(.iconOnly).help("Remove from playlist")
+                        } else {
+                            PlaylistEntryActions(
+                                title: item.title,
+                                canShowAlbum: summaries[item.trackID] != nil,
+                                onPlay: { play(item) },
+                                onShowAlbum: { showAlbum(for: item) },
+                                onOrganize: { isOrganizing = true },
+                                onRemove: { itemToRemove = item }
+                            )
                         }
                     }
                     .padding(.horizontal, 24)
@@ -2520,6 +2530,12 @@ private struct PlaylistDetail: View {
         Button("Add Tracks…", systemImage: "plus") { showsTrackPicker = true }
             .buttonStyle(.bordered)
         Toggle("Organize Tracks", isOn: $isOrganizing).toggleStyle(.checkbox).disabled(isUpdating)
+    }
+
+    private func showAlbum(for item: PlaylistItem) {
+        guard !isUpdating, let albumID = trackSummaries[item.trackID]?.albumID,
+              library.catalogueAlbums.contains(where: { $0.id == albumID }) else { return }
+        onShowAlbum(albumID)
     }
 
     private func acceptDrop(_ payloads: [PlaylistDragPayload], before targetID: UUID?) -> Bool {

@@ -7,7 +7,7 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 ## 1. Launch the packaged Mac app
 
 1. In Finder, open the project folder.
-2. Open the newest sequential package, currently `build/Music Library 0.50.app`. An older `/Applications/Music Library.app` installation is not automatically updated by packaging.
+2. Open the newest sequential package, currently `build/Music Library 0.51.app`. An older `/Applications/Music Library.app` installation is not automatically updated by packaging.
 3. If macOS blocks the first launch, Control-click the app, choose **Open**, then choose **Open** again.
 4. The app opens a catalogue in its Application Support folder. It does not use a SQLite database on the NAS.
 5. Keep the app open while following the tests below. If anything unexpected happens, take a screenshot and note the exact action just before it happened.
@@ -20,6 +20,10 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 4. Do not move, rename, or edit the original media during this guide.
 
 ## 3. Phase 3 — Mac player and playlists
+
+### R7 playlist row actions acceptance (0.51)
+
+Use the disposable navigation fixture. Add tracks to a playlist, including two entries for the same track. In listening mode, each row has one compact ellipsis menu; it must not stretch across the row. Check Play from Here, Show Album, Organize Tracks and Remove from Playlist. Show Album opens the correct active album; Back returns to the same playlist with contents/scroll/organize context retained. Restricting global Albums search must not restrict this link. Missing/deleted album metadata disables Show Album. Choose Remove, then Cancel: no entry changes. Confirm removal of one duplicate: only that UUID disappears, the other remains, and the album/catalogue tracks/audio are kept. Organize shows the existing movement/removal controls instead of a second menu. Busy state disables repeat commands. Check long titles, compact width, keyboard/menu accessibility and light/dark. Play from Here uses the existing entry-aware resolver; real-audio playback remains separate. Native drag acceptance from 0.50 is still pending; passing the menu tests does not establish it.
 
 ### R7 playlist drag reorder acceptance (0.50)
 

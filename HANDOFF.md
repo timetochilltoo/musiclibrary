@@ -1,10 +1,24 @@
 # Music Library — Project Handoff
 
-Last updated: 13 October 2026
+Last updated: 23 October 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — R7 guarded playlist drag reorder; native gesture acceptance pending
+## Current resume — R7 compact playlist row actions and album navigation
+
+Delivered Release local app: **Music Library 0.51 (build 52)** at `build/Music Library 0.51.app`, versioned through the canonical packaging plist and existing script. Schema remains **17**. Only the separately identified disposable Debug navigation fixture was launched; the normal app, personal catalogue and source media were not opened. This presentation slice adds no SQL/schema, queue, provider, source-file mutation, distribution archive or notarization. Native drag acceptance from 0.50 remains pending; continuing this independent row-action slice does not establish it.
+
+New extracted `PlaylistEntryActions` gives listening-mode rows one fixed-footprint ellipsis menu: Play from Here, Show Album, Organize Tracks and Remove from Playlist… . It has track-specific help/accessibility identity and no extra stretched menu indicator. Existing visible Play stays available. Menu playback uses the existing selected-entry UUID resolver rather than first matching track ID. Show Album uses full active track metadata, validates the active album again on click and calls the shell's existing retained playlist-origin album route. It does not inherit global Albums search; missing metadata disables the link. Back retains the playlist origin instead of routing to Albums. Organize replaces secondary menus with the existing explicit Earlier/Later/Remove and drag controls, not a second set of actions.
+
+Menu removal captures the specific PlaylistItem and opens the existing confirmation describing entry-only scope. Cancel leaves entries unchanged; confirmation calls the existing LibraryStore removal path, retaining catalogue tracks and other entries. Existing outer busy guards and removal confirmation behavior are unchanged. No new persistence or playback APIs were introduced. Relevant files: new `Sources/MusicLibraryMac/PlaylistEntryActions.swift`, shell/PlaylistDetail, packaging plist, BUILD_PLAN, IMPLEMENTATION_SPEC and MAC_AND_NAS_TESTING. No new automated tests were added for the presentation-only component; existing duplicate-entry removal/playback and full-catalogue metadata regressions remain applicable.
+
+Verification: `swift test` passes **194 tests across 41 suites**; `swift test -c release` passes **191 across 40** (three DEBUG fixture checks differ). Incremental `swift build`, Release packaging, plist/version/build, strict deep signature and whitespace checks passed. Logs: `/private/tmp/musiclibrary-051-*.log`. Native disposable checks created Fixture row actions, added three synthetic no-copy tracks and inspected a screenshot confirming compact row ellipses. Show Album opened Fixture Album 240 with all three tracks; Back returned to the same playlist. Added a second opening entry (four total), cancelled its removal (four retained), then confirmed removal from that second row (three retained, first opening/adagio/finale unchanged). Organize from the menu showed the explicit controls and removed the row menus; disabling Organize restored them. Play from Here showed the existing no-currently-playable-tracks error without changing contents. Show Album after removal still showed all three catalogue tracks. Fixture closed; no helper failure.
+
+Pending: manual/native drag before-row/end acceptance from 0.50, compact/long-title resizing, missing/deleted-album menu state, retained scroll/organize context under broader navigation, busy/error races, keyboard-only/VoiceOver/light-dark, real covers/audio/NAS and iPad acceptance. Current native evidence proves menu routing and fixture entry scope, not successful real-audio playback or complete R7 acceptance.
+
+Next: **R8 Settings category/action audit**, using source and disposable fixtures to identify the first incomplete wording or recovery-flow slice. Keep publication distinct from backup, preserve verified-archive/reset/restore guards and registered roots, and do not perform destructive checks on personal data. Carry outstanding R7 acceptance forward. Queue editing/Play Next, track-specific credits, internet lyrics, import release-ID association and destructive/device acceptance remain deferred.
+
+## Previous resume — R7 guarded playlist drag reorder; native gesture acceptance pending
 
 Delivered Release local app: **Music Library 0.50 (build 51)** at `build/Music Library 0.50.app`, versioned through the canonical packaging plist and existing script. Schema remains **17**. Only the separately identified disposable Debug navigation fixture was launched; the normal app, personal catalogue and source media were not opened. No provider, audio/file mutation, queue editing, distribution archive or notarization was added.
 
