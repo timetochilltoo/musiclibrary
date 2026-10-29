@@ -79,6 +79,7 @@ private struct LibraryNavigationFixtureWorkspace: View {
 
 private enum LibrarySettingsCategory: String, CaseIterable, Identifiable {
     case general
+    case libraryHealth
     case playback
     case musicFolders
     case sharing
@@ -90,6 +91,7 @@ private enum LibrarySettingsCategory: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .general: "General"
+        case .libraryHealth: "Library Health"
         case .playback: "Playback"
         case .musicFolders: "Music Folders"
         case .sharing: "iPad Sharing"
@@ -101,6 +103,7 @@ private enum LibrarySettingsCategory: String, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .general: "gearshape"
+        case .libraryHealth: "checkmark.shield"
         case .playback: "waveform"
         case .musicFolders: "externaldrive.connected.to.line.below"
         case .sharing: "ipad.and.iphone"
@@ -111,8 +114,9 @@ private enum LibrarySettingsCategory: String, CaseIterable, Identifiable {
 
     var summary: String {
         switch self {
-        case .general: "Display preferences and portable catalogue exports"
-        case .playback: "DSF conversion cache and playback preferences"
+        case .general: "Catalogue overview and portable exports"
+        case .libraryHealth: "Review recorded issues and open affected albums"
+        case .playback: "Manage the replaceable DSF playback cache"
         case .musicFolders: "Authorized local and NAS music roots"
         case .sharing: "Update the read-only catalogue shared with your iPad"
         case .backupRestore: "Recover catalogue records and managed artwork; back up source audio separately"
@@ -601,7 +605,8 @@ private struct LibraryShellView: View {
                 onShowImportBatch: { batchID in
                     selectedImportBatchID = batchID
                     section = .importInbox
-                }
+                },
+                onShowHealth: { settingsCategory = .libraryHealth }
             )
             .navigationTitle("Settings")
         } else if section == .contributors, let selectedContributorID, let contributor = library.contributors.first(where: { $0.id == selectedContributorID }) {
@@ -814,13 +819,24 @@ private struct SettingsWorkspace: View {
 
             Divider()
 
-            StorageRootList(
-                library: library,
-                playback: playback,
-                category: category,
-                onShowAlbum: onShowAlbum,
-                onShowImportBatch: onShowImportBatch
-            )
+            RetainedBrowseWorkspace(showsDetail: category == .libraryHealth) {
+                StorageRootList(
+                    library: library,
+                    playback: playback,
+                    category: category,
+                    onShowAlbum: onShowAlbum,
+                    onShowImportBatch: onShowImportBatch,
+                    onShowHealth: { category = .libraryHealth }
+                )
+                .disabled(category == .libraryHealth)
+            } detail: {
+                LibraryHealthIssuesView(
+                    issues: library.libraryHealthIssues,
+                    activeAlbumIDs: Set(library.catalogueAlbums.map(\.id)),
+                    onShowAlbum: onShowAlbum,
+                    onShowMusicFolders: { category = .musicFolders }
+                )
+            }
         }
         .background(Color(nsColor: .windowBackgroundColor))
     }
@@ -1514,6 +1530,7 @@ private struct StorageRootList: View {
     let category: LibrarySettingsCategory?
     let onShowAlbum: (AlbumID) -> Void
     let onShowImportBatch: (ImportBatchID) -> Void
+    let onShowHealth: () -> Void
     @State private var rootToRename: StorageRoot?
     @State private var relinkProposalToApply: AssetRelinkProposal?
     @State private var restoreManifestURL: URL?
@@ -1538,13 +1555,15 @@ private struct StorageRootList: View {
         playback: PlaybackController,
         category: LibrarySettingsCategory? = nil,
         onShowAlbum: @escaping (AlbumID) -> Void,
-        onShowImportBatch: @escaping (ImportBatchID) -> Void
+        onShowImportBatch: @escaping (ImportBatchID) -> Void,
+        onShowHealth: @escaping () -> Void
     ) {
         self.library = library
         self.playback = playback
         self.category = category
         self.onShowAlbum = onShowAlbum
         self.onShowImportBatch = onShowImportBatch
+        self.onShowHealth = onShowHealth
     }
 
     private func shows(_ categories: LibrarySettingsCategory...) -> Bool {
@@ -1571,13 +1590,18 @@ private struct StorageRootList: View {
                         detail: "\(library.storageRoots.filter { $0.status == .available }.count) available",
                         tint: library.storageRoots.contains { $0.status != .available } ? .orange : .blue
                     )
-                    SettingsStatusCard(
-                        symbol: library.libraryHealthIssues.isEmpty ? "checkmark.shield.fill" : "exclamationmark.shield.fill",
-                        title: "Library Health",
-                        value: library.libraryHealthIssues.isEmpty ? "Healthy" : "\(library.libraryHealthIssues.count) items",
-                        detail: library.libraryHealthIssues.isEmpty ? "No repairs detected" : "Review below",
-                        tint: library.libraryHealthIssues.isEmpty ? .green : .orange
-                    )
+                    Button(action: onShowHealth) {
+                        SettingsStatusCard(
+                            symbol: library.libraryHealthIssues.isEmpty ? "checkmark.shield.fill" : "exclamationmark.shield.fill",
+                            title: "Library Health",
+                            value: "\(library.libraryHealthIssues.count) issue\(library.libraryHealthIssues.count == 1 ? "" : "s")",
+                            detail: "View recorded issues →",
+                            tint: library.libraryHealthIssues.isEmpty ? .green : .orange
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .help("Review recorded catalogue issues")
+                    .accessibilityLabel("View Library Health, \(library.libraryHealthIssues.count) recorded issue\(library.libraryHealthIssues.count == 1 ? "" : "s")")
                 }
                 .padding(.vertical, 8)
                 }
@@ -1622,7 +1646,7 @@ private struct StorageRootList: View {
 
             if shows(.general) {
                 Section {
-                Text("Export a portable JSON view of the current catalogue. Source media files are never copied.").font(.caption).foregroundStyle(.secondary)
+                Text("Export catalogue records as JSON or CSV. These exports are not recovery archives and do not contain managed artwork or source audio.").font(.caption).foregroundStyle(.secondary)
                 Button("Export Catalogue JSON…", systemImage: "square.and.arrow.up") { exportCatalogue() }
                 Button("Export Catalogue CSV…", systemImage: "tablecells") { exportCatalogueCSV() }
                 } header: {
