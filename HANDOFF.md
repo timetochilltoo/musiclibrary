@@ -1,10 +1,26 @@
 # Music Library — Project Handoff
 
-Last updated: 23 October 2026
+Last updated: 29 October 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — R7 compact playlist row actions and album navigation
+## Current resume — R8 clearer recovery and sharing Settings
+
+Delivered Release local app: **Music Library 0.52 (build 53)** at `build/Music Library 0.52.app`, versioned through the canonical packaging plist and existing script. Schema remains **17**. Only separately identified disposable Debug navigation fixtures were launched; the normal app, personal catalogue and source audio were not opened. Native checks cancelled every file chooser without selecting a backup/archive/destination. No restore, reset, export, publication, provider request, distribution archive or notarization was performed in native checks. Automated archive/recovery tests still use temporary data.
+
+The R8 source audit in BUILD_PLAN records all six Settings routes without claiming them complete. General lacks the display preferences implied by its summary and says Review below although health issues are in Advanced. Playback currently exposes DSF cache controls, not broader preferences. Music Folders has toolbar Add/scope/rescan/rename/access checks; permission/reconnect acceptance remains open. Advanced has existing issue/recovery/history groups. The first implemented slice prioritizes distinguishing complete recovery from database-only backup and sharing.
+
+New extracted `SettingsDataSafetySections.swift` puts complete database-plus-managed-artwork archive export/restore first, explicitly excluding source audio and recommending a separate music-file backup. Complete archives do not require sharing setup. Database-only backup starts collapsed under Other Backup Options, states that artwork/audio are excluded, explains its existing MasterBackups/shared-destination dependency and retains the disabled create action when unconfigured. Archive controls disable during the existing maintenance busy flag. Local presentation state captures successful archive export/restore feedback beside the action, rather than showing unrelated global cleanup/reset status; it is not persistent backup history. Database-only restore confirmation now explicitly describes its limited scope and keeps the existing verification/Recovery behavior.
+
+iPad Sharing now explains read-only catalogue publication versus recovery, uses Choose Sharing Folder/Update Shared Library/Retry Update, and collapses revision details. Destination, last-success date and failure remain visible; the existing unconfigured-destination update guard remains. Selectors, confirmation sequence, service APIs, checksums, recovery archives, archive formats, retention, registered roots, exact reset confirmation and source-file behavior are unchanged. Relevant files: new extracted sections, shell/StorageRootList, packaging plist and build/spec/test guides. No new tests were added for this presentation-only slice; existing complete archive, database backup and recovery regressions run unchanged.
+
+Validation: final `swift test` passes **194 tests across 41 suites**; Release passes **191 across 40** (three DEBUG fixture checks differ). Incremental build, Release packaging, plist/version/build, strict deep signature and whitespace checks passed. Logs: `/private/tmp/musiclibrary-052-*.log`. Initial fixture screenshots confirmed complete-first placement, collapsed database options, expanded exclusions/setup explanation, disabled database-only backup and disabled shared-library update without a destination. Technical details expanded to revision 499/last shared never. Database restore and sharing destination choosers cancelled cleanly. Visual review found unrelated cleanup status, corrected to archive-local feedback; a fresh final fixture confirmed its absence, cancelled complete archive export and restore choosers, and returned to General at unchanged revision 499. Both fixtures closed; no helper failure.
+
+Pending: actual archive feedback after success/failure, configured sharing/retry, backup/restore execution and rollback, busy/error coordination, narrow/appearance/VoiceOver/keyboard checks and broader R8 recovery acceptance. Carry R7 native drag acceptance, real cover/audio/NAS and iPad limitations forward; these are not resolved by Settings wording.
+
+Next: **R8 General health navigation and honest category/export descriptions**. Make the health summary lead to the actual issues, not Review below or an unrelated destructive section; preserve Settings/album Back context. Correct General/Playback summaries to current capabilities unless implementing the missing preferences explicitly. Do not weaken recovery guards or run destructive checks on personal data. Queue editing/Play Next, track-specific credits, internet lyrics, import release-ID association and destructive/device acceptance remain deferred.
+
+## Previous resume — R7 compact playlist row actions and album navigation
 
 Delivered Release local app: **Music Library 0.51 (build 52)** at `build/Music Library 0.51.app`, versioned through the canonical packaging plist and existing script. Schema remains **17**. Only the separately identified disposable Debug navigation fixture was launched; the normal app, personal catalogue and source media were not opened. This presentation slice adds no SQL/schema, queue, provider, source-file mutation, distribution archive or notarization. Native drag acceptance from 0.50 remains pending; continuing this independent row-action slice does not establish it.
 

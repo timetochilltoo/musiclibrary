@@ -923,6 +923,10 @@ R7 playlist foundation checkpoint (8 October 2026): name search, counts and no-m
 
 Settings has functional selection routing:
 
+R8 source audit (29 October 2026): all six categories route, but this is not full R8 acceptance. General has catalogue/folder/health summaries and JSON/CSV exports, not the display preferences implied by its summary; the health card's Review below wording does not lead to the Advanced issue list. Playback exposes DSF cache controls, not broader playback preferences. Music Folders has toolbar Add, scope, rescan, rename and access checks; explicit reconnect/permissions acceptance remains open. Sharing and recovery services exist, while presentation needs clearer purpose and task-local feedback. Advanced contains cleanup/reset, Recently Deleted, issue groups, relinking and history; destructive/device acceptance remains separate. Prioritize recovery meaning first, then General health routing and accurate category/export descriptions.
+
+R8 recovery/sharing checkpoint (29 October 2026): complete catalogue archive is now the primary recovery option, including managed artwork but not source audio. Database-only backup is an advanced disclosure, with explicit exclusions and its existing dependency on the sharing folder. Task-local archive success feedback is visible beside recovery controls, without unrelated cleanup/reset status. Sharing uses Update Shared Library and distinguishes its read-only catalogue from a recovery backup, with technical revision details collapsed. Services, destination format, validation, checksums, recovery archives and reset protections are unchanged. No personal-data restore/reset acceptance is implied. Next: General health card navigation to issues and accurate category/export descriptions; busy/error coordination and broad recovery acceptance remain subsequent work.
+
 | Category | Content |
 |---|---|
 | General | Appearance/display preferences and catalogue export |

@@ -114,8 +114,8 @@ private enum LibrarySettingsCategory: String, CaseIterable, Identifiable {
         case .general: "Display preferences and portable catalogue exports"
         case .playback: "DSF conversion cache and playback preferences"
         case .musicFolders: "Authorized local and NAS music roots"
-        case .sharing: "Publish a read-only catalogue snapshot for iPad"
-        case .backupRestore: "Master backups and complete catalogue archives"
+        case .sharing: "Update the read-only catalogue shared with your iPad"
+        case .backupRestore: "Recover catalogue records and managed artwork; back up source audio separately"
         case .advanced: "Health, cleanup, history, and recovery safeguards"
         }
     }
@@ -1529,6 +1529,7 @@ private struct StorageRootList: View {
     @State private var cleanupOptions = CatalogueCleanupOptions()
     @State private var showsCleanupReview = false
     @State private var completeArchiveToRestore: URL?
+    @State private var completeArchiveStatus: String?
     @State private var showsCatalogueReset = false
     @State private var isRunningCatalogueMaintenance = false
 
@@ -1583,48 +1584,40 @@ private struct StorageRootList: View {
             }
 
             if shows(.sharing) {
-                Section {
-                Text(library.snapshotPublishStatus).foregroundStyle(.secondary)
-                if let path = library.snapshotDestinationPath { Text(path).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
-                Text("Catalogue revision \(library.catalogueRevision) · last published \(library.lastPublishedRevision.map(String.init) ?? "never")\(library.isSnapshotPublishPending ? " · pending" : "")").font(.caption).foregroundStyle(.secondary)
-                if let lastPublishedAt = library.lastPublishedAt { Text("Last successful publish \(lastPublishedAt.formatted(date: .abbreviated, time: .shortened))").font(.caption).foregroundStyle(.secondary) }
-                if let failure = library.lastSnapshotPublishFailure { Text(failure).font(.caption).foregroundStyle(.red) }
-                Button("Choose Snapshot Destination") { showsSnapshotDestinationPicker = true }
-                Button(library.lastSnapshotPublishFailure == nil ? "Publish Now" : "Retry Publish") {
-                    Task {
-                        do { try await library.publishSnapshotNow() }
-                        catch { library.presentError(error) }
+                SettingsSharingSection(
+                    status: library.snapshotPublishStatus,
+                    destinationPath: library.snapshotDestinationPath,
+                    revision: library.catalogueRevision,
+                    publishedRevision: library.lastPublishedRevision,
+                    isPending: library.isSnapshotPublishPending,
+                    lastPublishedAt: library.lastPublishedAt,
+                    failure: library.lastSnapshotPublishFailure,
+                    onChooseFolder: { showsSnapshotDestinationPicker = true },
+                    onUpdate: {
+                        Task {
+                            do { try await library.publishSnapshotNow() }
+                            catch { library.presentError(error) }
+                        }
                     }
-                }.disabled(library.snapshotDestinationPath == nil)
-                } header: {
-                Label("iPad Sharing", systemImage: "ipad.and.iphone")
-                }
+                )
             }
 
             if shows(.backupRestore) {
-                Section {
-                    Text(library.masterBackupStatus).font(.caption).foregroundStyle(.secondary)
-                    Button("Back Up Master Database") {
+                SettingsBackupRecoverySections(
+                    databaseStatus: library.masterBackupStatus,
+                    archiveStatus: completeArchiveStatus,
+                    canBackUpDatabase: library.snapshotDestinationPath != nil,
+                    isBusy: isRunningCatalogueMaintenance,
+                    onExportArchive: { exportCompleteCatalogueArchive() },
+                    onRestoreArchive: { chooseCompleteCatalogueArchive() },
+                    onBackUpDatabase: {
                         Task {
                             do { try await library.createMasterBackupNow() }
                             catch { library.presentError(error) }
                         }
-                    }
-                    .disabled(library.snapshotDestinationPath == nil)
-                    Button("Restore Master Backup…", role: .destructive) { showsMasterRestorePicker = true }
-                    Divider()
-                    Button("Export Complete Catalogue Archive…", systemImage: "archivebox") {
-                        exportCompleteCatalogueArchive()
-                    }
-                    Button("Restore Complete Catalogue Archive…", systemImage: "arrow.counterclockwise.circle", role: .destructive) {
-                        chooseCompleteCatalogueArchive()
-                    }
-                    Text("Complete archives contain the verified database and managed artwork, but never source audio files.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } header: {
-                    Label("Backup & Restore", systemImage: "externaldrive.badge.timemachine")
-                }
+                    },
+                    onRestoreDatabase: { showsMasterRestorePicker = true }
+                )
             }
 
             if shows(.general) {
@@ -1924,9 +1917,9 @@ private struct StorageRootList: View {
         } message: {
             Text("This permanently removes the deleted playlist and its ordered entries. It never removes catalogue tracks or source audio files.")
         }
-        .confirmationDialog("Restore master database?", isPresented: Binding(get: { restoreManifestURL != nil }, set: { if !$0 { restoreManifestURL = nil } }), titleVisibility: .visible) {
+        .confirmationDialog("Restore database-only backup?", isPresented: Binding(get: { restoreManifestURL != nil }, set: { if !$0 { restoreManifestURL = nil } }), titleVisibility: .visible) {
             if let manifestURL = restoreManifestURL {
-                Button("Restore Verified Backup", role: .destructive) {
+                Button("Restore Verified Database Backup", role: .destructive) {
                     Task {
                         do { try await library.restoreMasterBackup(from: manifestURL); restoreManifestURL = nil }
                         catch { library.presentError(error) }
@@ -1934,7 +1927,7 @@ private struct StorageRootList: View {
                 }
             }
         } message: {
-            Text("The selected backup will be verified first. The current master database will be kept in the local Recovery folder before replacement.")
+            Text("The selected database backup will be verified first. The current database will be kept in the local Recovery folder before replacement. Managed artwork and source audio are not restored by this database-only backup.")
         }
         .confirmationDialog("Restore complete catalogue archive?", isPresented: Binding(get: { completeArchiveToRestore != nil }, set: { if !$0 { completeArchiveToRestore = nil } }), titleVisibility: .visible) {
             if let archiveURL = completeArchiveToRestore {
@@ -1943,6 +1936,7 @@ private struct StorageRootList: View {
                     Task {
                         do {
                             try await library.restoreCompleteCatalogueArchive(from: archiveURL)
+                            completeArchiveStatus = library.catalogueMaintenanceStatus
                             completeArchiveToRestore = nil
                         } catch {
                             library.presentError(error)
@@ -2120,7 +2114,10 @@ private struct StorageRootList: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         isRunningCatalogueMaintenance = true
         Task {
-            do { _ = try await library.exportCompleteCatalogueArchive(to: url) }
+            do {
+                _ = try await library.exportCompleteCatalogueArchive(to: url)
+                completeArchiveStatus = library.catalogueMaintenanceStatus
+            }
             catch { library.presentError(error) }
             isRunningCatalogueMaintenance = false
         }
