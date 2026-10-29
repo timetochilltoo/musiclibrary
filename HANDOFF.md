@@ -1,10 +1,28 @@
 # Music Library — Project Handoff
 
-Last updated: 29 October 2026
+Last updated: 30 October 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — R8 actionable Library Health and accurate Settings descriptions
+## Current resume — R8 manual sharing and database-backup feedback
+
+Delivered local Release app: **Music Library 0.54 (build 55)** at `build/Music Library 0.54.app`, using the canonical plist and packaging script. Schema remains **17**. No personal catalogue, source audio or personal/NAS sharing destination was opened/configured/published during validation. Automated transfer tests inject operations only; they do not invoke publication or database backup on user data.
+
+New `Sources/MusicApplication/SettingsTransferTasks.swift` provides session-only, main-actor feedback for explicit sharing and database-backup actions. Separate idle/running/success/failure states retain each category's result. The running guard is set synchronously before Task creation, so repeated or cross-category manual submissions cannot queue while the first action suspends. Explicit retry clears only that action's previous error. It is owned by the retained StorageRootList, rather than a category's conditional view, and keeps running when categories change. No service or destination ownership is moved into the coordinator.
+
+`SettingsDataSafetySections.swift` shows indeterminate progress, selectable local errors, success and Retry Update/Retry Database Backup beside the actions. Manual action failures no longer require dismissing the global alert. Current service status and later automatic publication failures remain visible after local completion. Destination selection, complete-archive/database restore and maintenance entry controls disable during manual transfers; existing maintenance blocks new manual transfers. Database-only restore now uses the existing maintenance flag until success/failure. Verification, archive formats, backup retention, security-scoped access, recovery creation/rollback and source-file protections remain in their existing services.
+
+This is a manual UI submission guard, **not global service serialization**: automatic publication/daily backup and unrelated catalogue mutations retain existing scheduling and concurrency. Feedback is session-local, not durable transfer history; complete-archive failures still use existing alert handling. Do not infer stronger race/recovery guarantees from the UI changes.
+
+Validation: three injected-operation tests cover a suspended action rejecting duplicate/cross-category submissions, failure/retry state transitions, guard release and independent category results. `swift test` passes **197 tests across 42 suites**; `swift test -c release` passes **194 across 41** (three DEBUG fixture checks differ). Final service-status visibility polish was followed by incremental Debug build and Release packaging. Logs: `/private/tmp/musiclibrary-054-*.log`. Native disposable fixture checks confirmed unconfigured sharing/update and database-backup guards, collapsed/expanded database-only options, exclusions and usable complete-archive actions; no file chooser, transfer or restore was executed. Fixture quit; the subsequent AX read reported procNotFound, consistent with the closed app. Running/error/retry presentation is covered by injected state tests, not a native configured-destination walkthrough.
+
+Artifact checks: packaged plist lint, version **0.54/build 55**, strict deep code-signature verification and `git diff --check` passed. Running/error/retry state transitions are tested with injected operations; their native appearance remains pending.
+
+Pending: configured real publication/backup and destination failure/retry, broader background/manual coordination, actual restore/rollback/busy-state navigation, narrow/appearance/keyboard/VoiceOver, R7 drag, real audio/covers/NAS and iPad acceptance. Preserve prior R8 and R7 limitations; full acceptance is not claimed.
+
+Next: **R8 complete-archive task-local failure/retry feedback**, preserving selection, confirmation and verified recovery safeguards. Use injected/temporary fixtures; do not perform destructive acceptance on personal data or configure a personal sharing destination. Background/manual service coordination requires its own focused slice and regression coverage. Queue editing, track-specific credits, internet lyrics, release-ID association and device/destructive acceptance remain deferred.
+
+## Previous resume — R8 actionable Library Health and accurate Settings descriptions
 
 Delivered Release local app: **Music Library 0.53 (build 54)** at `build/Music Library 0.53.app`, versioned through the canonical packaging plist and existing script. Schema remains **17**. Only the separately identified disposable Debug navigation fixture was launched; the normal app, personal catalogue and source audio were not opened. Native checks browsed metadata and routes only: no recheck, scan, repair, export, sharing, restore or reset was performed. No provider, distribution archive or notarization was added.
 

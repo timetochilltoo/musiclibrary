@@ -1547,6 +1547,7 @@ private struct StorageRootList: View {
     @State private var showsCleanupReview = false
     @State private var completeArchiveToRestore: URL?
     @State private var completeArchiveStatus: String?
+    @StateObject private var transferTasks = SettingsTransferTasks()
     @State private var showsCatalogueReset = false
     @State private var isRunningCatalogueMaintenance = false
 
@@ -1616,11 +1617,14 @@ private struct StorageRootList: View {
                     isPending: library.isSnapshotPublishPending,
                     lastPublishedAt: library.lastPublishedAt,
                     failure: library.lastSnapshotPublishFailure,
+                    transfer: transferTasks.sharing,
+                    isBusy: transferTasks.isRunning || isRunningCatalogueMaintenance,
                     onChooseFolder: { showsSnapshotDestinationPicker = true },
                     onUpdate: {
-                        Task {
-                            do { try await library.publishSnapshotNow() }
-                            catch { library.presentError(error) }
+                        guard !isRunningCatalogueMaintenance else { return }
+                        transferTasks.start(.sharing) {
+                            try await library.publishSnapshotNow()
+                            return library.snapshotPublishStatus
                         }
                     }
                 )
@@ -1632,12 +1636,15 @@ private struct StorageRootList: View {
                     archiveStatus: completeArchiveStatus,
                     canBackUpDatabase: library.snapshotDestinationPath != nil,
                     isBusy: isRunningCatalogueMaintenance,
+                    databaseTransfer: transferTasks.databaseBackup,
+                    transfersBusy: transferTasks.isRunning,
                     onExportArchive: { exportCompleteCatalogueArchive() },
                     onRestoreArchive: { chooseCompleteCatalogueArchive() },
                     onBackUpDatabase: {
-                        Task {
-                            do { try await library.createMasterBackupNow() }
-                            catch { library.presentError(error) }
+                        guard !isRunningCatalogueMaintenance else { return }
+                        transferTasks.start(.databaseBackup) {
+                            try await library.createMasterBackupNow()
+                            return library.masterBackupStatus
                         }
                     },
                     onRestoreDatabase: { showsMasterRestorePicker = true }
@@ -1675,7 +1682,7 @@ private struct StorageRootList: View {
             } header: {
                 Label("Catalogue Maintenance", systemImage: "wrench.and.screwdriver")
                 }
-                .disabled(isRunningCatalogueMaintenance)
+                .disabled(isRunningCatalogueMaintenance || transferTasks.isRunning)
             }
 
             if shows(.playback) {
@@ -1944,9 +1951,12 @@ private struct StorageRootList: View {
         .confirmationDialog("Restore database-only backup?", isPresented: Binding(get: { restoreManifestURL != nil }, set: { if !$0 { restoreManifestURL = nil } }), titleVisibility: .visible) {
             if let manifestURL = restoreManifestURL {
                 Button("Restore Verified Database Backup", role: .destructive) {
+                    guard !isRunningCatalogueMaintenance, !transferTasks.isRunning else { return }
+                    isRunningCatalogueMaintenance = true
                     Task {
                         do { try await library.restoreMasterBackup(from: manifestURL); restoreManifestURL = nil }
                         catch { library.presentError(error) }
+                        isRunningCatalogueMaintenance = false
                     }
                 }
             }

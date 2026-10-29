@@ -7,7 +7,7 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 ## 1. Launch the packaged Mac app
 
 1. In Finder, open the project folder.
-2. Open the newest sequential package, currently `build/Music Library 0.53.app`. An older `/Applications/Music Library.app` installation is not automatically updated by packaging.
+2. Open the newest sequential package, currently `build/Music Library 0.54.app`. An older `/Applications/Music Library.app` installation is not automatically updated by packaging.
 3. If macOS blocks the first launch, Control-click the app, choose **Open**, then choose **Open** again.
 4. The app opens a catalogue in its Application Support folder. It does not use a SQLite database on the NAS.
 5. Keep the app open while following the tests below. If anything unexpected happens, take a screenshot and note the exact action just before it happened.
@@ -22,6 +22,10 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 ### R8 Settings recovery/sharing presentation (0.52)
 
 Use disposable catalogue data only. In Backup & Restore, complete archive export/restore must be first and usable even with no sharing destination. Check the explanation that managed artwork is included but source audio needs its own backup; status/progress stays near the action. Database-only backup starts collapsed. Expanding it must explain that artwork/audio are excluded, backups use MasterBackups under the sharing destination, and sharing setup is needed only for that database-only backup. With no destination, Back Up Database Only is disabled, not complete archive export. Open archive export/restore and database restore choosers and Cancel to confirm no writes. In iPad Sharing, Update Shared Library is disabled until a folder is configured; technical revision details start collapsed, while destination/last-success/error remain visible. Check concise update/retry labels and the warning that sharing is not recovery backup. Do not select an actual restore or configure a personal sharing folder during UI-only checks. Actual archive/database restore, checksum failure, recovery rollback, busy/error races, narrow/appearance/accessibility and remote publication require separate isolated acceptance; service behavior is unchanged by this presentation slice.
+
+### R8 explicit transfer progress and retry (0.54)
+
+Use injected operations for automated progress/error checks; do not configure a personal or NAS sharing destination. A suspended sharing/database-backup action must immediately show progress and reject both repeat clicks and a submission from the other category. Category changes must retain action feedback. Only the running action's old error clears on retry; success/failure must release the guard and retain the other category's feedback. The UI must keep unconfigured destination guards, disable destination changes and recovery/maintenance entry during manual transfers, and allow inspection of descriptions/disclosures. Sharing errors belong beside Retry Update; database errors beside Retry Database Backup. Verify separately using an isolated configured environment that real publication/backup success, unavailable-destination failure and retry behave correctly. Automatic background jobs retain existing scheduling and are not serialized by this UI coordinator. Archive failure/rollback, comprehensive busy races, keyboard/VoiceOver, appearance and narrow layout remain separate acceptance checks.
 
 ### R8 Library Health navigation (0.53)
 
