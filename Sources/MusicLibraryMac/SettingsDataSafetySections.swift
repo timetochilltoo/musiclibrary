@@ -20,7 +20,8 @@ private struct SettingsTransferFeedback: View {
 
 struct SettingsBackupRecoverySections: View {
     let databaseStatus: String
-    let archiveStatus: String?
+    let archiveExport: SettingsTransferTasks.State
+    let archiveRestore: SettingsTransferTasks.State
     let canBackUpDatabase: Bool
     let isBusy: Bool
     let databaseTransfer: SettingsTransferTasks.State
@@ -37,13 +38,20 @@ struct SettingsBackupRecoverySections: View {
                 .font(.headline)
             Text("A complete archive contains the verified catalogue database and managed artwork. Source audio is not included; back up your music files separately.")
                 .font(.callout).foregroundStyle(.secondary)
-            Button("Export Complete Catalogue Archive…", systemImage: "archivebox", action: onExportArchive)
+            Button(archiveExport.failure == nil ? "Export Complete Catalogue Archive…" : "Retry Archive Export…", systemImage: "archivebox", action: onExportArchive)
                 .buttonStyle(.borderedProminent)
-            Button("Restore Complete Catalogue Archive…", systemImage: "arrow.counterclockwise.circle", role: .destructive, action: onRestoreArchive)
+            SettingsTransferFeedback(state: archiveExport, progress: "Exporting and verifying complete archive…")
+            Button(archiveRestore.failure == nil ? "Restore Complete Catalogue Archive…" : "Retry Archive Restore…", systemImage: "arrow.counterclockwise.circle", role: .destructive, action: onRestoreArchive)
+            SettingsTransferFeedback(state: archiveRestore, progress: "Verifying archive and restoring catalogue…")
+            if archiveRestore.failure != nil {
+                Text("Retry opens the archive chooser again and requires confirmation before restoring.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Text("Restore verifies the archive and creates a local recovery archive of the current catalogue before replacement.")
                 .font(.caption).foregroundStyle(.secondary)
-            if isBusy { ProgressView("Working on catalogue recovery data…").controlSize(.small) }
-            if let archiveStatus { Text(archiveStatus).font(.caption).foregroundStyle(.secondary) }
+            if isBusy && archiveExport != .running && archiveRestore != .running {
+                ProgressView("Working on catalogue recovery data…").controlSize(.small)
+            }
         } header: {
             Label("Complete Catalogue Archive", systemImage: "archivebox")
         }

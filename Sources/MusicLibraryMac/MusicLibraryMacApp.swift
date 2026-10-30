@@ -1546,7 +1546,6 @@ private struct StorageRootList: View {
     @State private var cleanupOptions = CatalogueCleanupOptions()
     @State private var showsCleanupReview = false
     @State private var completeArchiveToRestore: URL?
-    @State private var completeArchiveStatus: String?
     @StateObject private var transferTasks = SettingsTransferTasks()
     @State private var showsCatalogueReset = false
     @State private var isRunningCatalogueMaintenance = false
@@ -1633,7 +1632,8 @@ private struct StorageRootList: View {
             if shows(.backupRestore) {
                 SettingsBackupRecoverySections(
                     databaseStatus: library.masterBackupStatus,
-                    archiveStatus: completeArchiveStatus,
+                    archiveExport: transferTasks.archiveExport,
+                    archiveRestore: transferTasks.archiveRestore,
                     canBackUpDatabase: library.snapshotDestinationPath != nil,
                     isBusy: isRunningCatalogueMaintenance,
                     databaseTransfer: transferTasks.databaseBackup,
@@ -1966,16 +1966,15 @@ private struct StorageRootList: View {
         .confirmationDialog("Restore complete catalogue archive?", isPresented: Binding(get: { completeArchiveToRestore != nil }, set: { if !$0 { completeArchiveToRestore = nil } }), titleVisibility: .visible) {
             if let archiveURL = completeArchiveToRestore {
                 Button("Verify and Restore Archive", role: .destructive) {
+                    guard !isRunningCatalogueMaintenance, !transferTasks.isRunning else { return }
                     isRunningCatalogueMaintenance = true
-                    Task {
-                        do {
-                            try await library.restoreCompleteCatalogueArchive(from: archiveURL)
-                            completeArchiveStatus = library.catalogueMaintenanceStatus
+                    transferTasks.start(.archiveRestore) {
+                        defer {
                             completeArchiveToRestore = nil
-                        } catch {
-                            library.presentError(error)
+                            isRunningCatalogueMaintenance = false
                         }
-                        isRunningCatalogueMaintenance = false
+                        try await library.restoreCompleteCatalogueArchive(from: archiveURL)
+                        return library.catalogueMaintenanceStatus
                     }
                 }
             }
@@ -2138,6 +2137,7 @@ private struct StorageRootList: View {
     }
 
     private func exportCompleteCatalogueArchive() {
+        guard !isRunningCatalogueMaintenance, !transferTasks.isRunning else { return }
         let panel = NSOpenPanel()
         panel.title = "Choose Complete Catalogue Archive Destination"
         panel.prompt = "Export Here"
@@ -2147,17 +2147,15 @@ private struct StorageRootList: View {
         panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
         isRunningCatalogueMaintenance = true
-        Task {
-            do {
-                _ = try await library.exportCompleteCatalogueArchive(to: url)
-                completeArchiveStatus = library.catalogueMaintenanceStatus
-            }
-            catch { library.presentError(error) }
-            isRunningCatalogueMaintenance = false
+        transferTasks.start(.archiveExport) {
+            defer { isRunningCatalogueMaintenance = false }
+            _ = try await library.exportCompleteCatalogueArchive(to: url)
+            return library.catalogueMaintenanceStatus
         }
     }
 
     private func chooseCompleteCatalogueArchive() {
+        guard !isRunningCatalogueMaintenance, !transferTasks.isRunning else { return }
         let panel = NSOpenPanel()
         panel.title = "Choose Complete Catalogue Archive"
         panel.prompt = "Choose Archive"

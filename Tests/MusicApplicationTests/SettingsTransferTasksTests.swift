@@ -5,6 +5,27 @@ import Testing
 @Suite("Settings transfer feedback")
 @MainActor
 struct SettingsTransferTasksTests {
+    @Test("Archive failure releases all manual actions and retry preserves the other archive result")
+    func archiveRetry() async throws {
+        struct Failure: LocalizedError { var errorDescription: String? { "Archive verification failed" } }
+        let tasks = SettingsTransferTasks()
+        let export = try #require(tasks.start(.archiveExport) { "Export verified" })
+        #expect(tasks.isRunning)
+        #expect(tasks.start(.sharing) { "Must not run" } == nil)
+        #expect(tasks.start(.archiveRestore) { "Must not run" } == nil)
+        await export.value
+        let restore = try #require(tasks.start(.archiveRestore) { throw Failure() })
+        await restore.value
+        #expect(!tasks.isRunning)
+        #expect(tasks.archiveRestore.failure == "Archive verification failed")
+        #expect(tasks.archiveExport == .succeeded("Export verified"))
+        let retry = try #require(tasks.start(.archiveRestore) { "Restore verified" })
+        #expect(tasks.archiveRestore == .running)
+        await retry.value
+        #expect(tasks.archiveRestore == .succeeded("Restore verified"))
+        #expect(tasks.archiveExport == .succeeded("Export verified"))
+    }
+
     @Test("A suspended transfer blocks duplicate and cross-category submissions")
     func busyGuard() async throws {
         let tasks = SettingsTransferTasks()

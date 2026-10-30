@@ -4,7 +4,23 @@ Last updated: 30 October 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — R8 manual sharing and database-backup feedback
+## Current resume — R8 complete-archive feedback
+
+Local app: **Music Library 0.55 (build 56)** at `build/Music Library 0.55.app`, packaged by the existing script. Schema remains **17**. No personal catalogue, source audio or sharing destination was used for validation. No normal app or native fixture was launched this slice; native archive progress/error/retry appearance remains pending.
+
+`SettingsTransferTasks` now includes independent archive export and restore feedback. `SettingsDataSafetySections` places each operation's indeterminate progress, success or selectable error beside its button. Failed operations offer Retry Archive Export/Restore. The former shared archive success string and global error alert for these two operations are replaced by local state; this is session feedback, not durable recovery history. Sharing and database-backup feedback remain separate.
+
+`StorageRootList` checks the synchronous manual-task guard before opening archive selection or executing a confirmed restore. Both archive operations also retain the existing maintenance flag, released in defer on success/error. Restore selection is cleared after an attempted operation, including failure. Retry opens the archive chooser again and still requires the existing destructive confirmation. Export retry opens the destination chooser. Cancelling either chooser leaves earlier feedback unchanged and executes no service. Buttons remain disabled while manual transfers/maintenance run; descriptions and existing recovery safeguards remain intact.
+
+Publication, daily backup, archive verification, security-scoped access, checksums, archive formats, recovery archive creation and rollback were not changed. The coordinator still guards manual Settings submissions only; it does not serialize background services or all catalogue mutations. The new injected regression covers archive/manual cross-action rejection, failed restore guard release, retry and independent export result retention. Existing archive/recovery tests continue to use temporary data.
+
+Validation: `swift test` passed **198 tests/42 suites** and `swift test -c release` passed **195/41**; incremental `swift build` passed. Logs: `/private/tmp/musiclibrary-055-*.log`. Native cancellation, running/error/retry rendering, compact/appearance/keyboard/VoiceOver and actual restore rollback remain separate acceptance. Carry prior R7 drag, real audio/covers/NAS and iPad limitations forward.
+
+Artifact verification: plist lint, version 0.55/build 56, strict deep code signature and whitespace checks passed.
+
+Next: **R8 background/manual publication and backup coordination audit**, then a focused service-level guard slice with injected/temporary regression coverage if needed. Do not configure personal destinations or execute destructive acceptance on personal data. Complete native recovery acceptance remains open; full R8 is not claimed complete. Queue editing, track-specific credits, providers and device acceptance remain deferred. Previous checkpoint 4b5d890 was local at resume; its push failed due GitHub connectivity. Check Git for current remote delivery status.
+
+## Previous resume — R8 manual sharing and database-backup feedback
 
 Delivered local Release app: **Music Library 0.54 (build 55)** at `build/Music Library 0.54.app`, using the canonical plist and packaging script. Schema remains **17**. No personal catalogue, source audio or personal/NAS sharing destination was opened/configured/published during validation. Automated transfer tests inject operations only; they do not invoke publication or database backup on user data.
 

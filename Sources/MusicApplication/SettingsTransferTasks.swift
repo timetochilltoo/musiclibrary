@@ -5,7 +5,7 @@ import Foundation
 /// serialize background publication, and never owns a destination or a database.
 @MainActor
 public final class SettingsTransferTasks: ObservableObject {
-    public enum Kind: Sendable { case sharing, databaseBackup }
+    public enum Kind: Sendable { case sharing, databaseBackup, archiveExport, archiveRestore }
     public enum State: Equatable, Sendable {
         case idle, running, succeeded(String), failed(String)
 
@@ -16,7 +16,11 @@ public final class SettingsTransferTasks: ObservableObject {
 
     @Published public private(set) var sharing: State = .idle
     @Published public private(set) var databaseBackup: State = .idle
-    public var isRunning: Bool { sharing == .running || databaseBackup == .running }
+    @Published public private(set) var archiveExport: State = .idle
+    @Published public private(set) var archiveRestore: State = .idle
+    public var isRunning: Bool {
+        [sharing, databaseBackup, archiveExport, archiveRestore].contains(.running)
+    }
 
     public init() {}
 
@@ -36,6 +40,8 @@ public final class SettingsTransferTasks: ObservableObject {
         switch kind {
         case .sharing: sharing = state
         case .databaseBackup: databaseBackup = state
+        case .archiveExport: archiveExport = state
+        case .archiveRestore: archiveRestore = state
         }
     }
 }
