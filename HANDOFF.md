@@ -4,7 +4,23 @@ Last updated: 30 October 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — R8 complete-archive feedback
+## Current resume — R8 publication/database-backup service queue
+
+Current slice: **Music Library 0.56 (build 57)**, canonical packaging plist. Schema remains **17**. No personal catalogue, source media or sharing destination is used for development checks. No normal app/native fixture is launched for this service slice.
+
+The audit found that the session-local Settings click guard does not cover automatic publication, daily master backup or termination flush. These call LibraryStore directly and previously could overlap file publication or backup retention. New `LibraryTransferQueue.swift` provides a main-actor FIFO chain. LibraryStore routes public explicit-destination publication, publish-now and create-master-backup-now through it. Automatic/daily/flush callers already use those entry points, so they receive the same ordering. Private uncoordinated helpers avoid reacquiring the queue. Complete operations, including publication/preferences status updates and master backup retention, stay within their turn.
+
+Destination configuration now refuses while queue work is running or waiting, before creating a bookmark or changing preferences. A failed writer releases the queue for later operations. Cancellation of a waiter does not cancel earlier work; its operation is skipped when its turn arrives. Running operations retain their existing cancellation behavior; this does not promise interruption or rollback of detached I/O. The queue clears its completed tail when the last request finishes. Settings still provides local progress/error/retry feedback through its existing coordinator.
+
+Regression tests inject suspended/failing operations, assert ordering and result propagation, verify retry after failure and cancellation isolation. No real publication or backup destination is configured. Existing archive/publication/persistence tests retain temporary fixtures. Debug passes **200 tests/43 suites**; Release passes **197/42**. Final test warning cleanup was followed by the two focused queue tests and full Release suite. Incremental build passes. Logs: `/private/tmp/musiclibrary-056-*.log`.
+
+Artifact: Release package `build/Music Library 0.56.app`; plist lint, version 0.56/build 57, strict deep signature and whitespace checks passed.
+
+Scope limit: archive export/restore, catalogue reset, scans and unrelated mutations do not acquire this queue. This is not a global catalogue lock, nor proof that recovery and automatic background jobs cannot overlap. Native configured-destination timing, queued progress wording, destination-change error appearance, archive rollback and prior R7 drag/audio/NAS/iPad acceptance remain pending. No source-audio behavior, archive format, permission verification, recovery or retention policy is changed.
+
+Next: **audit archive restore/reset versus background transfer exclusion**, then implement the smallest service-level protection with disposable regression coverage. Do not run destructive acceptance on personal data. Full R8 remains open. Two prior checkpoints were local at resume because GitHub pushes timed out; inspect Git for current delivery state.
+
+## Previous resume — R8 complete-archive feedback
 
 Local app: **Music Library 0.55 (build 56)** at `build/Music Library 0.55.app`, packaged by the existing script. Schema remains **17**. No personal catalogue, source audio or sharing destination was used for validation. No normal app or native fixture was launched this slice; native archive progress/error/retry appearance remains pending.
 

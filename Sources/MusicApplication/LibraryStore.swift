@@ -72,6 +72,7 @@ public final class LibraryStore: ObservableObject {
     private let lastMasterBackupRevisionKey = "MusicLibrary.lastMasterBackupRevision"
     private let lastMasterBackupAtKey = "MusicLibrary.lastMasterBackupAt"
     private var publicationSchedule = SnapshotPublicationSchedule()
+    private let transferQueue = LibraryTransferQueue()
     private var catalogueURL: URL?
     private let metadataLookupProvider: any MetadataLookupProviding
     private var reloadGeneration = 0
@@ -953,6 +954,10 @@ public final class LibraryStore: ObservableObject {
         }
     }
     public func publishSnapshot(to directory: URL) async throws -> SnapshotManifest {
+        try await transferQueue.run { try await self.publishSnapshotUncoordinated(to: directory) }
+    }
+
+    private func publishSnapshotUncoordinated(to directory: URL) async throws -> SnapshotManifest {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
         let value = try await database.publicationRevisionAndJSON()
         return try await Task.detached(priority: .utility) {
@@ -963,6 +968,9 @@ public final class LibraryStore: ObservableObject {
         }.value
     }
     public func setSnapshotDestination(_ url: URL) throws {
+        guard !transferQueue.isBusy else {
+            throw DatabaseError.invalidOperation("Wait for sharing and database backup tasks to finish before changing the destination.")
+        }
         let bookmark = try makeSecurityScopedBookmark(for: url)
         UserDefaults.standard.set(bookmark, forKey: snapshotDestinationBookmarkKey)
         snapshotDestinationPath = url.path
@@ -970,8 +978,12 @@ public final class LibraryStore: ObservableObject {
         masterBackupStatus = "Ready to back up master database"
     }
     public func publishSnapshotNow() async throws {
+        try await transferQueue.run { try await self.publishSnapshotNowUncoordinated() }
+    }
+
+    private func publishSnapshotNowUncoordinated() async throws {
         guard let destination = resolvedSnapshotDestination() else { throw DatabaseError.invalidOperation("Choose a snapshot destination first.") }
-        let manifest = try await publishSnapshot(to: destination)
+        let manifest = try await publishSnapshotUncoordinated(to: destination)
         lastPublishedRevision = manifest.revision
         publicationSchedule.markPublished(manifest.revision)
         UserDefaults.standard.set(manifest.revision, forKey: lastPublishedRevisionKey)
@@ -984,6 +996,10 @@ public final class LibraryStore: ObservableObject {
     }
 
     public func createMasterBackupNow() async throws {
+        try await transferQueue.run { try await self.createMasterBackupUncoordinated() }
+    }
+
+    private func createMasterBackupUncoordinated() async throws {
         guard let destination = resolvedSnapshotDestination(), let database else { throw DatabaseError.invalidOperation("Choose a snapshot destination first.") }
         let manifest = try await Task.detached(priority: .utility) {
             let accessed = destination.startAccessingSecurityScopedResource()
