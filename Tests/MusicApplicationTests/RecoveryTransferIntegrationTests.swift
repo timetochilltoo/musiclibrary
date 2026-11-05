@@ -21,7 +21,12 @@ struct RecoveryTransferIntegrationTests {
         try Data([9]).write(to: art)
         let revision = store.catalogueRevision
         do { try await store.restoreCompleteCatalogueArchive(from: archive); Issue.record("Expected injected failure") }
-        catch { #expect(error as? DatabaseError == .invalidOperation("Injected recovery installation failure.")) }
+        catch {
+            let report = try #require(error as? RestoreRecoveryError)
+            #expect(report.outcome == .restoredPreviousCatalogue)
+            #expect(report.restoreFailure == "Injected recovery installation failure.")
+            #expect(report.localizedDescription.contains("previous catalogue was restored and reopened"))
+        }
         try await store.reload()
         #expect(store.catalogueAlbums.first?.title == "Live title before failure")
         #expect(store.catalogueRevision == revision)
@@ -51,7 +56,12 @@ struct RecoveryTransferIntegrationTests {
         try Data([8]).write(to: art)
         let revision = store.catalogueRevision
         do { try await store.restoreMasterBackup(from: backup); Issue.record("Expected injected failure") }
-        catch { #expect(error as? DatabaseError == .invalidOperation("Injected recovery installation failure.")) }
+        catch {
+            let report = try #require(error as? RestoreRecoveryError)
+            #expect(report.outcome == .restoredPreviousCatalogue)
+            #expect(report.restoreFailure == "Injected recovery installation failure.")
+            #expect(store.masterBackupStatus == report.localizedDescription)
+        }
         try await store.reload()
         #expect(store.catalogueAlbums.first?.title == "Live database before failure")
         #expect(store.catalogueRevision == revision)
@@ -62,6 +72,37 @@ struct RecoveryTransferIntegrationTests {
         #expect(store.catalogueAlbums.first?.title == "Backup title")
         #expect(try Data(contentsOf: art) == Data([8]))
         #expect(!store.transferActivity.isBusy)
+    }
+
+    @Test("Incomplete rollback reports both failures and retained recovery data without claiming recovery", arguments: [true, false])
+    func incompleteRecovery(archive: Bool) async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try await LibraryStore(recoveryFixtureDirectory: root, failRecoveryInstallation: true, failRecoveryRollback: true)
+        let album = try await store.addAlbum(.init(title: "Archived title"))
+        let source = archive
+            ? try await store.exportCompleteCatalogueArchive(to: root.appending(path: "Exports"))
+            : try await createDatabaseBackup(in: root)
+        try await store.updateAlbum(album.id, with: .init(title: "Live before failure"))
+        do {
+            if archive { try await store.restoreCompleteCatalogueArchive(from: source) }
+            else { try await store.restoreMasterBackup(from: source) }
+            Issue.record("Expected incomplete recovery")
+        } catch {
+            let report = try #require(error as? RestoreRecoveryError)
+            #expect(report.outcome == .recoveryIncomplete)
+            #expect(store.recoveryRequiresReview)
+            #expect(store.recoveryReviewMessage == report.localizedDescription)
+            #expect(report.restoreFailure == "Injected recovery installation failure.")
+            #expect(report.recoveryFailure == "Injected recovery rollback failure.")
+            #expect(report.localizedDescription.contains("Do not retry"))
+            #expect(!report.localizedDescription.contains("was restored and reopened"))
+            #expect(archive ? store.catalogueMaintenanceStatus == report.localizedDescription : store.masterBackupStatus == report.localizedDescription)
+            if archive { _ = try CompleteCatalogueArchive.verify(at: report.recoveryURL) }
+            else { try MusicDatabase.verifyStandaloneBackupFile(at: report.recoveryURL) }
+        }
+        #expect(!store.transferActivity.isBusy)
+        do { _ = try await store.addAlbum(.init(title: "Must refuse while recovery unresolved")); Issue.record("Unresolved catalogue accepted edits") } catch {}
     }
 
     @Test("Reset requires exact confirmation, preserves roots and audio, and verifies complete recovery")

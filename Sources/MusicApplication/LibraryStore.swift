@@ -58,6 +58,8 @@ public final class LibraryStore: ObservableObject {
     @Published public private(set) var masterBackupStatus = "Master backup destination not configured"
     @Published public private(set) var catalogueMaintenanceStatus = "No catalogue cleanup has been run"
     @Published public private(set) var transferActivity = LibraryTransferActivity()
+    @Published public private(set) var recoveryReviewMessage: String?
+    public var recoveryRequiresReview: Bool { recoveryReviewMessage != nil }
 
     private var database: MusicDatabase?
     private var startGate = LibraryStartGate()
@@ -99,6 +101,7 @@ public final class LibraryStore: ObservableObject {
     private var catalogueURL: URL?
     private var recoveryFixtureDirectory: URL?
     private var failRecoveryFixtureInstallation = false
+    private var failRecoveryFixtureRollback = false
     private let metadataLookupProvider: any MetadataLookupProviding
     private var reloadGeneration = 0
     private var searchGeneration = 0
@@ -128,7 +131,7 @@ public final class LibraryStore: ObservableObject {
     }
 
     /// Internal integration composition, confined to a disposable temporary child.
-    convenience init(recoveryFixtureDirectory directory: URL, failRecoveryInstallation: Bool = false) async throws {
+    convenience init(recoveryFixtureDirectory directory: URL, failRecoveryInstallation: Bool = false, failRecoveryRollback: Bool = false) async throws {
         guard RegisteredPathSecurity.relativePath(of: directory, within: FileManager.default.temporaryDirectory)?.isEmpty == false else {
             throw DatabaseError.invalidOperation("Recovery fixtures require a temporary child directory.")
         }
@@ -139,6 +142,7 @@ public final class LibraryStore: ObservableObject {
         self.init(database: database)
         self.recoveryFixtureDirectory = directory
         self.failRecoveryFixtureInstallation = failRecoveryInstallation
+        self.failRecoveryFixtureRollback = failRecoveryRollback
         self.catalogueURL = url
         self.managedArtworkStore = .init(directory: directory.appending(path: "Artwork"))
         try await reload()
@@ -153,6 +157,12 @@ public final class LibraryStore: ObservableObject {
         guard recoveryFixtureDirectory != nil, failRecoveryFixtureInstallation else { return }
         failRecoveryFixtureInstallation = false
         throw DatabaseError.invalidOperation("Injected recovery installation failure.")
+    }
+
+    private func checkRecoveryFixtureRollback() throws {
+        guard recoveryFixtureDirectory != nil, failRecoveryFixtureRollback else { return }
+        failRecoveryFixtureRollback = false
+        throw DatabaseError.invalidOperation("Injected recovery rollback failure.")
     }
 
     private func validateRecoveryFixtureURL(_ url: URL) throws {
@@ -971,6 +981,7 @@ public final class LibraryStore: ObservableObject {
         try FileManager.default.createDirectory(at: rollbackDirectory, withIntermediateDirectories: true)
         let rollbackDatabase = rollbackDirectory.appending(path: CompleteCatalogueArchive.databaseFileName)
         let rollbackArtwork = rollbackDirectory.appending(path: CompleteCatalogueArchive.artworkDirectoryName, directoryHint: .isDirectory)
+        let hadArtwork = FileManager.default.fileExists(atPath: liveArtworkDirectory.path)
         self.database = nil
         removeSQLiteSidecars(for: catalogueURL)
         do {
@@ -991,18 +1002,35 @@ public final class LibraryStore: ObservableObject {
             try? FileManager.default.removeItem(at: rollbackDirectory)
             catalogueMaintenanceStatus = "Restored revision \(staged.manifest.revision); previous catalogue archived as \(recoveryArchive.lastPathComponent)"
         } catch {
+            let restoreFailure = error.localizedDescription
             self.database = nil
-            removeSQLiteSidecars(for: catalogueURL)
-            if FileManager.default.fileExists(atPath: catalogueURL.path) { try? FileManager.default.removeItem(at: catalogueURL) }
-            if FileManager.default.fileExists(atPath: liveArtworkDirectory.path) { try? FileManager.default.removeItem(at: liveArtworkDirectory) }
-            if FileManager.default.fileExists(atPath: rollbackDatabase.path) { try? FileManager.default.moveItem(at: rollbackDatabase, to: catalogueURL) }
-            if FileManager.default.fileExists(atPath: rollbackArtwork.path) { try? FileManager.default.moveItem(at: rollbackArtwork, to: liveArtworkDirectory) }
-            let recovered = try MusicDatabase(url: catalogueURL)
-            try await recovered.migrate()
-            self.database = recovered
-            self.managedArtworkStore = .init(directory: managedArtworkStore.directory)
+            do {
+                try checkRecoveryFixtureRollback()
+                guard FileManager.default.fileExists(atPath: rollbackDatabase.path),
+                      !hadArtwork || FileManager.default.fileExists(atPath: rollbackArtwork.path) else {
+                    throw DatabaseError.invalidOperation("Previous catalogue rollback files are unavailable.")
+                }
+                try removeRecoverySidecars(for: catalogueURL)
+                if FileManager.default.fileExists(atPath: catalogueURL.path) { try FileManager.default.removeItem(at: catalogueURL) }
+                if FileManager.default.fileExists(atPath: liveArtworkDirectory.path) { try FileManager.default.removeItem(at: liveArtworkDirectory) }
+                try FileManager.default.moveItem(at: rollbackDatabase, to: catalogueURL)
+                if hadArtwork { try FileManager.default.moveItem(at: rollbackArtwork, to: liveArtworkDirectory) }
+                let recovered = try MusicDatabase(url: catalogueURL)
+                try await recovered.migrate()
+                self.database = recovered
+                self.managedArtworkStore = .init(directory: managedArtworkStore.directory)
+                try await reload()
+            } catch {
+                self.database = nil
+                let report = RestoreRecoveryError(outcome: .recoveryIncomplete, restoreFailure: restoreFailure, recoveryFailure: error.localizedDescription, recoveryURL: recoveryArchive)
+                recoveryReviewMessage = report.localizedDescription
+                catalogueMaintenanceStatus = report.localizedDescription
+                throw report
+            }
             try? FileManager.default.removeItem(at: rollbackDirectory)
-            throw error
+            let report = RestoreRecoveryError(outcome: .restoredPreviousCatalogue, restoreFailure: restoreFailure, recoveryFailure: nil, recoveryURL: recoveryArchive)
+            catalogueMaintenanceStatus = report.localizedDescription
+            throw report
         }
     }
 
@@ -1120,10 +1148,10 @@ public final class LibraryStore: ObservableObject {
         database = nil
         try? FileManager.default.removeItem(at: URL(fileURLWithPath: catalogueURL.path + "-wal"))
         try? FileManager.default.removeItem(at: URL(fileURLWithPath: catalogueURL.path + "-shm"))
-        if FileManager.default.fileExists(atPath: catalogueURL.path) {
-            try FileManager.default.moveItem(at: catalogueURL, to: recoveryURL)
-        }
         do {
+            if FileManager.default.fileExists(atPath: catalogueURL.path) {
+                try FileManager.default.moveItem(at: catalogueURL, to: recoveryURL)
+            }
             try FileManager.default.copyItem(at: backupURL, to: catalogueURL)
             try checkRecoveryFixtureInstallation()
             let restored = try MusicDatabase(url: catalogueURL)
@@ -1132,12 +1160,31 @@ public final class LibraryStore: ObservableObject {
             try await reload()
             masterBackupStatus = "Restored revision \(manifest.revision); previous master kept in Recovery"
         } catch {
-            if FileManager.default.fileExists(atPath: catalogueURL.path) { try? FileManager.default.removeItem(at: catalogueURL) }
-            if FileManager.default.fileExists(atPath: recoveryURL.path) { try? FileManager.default.moveItem(at: recoveryURL, to: catalogueURL) }
-            let recovered = try MusicDatabase(url: catalogueURL)
-            try await recovered.migrate()
-            database = recovered
-            throw error
+            let restoreFailure = error.localizedDescription
+            database = nil
+            do {
+                try checkRecoveryFixtureRollback()
+                guard FileManager.default.fileExists(atPath: recoveryURL.path) else {
+                    throw DatabaseError.invalidOperation("Previous database recovery file is unavailable.")
+                }
+                try removeRecoverySidecars(for: catalogueURL)
+                if FileManager.default.fileExists(atPath: catalogueURL.path) { try FileManager.default.removeItem(at: catalogueURL) }
+                try FileManager.default.moveItem(at: recoveryURL, to: catalogueURL)
+                let recovered = try MusicDatabase(url: catalogueURL)
+                try await recovered.migrate()
+                database = recovered
+                try await reload()
+            } catch {
+                database = nil
+                let recoveryLocation = FileManager.default.fileExists(atPath: recoveryURL.path) ? recoveryURL : catalogueURL
+                let report = RestoreRecoveryError(outcome: .recoveryIncomplete, restoreFailure: restoreFailure, recoveryFailure: error.localizedDescription, recoveryURL: recoveryLocation)
+                recoveryReviewMessage = report.localizedDescription
+                masterBackupStatus = report.localizedDescription
+                throw report
+            }
+            let report = RestoreRecoveryError(outcome: .restoredPreviousCatalogue, restoreFailure: restoreFailure, recoveryFailure: nil, recoveryURL: catalogueURL)
+            masterBackupStatus = report.localizedDescription
+            throw report
         }
     }
     public func flushPendingSnapshotPublication(maximumWait: Duration = .seconds(3)) async {
@@ -1435,6 +1482,13 @@ public final class LibraryStore: ObservableObject {
     private func removeSQLiteSidecars(for databaseURL: URL) {
         try? FileManager.default.removeItem(at: URL(fileURLWithPath: databaseURL.path + "-wal"))
         try? FileManager.default.removeItem(at: URL(fileURLWithPath: databaseURL.path + "-shm"))
+    }
+
+    private func removeRecoverySidecars(for databaseURL: URL) throws {
+        for suffix in ["-wal", "-shm"] {
+            let url = URL(fileURLWithPath: databaseURL.path + suffix)
+            if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+        }
     }
 
     private func refreshImportBatches() async {

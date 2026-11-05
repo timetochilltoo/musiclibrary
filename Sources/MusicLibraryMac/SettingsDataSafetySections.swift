@@ -26,6 +26,8 @@ struct SettingsBackupRecoverySections: View {
     let isBusy: Bool
     let databaseTransfer: SettingsTransferTasks.State
     let transfersBusy: Bool
+    let recoveryReviewMessage: String?
+    private var recoveryRequiresReview: Bool { recoveryReviewMessage != nil }
     let onExportArchive: () -> Void
     let onRestoreArchive: () -> Void
     let onBackUpDatabase: () -> Void
@@ -36,14 +38,20 @@ struct SettingsBackupRecoverySections: View {
         Section {
             Text("Recommended for catalogue recovery")
                 .font(.headline)
+            if let recoveryReviewMessage {
+                Text(recoveryReviewMessage)
+                    .foregroundStyle(.red).textSelection(.enabled)
+            }
             Text("A complete archive contains the verified catalogue database and managed artwork. Source audio is not included; back up your music files separately.")
                 .font(.callout).foregroundStyle(.secondary)
             Button(archiveExport.failure == nil ? "Export Complete Catalogue Archive…" : "Retry Archive Export…", systemImage: "archivebox", action: onExportArchive)
                 .buttonStyle(.borderedProminent)
+                .disabled(recoveryRequiresReview)
             SettingsTransferFeedback(state: archiveExport, progress: "Archive export requested…")
             Button(archiveRestore.failure == nil ? "Restore Complete Catalogue Archive…" : "Retry Archive Restore…", systemImage: "arrow.counterclockwise.circle", role: .destructive, action: onRestoreArchive)
+                .disabled(recoveryRequiresReview)
             SettingsTransferFeedback(state: archiveRestore, progress: "Archive restore requested…")
-            if archiveRestore.failure != nil {
+            if archiveRestore.failure != nil && !recoveryRequiresReview {
                 Text("Retry opens the archive chooser again and requires confirmation before restoring.")
                     .font(.caption).foregroundStyle(.secondary)
             }
@@ -70,9 +78,9 @@ struct SettingsBackupRecoverySections: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Button(databaseTransfer.failure == nil ? "Back Up Database Only" : "Retry Database Backup", action: onBackUpDatabase)
-                    .disabled(!canBackUpDatabase || isBusy || transfersBusy)
+                    .disabled(!canBackUpDatabase || isBusy || transfersBusy || recoveryRequiresReview)
                 Button("Restore Database-only Backup…", role: .destructive, action: onRestoreDatabase)
-                    .disabled(isBusy || transfersBusy)
+                    .disabled(isBusy || transfersBusy || recoveryRequiresReview)
             }
         } header: {
             Text("Other Backup Options")

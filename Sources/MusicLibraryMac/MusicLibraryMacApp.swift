@@ -1681,7 +1681,7 @@ private struct StorageRootList: View {
                     lastPublishedAt: library.lastPublishedAt,
                     failure: library.lastSnapshotPublishFailure,
                     transfer: transferTasks.sharing,
-                    isBusy: transferTasks.isRunning || isRunningCatalogueMaintenance,
+                    isBusy: transferTasks.isRunning || isRunningCatalogueMaintenance || library.recoveryRequiresReview,
                     onChooseFolder: { showsSnapshotDestinationPicker = true },
                     onUpdate: {
                         guard !isRunningCatalogueMaintenance else { return }
@@ -1702,6 +1702,7 @@ private struct StorageRootList: View {
                     isBusy: isRunningCatalogueMaintenance,
                     databaseTransfer: transferTasks.databaseBackup,
                     transfersBusy: transferTasks.isRunning,
+                    recoveryReviewMessage: library.recoveryReviewMessage,
                     onExportArchive: { exportCompleteCatalogueArchive() },
                     onRestoreArchive: { chooseCompleteCatalogueArchive() },
                     onBackUpDatabase: {
@@ -1746,7 +1747,7 @@ private struct StorageRootList: View {
             } header: {
                 Label("Catalogue Maintenance", systemImage: "wrench.and.screwdriver")
                 }
-                .disabled(isRunningCatalogueMaintenance || transferTasks.isRunning)
+                .disabled(isRunningCatalogueMaintenance || transferTasks.isRunning || library.recoveryRequiresReview)
             }
 
             if shows(.playback) {

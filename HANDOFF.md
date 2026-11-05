@@ -4,7 +4,25 @@ Last updated: 5 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — R8 forced installation rollback and connection lifetime fix
+## Current resume — R8 recovery outcome/status reporting
+
+Current slice: **Music Library 0.63 (build 64)**; schema **17**. Service tests use only temporary recovery fixtures; no native app, personal catalogue/preferences, source audio or NAS destination was opened/changed.
+
+New RestoreRecoveryError distinguishes restoredPreviousCatalogue from recoveryIncomplete and carries the original restore failure, optional rollback failure and recovery URL. Both restore catch paths now check rollback file removal/moves and sidecar cleanup, reopen/migrate and reload the recovered catalogue before reporting that the previous catalogue was restored. Archive rollback requires expected prior database/artwork files before deleting replacement files. Database restore now catches failure while moving the current database as well as replacement errors. Preflight validation outside installation keeps its original error meaning.
+
+Successful rollback still throws an error because the requested restore failed, but the message explicitly confirms that the previous catalogue reopened. Unresolved recovery retains the archive/rollback payload, reports both errors plus recovery location, clears database access and sets session-only recoveryRequiresReview. Settings keeps errors/guidance readable while disabling affected sharing, backup, restore and maintenance controls; it suppresses the archive retry explanation in that state. This adds no manual repair wizard or durable restart recovery. Do not infer that a restart resolves incomplete recovery.
+
+The temporary initializer can inject a one-shot rollback error in addition to the earlier installation fault; normal startup/preferences/launch arguments cannot enable either. Existing successful-rollback tests now assert the typed outcome and message. New parameterized tests cover incomplete recovery for both restore types, validate retained recovery payloads, both error details, idle queue, review-required state and refusal of catalogue edits. No real filesystem permissions or NAS failures are synthesized on user data.
+
+Full suites passed: Debug **212 tests/45 suites**, Release **208/44**. Final move-error handling/message-retention polish was followed by incremental build, Release packaging and all **9 focused recovery tests** passing in both configurations. The session review-required flag derives from a retained recoveryReviewMessage, so ordinary background backup status cannot overwrite the retained recovery location. Logs `/private/tmp/musiclibrary-063-*.log`. Native guidance/disabled-control/error rendering remains pending. Prior backup verification, reset/root preservation and post-copy rollback regressions remain applicable.
+
+Artifact: `build/Music Library 0.63.app` passed plist lint, version 0.63/build 64, strict deep signature and whitespace checks.
+
+Limits: no forced partial-copy matrix, rollback failure after partially moving originals, process termination/restart recovery or global exclusion of unrelated scans/edits. Full Tab/VoiceOver, multiple windows/sheets, long queues, R7 drag and real audio/NAS/iPad remain open. Full R8 is not claimed complete.
+
+Next: **native recovery-message presentation using isolated/synthetic outcomes**, checking selectable error details, blocked retry and successful-rollback wording in light/dark compact Settings. Preserve confirmation and recovery files; do not trigger failures on personal data. Git was synchronized at resume; inspect status for delivery outcome.
+
+## Previous resume — R8 forced installation rollback and connection lifetime fix
 
 Current slice: **Music Library 0.62 (build 63)**, schema **17**. Tests use only validated temporary recovery fixture directories, catalogues and artwork; no personal catalogue/preferences, media, NAS destination or native app was opened/changed.
 

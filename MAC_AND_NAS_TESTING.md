@@ -7,7 +7,7 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 ## 1. Launch the packaged Mac app
 
 1. In Finder, open the project folder.
-2. Open the newest sequential package, currently `build/Music Library 0.62.app`. An older `/Applications/Music Library.app` installation is not automatically updated by packaging.
+2. Open the newest sequential package, currently `build/Music Library 0.63.app`. An older `/Applications/Music Library.app` installation is not automatically updated by packaging.
 3. If macOS blocks the first launch, Control-click the app, choose **Open**, then choose **Open** again.
 4. The app opens a catalogue in its Application Support folder. It does not use a SQLite database on the NAS.
 5. Keep the app open while following the tests below. If anything unexpected happens, take a screenshot and note the exact action just before it happened.
@@ -20,6 +20,8 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 4. Do not move, rename, or edit the original media during this guide.
 
 ### R8 Settings recovery/sharing presentation (0.52)
+
+0.63 recovery outcomes: injected post-copy errors with successful rollback must report the previous catalogue restored/reopened, preserve the original error detail, and allow retry. Injected rollback failure must report incomplete recovery plus both errors and retained recovery location, preserve recovery payload, leave catalogue edits unavailable and release the queue. Settings recovery guidance must remain readable while affected sharing/backup/restore/maintenance controls are blocked for that session. Native presentation, manual review/resolution, restart/crash behavior and real filesystem failures remain separate; use temporary fixtures only.
 
 Forced installation rollback: RecoveryTransferIntegrationTests inject one error only in temporary LibraryStore recovery composition after copying replacement files. Both restore types must restore the previous live catalogue/revision, preserve the appropriate artwork, release the queue, accept a later edit and succeed on retry. Complete archive recovery must remain checksum-verifiable and rollback staging must be removed. These checks do not test partial-copy errors, failure of rollback itself, process termination or personal/NAS data. No UI/launch switch enables the fault.
 
