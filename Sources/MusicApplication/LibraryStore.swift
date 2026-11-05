@@ -72,7 +72,7 @@ public final class LibraryStore: ObservableObject {
     private let lastMasterBackupRevisionKey = "MusicLibrary.lastMasterBackupRevision"
     private let lastMasterBackupAtKey = "MusicLibrary.lastMasterBackupAt"
     private var publicationSchedule = SnapshotPublicationSchedule()
-    private let transferQueue = LibraryTransferQueue()
+    let transferQueue = LibraryTransferQueue()
     private var catalogueURL: URL?
     private let metadataLookupProvider: any MetadataLookupProviding
     private var reloadGeneration = 0
@@ -846,6 +846,10 @@ public final class LibraryStore: ObservableObject {
     }
 
     public func performCatalogueCleanup(_ options: CatalogueCleanupOptions) async throws -> CatalogueCleanupResult {
+        try await transferQueue.run { try await self.performCatalogueCleanupUncoordinated(options) }
+    }
+
+    private func performCatalogueCleanupUncoordinated(_ options: CatalogueCleanupOptions) async throws -> CatalogueCleanupResult {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
         let recoveryArchive = try await createLocalRecoveryArchive(reason: "before-cleanup")
         let result = try await database.performCatalogueCleanup(options)
@@ -857,6 +861,10 @@ public final class LibraryStore: ObservableObject {
     }
 
     public func exportCompleteCatalogueArchive(to destinationDirectory: URL) async throws -> URL {
+        try await transferQueue.run { try await self.exportCompleteCatalogueArchiveUncoordinated(to: destinationDirectory) }
+    }
+
+    private func exportCompleteCatalogueArchiveUncoordinated(to destinationDirectory: URL) async throws -> URL {
         guard let database, let managedArtworkStore else { throw DatabaseError.notFound("Catalogue database") }
         let accessed = destinationDirectory.startAccessingSecurityScopedResource()
         defer { if accessed { destinationDirectory.stopAccessingSecurityScopedResource() } }
@@ -871,6 +879,10 @@ public final class LibraryStore: ObservableObject {
     }
 
     public func restoreCompleteCatalogueArchive(from archiveURL: URL) async throws {
+        try await transferQueue.run { try await self.restoreCompleteCatalogueArchiveUncoordinated(from: archiveURL) }
+    }
+
+    private func restoreCompleteCatalogueArchiveUncoordinated(from archiveURL: URL) async throws {
         guard let catalogueURL, let database, let managedArtworkStore else { throw DatabaseError.notFound("Catalogue database") }
         let accessed = archiveURL.startAccessingSecurityScopedResource()
         defer { if accessed { archiveURL.stopAccessingSecurityScopedResource() } }
@@ -931,6 +943,10 @@ public final class LibraryStore: ObservableObject {
 
     public func resetCatalogue(confirmation: String) async throws -> URL {
         guard confirmation == "RESET" else { throw DatabaseError.invalidOperation("Type RESET exactly before clearing the catalogue.") }
+        return try await transferQueue.run { try await self.resetCatalogueUncoordinated(confirmation: confirmation) }
+    }
+
+    private func resetCatalogueUncoordinated(confirmation: String) async throws -> URL {
         guard let database, let managedArtworkStore else { throw DatabaseError.notFound("Catalogue database") }
         let recoveryArchive = try await createLocalRecoveryArchive(reason: "before-reset")
         let manager = FileManager.default
@@ -969,7 +985,7 @@ public final class LibraryStore: ObservableObject {
     }
     public func setSnapshotDestination(_ url: URL) throws {
         guard !transferQueue.isBusy else {
-            throw DatabaseError.invalidOperation("Wait for sharing and database backup tasks to finish before changing the destination.")
+            throw DatabaseError.invalidOperation("Wait for sharing, backup and recovery tasks to finish before changing the destination.")
         }
         let bookmark = try makeSecurityScopedBookmark(for: url)
         UserDefaults.standard.set(bookmark, forKey: snapshotDestinationBookmarkKey)
@@ -1016,6 +1032,10 @@ public final class LibraryStore: ObservableObject {
     }
 
     public func restoreMasterBackup(from manifestURL: URL) async throws {
+        try await transferQueue.run { try await self.restoreMasterBackupUncoordinated(from: manifestURL) }
+    }
+
+    private func restoreMasterBackupUncoordinated(from manifestURL: URL) async throws {
         guard let catalogueURL else { throw DatabaseError.notFound("Catalogue database") }
         let accessed = manifestURL.startAccessingSecurityScopedResource()
         defer { if accessed { manifestURL.stopAccessingSecurityScopedResource() } }

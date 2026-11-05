@@ -1,6 +1,6 @@
 import Foundation
 
-/// Orders publication and database-backup requests across UI and background callers.
+/// Orders publication, backup and recovery across UI and background callers.
 /// Cancellation of a waiter never cancels an earlier writer.
 @MainActor
 final class LibraryTransferQueue {

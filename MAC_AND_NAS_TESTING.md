@@ -7,7 +7,7 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 ## 1. Launch the packaged Mac app
 
 1. In Finder, open the project folder.
-2. Open the newest sequential package, currently `build/Music Library 0.56.app`. An older `/Applications/Music Library.app` installation is not automatically updated by packaging.
+2. Open the newest sequential package, currently `build/Music Library 0.57.app`. An older `/Applications/Music Library.app` installation is not automatically updated by packaging.
 3. If macOS blocks the first launch, Control-click the app, choose **Open**, then choose **Open** again.
 4. The app opens a catalogue in its Application Support folder. It does not use a SQLite database on the NAS.
 5. Keep the app open while following the tests below. If anything unexpected happens, take a screenshot and note the exact action just before it happened.
@@ -20,6 +20,8 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 4. Do not move, rename, or edit the original media during this guide.
 
 ### R8 Settings recovery/sharing presentation (0.52)
+
+0.57 recovery exclusion: injected entry-point tests hold the shared queue and call archive export/restore, database restore, RESET-confirmed reset and cleanup on an unstarted store. Each must wait before resource validation, then release the queue after resource refusal. Actual archive installation/rollback versus configured background publication requires a separate disposable integration fixture. Do not run those destructive checks on personal data. Scans and arbitrary catalogue edits remain outside this queue.
 
 0.56 transfer coordination: injected service queue tests suspend a writer, submit later work, verify ordering, fail a writer then retry, and cancel a waiter without cancelling the earlier writer. Native configured-destination/background timing, destination-change refusal appearance and recovery/reset exclusion require separate isolated acceptance. Do not configure personal/NAS destinations for development validation.
 

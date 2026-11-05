@@ -1,10 +1,26 @@
 # Music Library — Project Handoff
 
-Last updated: 30 October 2026
+Last updated: 5 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — R8 publication/database-backup service queue
+## Current resume — R8 recovery/transfer exclusion
+
+Current slice: **Music Library 0.57 (build 58)**; schema **17**. No personal catalogue, source media or sharing destination was used for validation, and no normal app/native fixture was launched.
+
+The audit found that complete archive restore and database restore could replace LibraryStore's database while a background transfer retained the earlier database. Reset could similarly change the catalogue/artwork while sharing or backup was suspended. The shared LibraryTransferQueue now includes complete archive export/restore, database-only restore, reset and safe cleanup. Each public entry point enqueues before resource capture; private helpers preserve the existing operation through verification, local recovery, installation/rollback and reload. RESET is still checked before enqueue. Internal recovery archive creation does not reacquire the queue, avoiding nested acquisition. Reload may schedule background work, which waits behind the current queue turn.
+
+Destination-change refusal now describes sharing, backup and recovery work. Existing Settings progress/errors/retry and confirmation remain. Queue visibility in LibraryStore is internal for injected entry-point tests, not a new public API. No SQL, schema, archive format, checksums, security-scoped access, retention policy, source-file behavior or recovery safeguards changed.
+
+New RecoveryTransferCoordinationTests exercise all five public entry points with an unstarted store and a suspended injected writer. They verify that resource refusal waits for the writer, then the queue releases for later work. No filesystem recovery operation or personal preference resolution occurs in these tests. Existing temporary archive/persistence suites remain applicable. Debug passed **201 tests/44 suites**; Release passed **198/43**. Logs: `/private/tmp/musiclibrary-057-*.log`.
+
+Artifact: incremental build and Release packaging passed. `build/Music Library 0.57.app` passed plist lint, version 0.57/build 58, strict deep signature and whitespace checks.
+
+This excludes the queued sharing/backup operations from these recovery operations. It is not a global catalogue lock: scans, arbitrary edits and other file workflows remain outside the queue. Actual installation/rollback concurrent with configured background publication, native waiting/progress/error appearance, compact/keyboard/VoiceOver, R7 drag, real audio/NAS and iPad acceptance remain pending. Full R8 is not claimed complete.
+
+Next: **expose waiting/running queue state in Settings**, with accurate progress wording, then add an isolated configured recovery/transfer integration fixture. Preserve confirmation/recovery safeguards and avoid personal destinations/data. Git was three commits ahead at resume due repeated GitHub connection timeouts; inspect current status for delivery outcome.
+
+## Previous resume — R8 publication/database-backup service queue
 
 Current slice: **Music Library 0.56 (build 57)**, canonical packaging plist. Schema remains **17**. No personal catalogue, source media or sharing destination is used for development checks. No normal app/native fixture is launched for this service slice.
 
