@@ -7,7 +7,7 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 ## 1. Launch the packaged Mac app
 
 1. In Finder, open the project folder.
-2. Open the newest sequential package, currently `build/Music Library 0.58.app`. An older `/Applications/Music Library.app` installation is not automatically updated by packaging.
+2. Open the newest sequential package, currently `build/Music Library 0.59.app`. An older `/Applications/Music Library.app` installation is not automatically updated by packaging.
 3. If macOS blocks the first launch, Control-click the app, choose **Open**, then choose **Open** again.
 4. The app opens a catalogue in its Application Support folder. It does not use a SQLite database on the NAS.
 5. Keep the app open while following the tests below. If anything unexpected happens, take a screenshot and note the exact action just before it happened.
@@ -20,6 +20,8 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 4. Do not move, rename, or edit the original media during this guide.
 
 ### R8 Settings recovery/sharing presentation (0.52)
+
+0.59 integration evidence: RecoveryTransferIntegrationTests use a dedicated temporary root and real LibraryStore archive/publication entry points. They verify queued restore-before-publication, restored artwork/title, verified pre-restore recovery, tamper refusal without replacement, queue release and fixture boundary/configuration refusal. They do not open personal preferences/catalogues or configure a NAS destination. Native queue-panel appearance, installation-failure rollback, registered-root preservation under reset and device/endurance acceptance remain separate.
 
 0.58 queue visibility: with injected operations, suspend database backup and enqueue archive restore; LibraryStore must publish backup as active and restore as waiting. Cancel the waiter, finish the writer and confirm activity returns to idle. In isolated native acceptance, Sharing, Backup & Restore and Advanced must show Running and Waiting entries in order for automatic/manual work, with no false percentage or ETA. Local spinners describe requested work. Check category navigation, long queues, compact width, keyboard/VoiceOver and error/cancellation clearing; no personal destinations or destructive live checks.
 

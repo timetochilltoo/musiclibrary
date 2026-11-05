@@ -75,6 +75,7 @@ public final class LibraryStore: ObservableObject {
     private var publicationSchedule = SnapshotPublicationSchedule()
     let transferQueue = LibraryTransferQueue()
     private var catalogueURL: URL?
+    private var recoveryFixtureDirectory: URL?
     private let metadataLookupProvider: any MetadataLookupProviding
     private var reloadGeneration = 0
     private var searchGeneration = 0
@@ -101,6 +102,33 @@ public final class LibraryStore: ObservableObject {
         permitsBackgroundServices = false
         startGate.succeed()
         isReady = true
+    }
+
+    /// Internal integration composition, confined to a disposable temporary child.
+    convenience init(recoveryFixtureDirectory directory: URL) async throws {
+        guard RegisteredPathSecurity.relativePath(of: directory, within: FileManager.default.temporaryDirectory)?.isEmpty == false else {
+            throw DatabaseError.invalidOperation("Recovery fixtures require a temporary child directory.")
+        }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appending(path: "MusicLibrary.sqlite")
+        let database = try MusicDatabase(url: url)
+        try await database.migrate()
+        self.init(database: database)
+        self.recoveryFixtureDirectory = directory
+        self.catalogueURL = url
+        self.managedArtworkStore = .init(directory: directory.appending(path: "Artwork"))
+        try await reload()
+    }
+
+    private func hasRecoveryFixtureAccess(to url: URL) -> Bool {
+        guard let recoveryFixtureDirectory else { return false }
+        return RegisteredPathSecurity.contains(url, within: recoveryFixtureDirectory)
+    }
+
+    private func validateRecoveryFixtureURL(_ url: URL) throws {
+        if recoveryFixtureDirectory != nil && !hasRecoveryFixtureAccess(to: url) {
+            throw DatabaseError.invalidOperation("Recovery fixture resource is outside its temporary directory.")
+        }
     }
 
     public func start() async {
@@ -868,10 +896,11 @@ public final class LibraryStore: ObservableObject {
     }
 
     private func exportCompleteCatalogueArchiveUncoordinated(to destinationDirectory: URL) async throws -> URL {
+        try validateRecoveryFixtureURL(destinationDirectory)
         guard let database, let managedArtworkStore else { throw DatabaseError.notFound("Catalogue database") }
         let accessed = destinationDirectory.startAccessingSecurityScopedResource()
         defer { if accessed { destinationDirectory.stopAccessingSecurityScopedResource() } }
-        guard accessed else { throw DatabaseError.invalidOperation("Permission to write to the selected archive destination was not available.") }
+        guard accessed || hasRecoveryFixtureAccess(to: destinationDirectory) else { throw DatabaseError.invalidOperation("Permission to write to the selected archive destination was not available.") }
         let archive = try await CompleteCatalogueArchive.create(
             database: database,
             managedArtworkDirectory: managedArtworkStore.directory,
@@ -886,10 +915,11 @@ public final class LibraryStore: ObservableObject {
     }
 
     private func restoreCompleteCatalogueArchiveUncoordinated(from archiveURL: URL) async throws {
+        try validateRecoveryFixtureURL(archiveURL)
         guard let catalogueURL, let database, let managedArtworkStore else { throw DatabaseError.notFound("Catalogue database") }
         let accessed = archiveURL.startAccessingSecurityScopedResource()
         defer { if accessed { archiveURL.stopAccessingSecurityScopedResource() } }
-        guard accessed else { throw DatabaseError.invalidOperation("Permission to read the selected catalogue archive was not available.") }
+        guard accessed || hasRecoveryFixtureAccess(to: archiveURL) else { throw DatabaseError.invalidOperation("Permission to read the selected catalogue archive was not available.") }
 
         let supportDirectory = try applicationSupportDirectory()
         let stagingParent = supportDirectory.appending(path: "RestoreStaging", directoryHint: .isDirectory)
@@ -977,16 +1007,19 @@ public final class LibraryStore: ObservableObject {
     }
 
     private func publishSnapshotUncoordinated(to directory: URL) async throws -> SnapshotManifest {
+        try validateRecoveryFixtureURL(directory)
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
         let value = try await database.publicationRevisionAndJSON()
+        let fixtureAccess = hasRecoveryFixtureAccess(to: directory)
         return try await Task.detached(priority: .utility) {
             let accessed = directory.startAccessingSecurityScopedResource()
             defer { if accessed { directory.stopAccessingSecurityScopedResource() } }
-            guard accessed else { throw DatabaseError.invalidOperation("Permission to access the snapshot destination was not available.") }
+            guard accessed || fixtureAccess else { throw DatabaseError.invalidOperation("Permission to access the snapshot destination was not available.") }
             return try SnapshotPublisher.publish(json: value.1, revision: value.0, to: directory)
         }.value
     }
     public func setSnapshotDestination(_ url: URL) throws {
+        guard permitsBackgroundServices else { throw DatabaseError.invalidOperation("Fixture sharing preferences are disabled.") }
         guard !transferQueue.isBusy else {
             throw DatabaseError.invalidOperation("Wait for sharing, backup and recovery tasks to finish before changing the destination.")
         }
@@ -1039,10 +1072,11 @@ public final class LibraryStore: ObservableObject {
     }
 
     private func restoreMasterBackupUncoordinated(from manifestURL: URL) async throws {
+        try validateRecoveryFixtureURL(manifestURL)
         guard let catalogueURL else { throw DatabaseError.notFound("Catalogue database") }
         let accessed = manifestURL.startAccessingSecurityScopedResource()
         defer { if accessed { manifestURL.stopAccessingSecurityScopedResource() } }
-        guard accessed else { throw DatabaseError.invalidOperation("Permission to access the selected master backup was not available.") }
+        guard accessed || hasRecoveryFixtureAccess(to: manifestURL) else { throw DatabaseError.invalidOperation("Permission to access the selected master backup was not available.") }
         let archive = manifestURL.deletingLastPathComponent()
         let manifest = try JSONDecoder().decode(MasterBackupManifest.self, from: Data(contentsOf: manifestURL))
         try await MasterBackupArchive.verify(manifest, in: archive)
@@ -1287,6 +1321,7 @@ public final class LibraryStore: ObservableObject {
     }
 
     private func resolvedSnapshotDestination() -> URL? {
+        guard permitsBackgroundServices else { return nil }
         guard let bookmark = UserDefaults.standard.data(forKey: snapshotDestinationBookmarkKey) else { return nil }
         var stale = false
         return try? URL(resolvingBookmarkData: bookmark, options: [.withSecurityScope], relativeTo: nil, bookmarkDataIsStale: &stale)
@@ -1336,6 +1371,10 @@ public final class LibraryStore: ObservableObject {
     }
 
     private func applicationSupportDirectory() throws -> URL {
+        if !permitsBackgroundServices {
+            guard let recoveryFixtureDirectory else { throw DatabaseError.invalidOperation("Fixture recovery directory is not configured.") }
+            return recoveryFixtureDirectory
+        }
         let base = try FileManager.default.url(
             for: .applicationSupportDirectory,
             in: .userDomainMask,

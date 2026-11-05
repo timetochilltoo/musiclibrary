@@ -4,7 +4,21 @@ Last updated: 5 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — R8 queue activity in Settings
+## Current resume — R8 isolated recovery integration
+
+Current slice: **Music Library 0.59 (build 60)**; schema **17**. Internal fixture composition now runs actual archive export/restore and explicit snapshot publication under a temporary child directory. No personal catalogue/preferences, NAS destination or source audio was opened or changed. No native app was launched.
+
+LibraryStore's internal recovery fixture initializer validates a temporary child before creating its migrated database and managed artwork root. The existing injected-store initializer disables background services and completes startup, so start cannot switch to Application Support. Recovery/support paths resolve to the fixture root; other injected stores without that root now throw instead of falling back to personal Application Support. Fixture export/restore/publication validate containment before access, including existing symlink resolution. Fixture resources inside that root can use ordinary filesystem access; production still requires its existing security scope. Persistent sharing configuration is refused for injected stores and destination resolution returns nil, so tests cannot read or overwrite the user's sharing bookmark.
+
+New RecoveryTransferIntegrationTests use the public production service entry points. One test exports an archive, changes the album title and managed artwork, queues restore behind a suspended synthetic writer, then queues real snapshot publication after restore. It verifies restored title/artwork, matching published revision/content, idle queue and a checksum-verified pre-restore recovery archive. Synthetic NAS-published asset references are seeded directly in temporary SQLite; no audio files exist. The initial test wrongly used a physical-only album, which publication correctly omitted; the fixture was corrected without changing publication scope. A second test tampers with the archived database, verifies refusal without replacing the live catalogue and then publishes successfully. Boundary tests reject outside publication, the temporary root itself and persistent fixture sharing configuration.
+
+Validation: Debug passed **205 tests/45 suites**; after final seed-helper cleanup, all three focused integration tests passed. Release passed **202/44**. Logs: `/private/tmp/musiclibrary-059-*.log`. The final seed helper releases its temporary secondary database before installation. Fixture boundary handling also covers database-only restore; that service's fixture success path is not tested here. This validates local service ordering and preflight refusal, not forced install-failure rollback, automatic scheduling timing or NAS behavior. Master database-only restore, reset/root preservation, native queue appearance, compact/keyboard/VoiceOver, prior R7 drag and device/audio acceptance remain open. Full R8 is not claimed complete.
+
+Artifact: incremental build and Release packaging passed; `build/Music Library 0.59.app` passed plist lint, version 0.59/build 60, strict deep signature and whitespace checks.
+
+Next: **native activity-panel walkthrough using a synthetic suspended queue**, then remaining compact/accessibility acceptance. Keep fixture controls Debug-only and fail closed against personal data. Do not configure personal destinations. Git was synchronized at resume; inspect status for delivery outcome.
+
+## Previous resume — R8 queue activity in Settings
 
 Current slice: **Music Library 0.58 (build 59)**, schema **17**. Validation uses injected operations and existing temporary fixtures, without opening a personal catalogue, selecting a sharing destination or changing source media. No normal app/native fixture was launched this slice; native progress-panel appearance remains pending.
 
