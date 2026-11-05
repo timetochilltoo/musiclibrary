@@ -4,7 +4,25 @@ Last updated: 5 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — R8 reset/database restore acceptance and read-only backup verification
+## Current resume — R8 forced installation rollback and connection lifetime fix
+
+Current slice: **Music Library 0.62 (build 63)**, schema **17**. Tests use only validated temporary recovery fixture directories, catalogues and artwork; no personal catalogue/preferences, media, NAS destination or native app was opened/changed.
+
+Internal recovery composition accepts a default-false one-shot installation fault. Private checks require the configured temporary fixture root and clear the flag before throwing. Complete-archive restore checks after copied database/artwork and database-only restore checks after copied database, before opening/migration. Normal initializers, launch arguments and preferences cannot enable the fault. Both checks lie inside existing rollback catch boundaries; verification and recovery creation still happen first.
+
+Two new integration tests verify the exact injected error, then reload and check the previous live title/revision, appropriate artwork bytes and idle queue. They edit the recovered catalogue and retry successfully with the same source archive/backup. The archive case also verifies the complete pre-restore recovery archive and absence of leftover RestoreRollback staging. This tests post-copy/pre-open failure, not partial copy or failure of rollback itself.
+
+The archive case exposed a production bug: a local MusicDatabase reference retained the old connection throughout file replacement, and forced rollback failed with disk I/O error, leaving LibraryStore without a usable database. Archive restore now checks database presence without capturing it and checkpoints through self.database. Setting self.database=nil can release the original connection before moving files. The final Debug regression now succeeds with a writable recovered catalogue and retry. Other consumers such as scans/edits remain outside the queue; this is not a global connection exclusivity guarantee.
+
+Final Debug suite passed **211 tests/45 suites**; Release passed **207/44**. Incremental build passed. Logs `/private/tmp/musiclibrary-062-*.log`; earlier `/private/tmp/musiclibrary-rollback-*.log` captures the initial failure and diagnosis. No native error/retry walkthrough was performed this service slice. Existing backup read-only verification and reset/root preservation regressions remain applicable.
+
+Artifact: Release package `build/Music Library 0.62.app` passed plist lint, version 0.62/build 63, strict deep signature and whitespace checks.
+
+Pending: forced partial copy, rollback I/O failure, process termination, concurrent unrelated edits/scans, live NAS/device behavior, full Tab/VoiceOver, multi-window/sheets, long queues, R7 drag and real audio acceptance. Typed confirmation, verified recovery and source-file safeguards remain. Full R8 is not claimed complete.
+
+Next: **recovery status/error UX audit against these validated rollback paths**. Distinguish a failed restore with successful recovery from an unresolved recovery failure without overstating safety. Use isolated fixtures and preserve typed/explicit confirmation. Git was synchronized at resume; inspect status for delivery outcome.
+
+## Previous resume — R8 reset/database restore acceptance and read-only backup verification
 
 Current slice: **Music Library 0.61 (build 62)**; schema **17**. Only temporary integration catalogues, artwork and byte sentinels were used. No native app, personal catalogue/preferences, NAS destination or actual source audio was opened/changed.
 

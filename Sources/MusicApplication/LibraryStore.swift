@@ -98,6 +98,7 @@ public final class LibraryStore: ObservableObject {
     #endif
     private var catalogueURL: URL?
     private var recoveryFixtureDirectory: URL?
+    private var failRecoveryFixtureInstallation = false
     private let metadataLookupProvider: any MetadataLookupProviding
     private var reloadGeneration = 0
     private var searchGeneration = 0
@@ -127,7 +128,7 @@ public final class LibraryStore: ObservableObject {
     }
 
     /// Internal integration composition, confined to a disposable temporary child.
-    convenience init(recoveryFixtureDirectory directory: URL) async throws {
+    convenience init(recoveryFixtureDirectory directory: URL, failRecoveryInstallation: Bool = false) async throws {
         guard RegisteredPathSecurity.relativePath(of: directory, within: FileManager.default.temporaryDirectory)?.isEmpty == false else {
             throw DatabaseError.invalidOperation("Recovery fixtures require a temporary child directory.")
         }
@@ -137,6 +138,7 @@ public final class LibraryStore: ObservableObject {
         try await database.migrate()
         self.init(database: database)
         self.recoveryFixtureDirectory = directory
+        self.failRecoveryFixtureInstallation = failRecoveryInstallation
         self.catalogueURL = url
         self.managedArtworkStore = .init(directory: directory.appending(path: "Artwork"))
         try await reload()
@@ -145,6 +147,12 @@ public final class LibraryStore: ObservableObject {
     private func hasRecoveryFixtureAccess(to url: URL) -> Bool {
         guard let recoveryFixtureDirectory else { return false }
         return RegisteredPathSecurity.contains(url, within: recoveryFixtureDirectory)
+    }
+
+    private func checkRecoveryFixtureInstallation() throws {
+        guard recoveryFixtureDirectory != nil, failRecoveryFixtureInstallation else { return }
+        failRecoveryFixtureInstallation = false
+        throw DatabaseError.invalidOperation("Injected recovery installation failure.")
     }
 
     private func validateRecoveryFixtureURL(_ url: URL) throws {
@@ -938,7 +946,8 @@ public final class LibraryStore: ObservableObject {
 
     private func restoreCompleteCatalogueArchiveUncoordinated(from archiveURL: URL) async throws {
         try validateRecoveryFixtureURL(archiveURL)
-        guard let catalogueURL, let database, let managedArtworkStore else { throw DatabaseError.notFound("Catalogue database") }
+        // Do not retain the old connection across file replacement or rollback.
+        guard let catalogueURL, database != nil, let managedArtworkStore else { throw DatabaseError.notFound("Catalogue database") }
         let accessed = archiveURL.startAccessingSecurityScopedResource()
         defer { if accessed { archiveURL.stopAccessingSecurityScopedResource() } }
         guard accessed || hasRecoveryFixtureAccess(to: archiveURL) else { throw DatabaseError.invalidOperation("Permission to read the selected catalogue archive was not available.") }
@@ -956,7 +965,7 @@ public final class LibraryStore: ObservableObject {
         let stagingDirectory = staged.databaseURL.deletingLastPathComponent()
         defer { try? FileManager.default.removeItem(at: stagingDirectory) }
         let recoveryArchive = try await createLocalRecoveryArchive(reason: "before-archive-restore")
-        try await database.checkpointWAL()
+        try await self.database?.checkpointWAL()
 
         let rollbackDirectory = supportDirectory.appending(path: "RestoreRollback-\(UUID().uuidString)", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: rollbackDirectory, withIntermediateDirectories: true)
@@ -972,6 +981,7 @@ public final class LibraryStore: ObservableObject {
                 try installManager.copyItem(at: staged.databaseURL, to: catalogueURL)
                 try installManager.copyItem(at: staged.artworkDirectory, to: liveArtworkDirectory)
             }.value
+            try checkRecoveryFixtureInstallation()
             let restored = try MusicDatabase(url: catalogueURL)
             try await restored.migrate()
             try await restored.remapManagedArtworkPaths(staged.artworkPathMappings)
@@ -1115,6 +1125,7 @@ public final class LibraryStore: ObservableObject {
         }
         do {
             try FileManager.default.copyItem(at: backupURL, to: catalogueURL)
+            try checkRecoveryFixtureInstallation()
             let restored = try MusicDatabase(url: catalogueURL)
             try await restored.migrate()
             database = restored

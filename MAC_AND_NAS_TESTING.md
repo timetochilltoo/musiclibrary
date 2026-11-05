@@ -7,7 +7,7 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 ## 1. Launch the packaged Mac app
 
 1. In Finder, open the project folder.
-2. Open the newest sequential package, currently `build/Music Library 0.61.app`. An older `/Applications/Music Library.app` installation is not automatically updated by packaging.
+2. Open the newest sequential package, currently `build/Music Library 0.62.app`. An older `/Applications/Music Library.app` installation is not automatically updated by packaging.
 3. If macOS blocks the first launch, Control-click the app, choose **Open**, then choose **Open** again.
 4. The app opens a catalogue in its Application Support folder. It does not use a SQLite database on the NAS.
 5. Keep the app open while following the tests below. If anything unexpected happens, take a screenshot and note the exact action just before it happened.
@@ -20,6 +20,8 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 4. Do not move, rename, or edit the original media during this guide.
 
 ### R8 Settings recovery/sharing presentation (0.52)
+
+Forced installation rollback: RecoveryTransferIntegrationTests inject one error only in temporary LibraryStore recovery composition after copying replacement files. Both restore types must restore the previous live catalogue/revision, preserve the appropriate artwork, release the queue, accept a later edit and succeed on retry. Complete archive recovery must remain checksum-verifiable and rollback staging must be removed. These checks do not test partial-copy errors, failure of rollback itself, process termination or personal/NAS data. No UI/launch switch enables the fault.
 
 0.61 backup verification regression: verify a disposable database backup more than once, checking exact payload bytes remain unchanged each time, then restore it through LibraryStore. Verification must be read-only; migration happens only on the copied installed catalogue. Do not assume backups already changed by older verification can be repaired or bypass their checksum; those remain refused.
 

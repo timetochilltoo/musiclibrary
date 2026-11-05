@@ -7,6 +7,63 @@ import MusicPersistence
 @Suite("Isolated recovery transfer integration")
 @MainActor
 struct RecoveryTransferIntegrationTests {
+    @Test("Complete archive installation failure rolls back catalogue/artwork and permits retry")
+    func archiveInstallationRollback() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try await LibraryStore(recoveryFixtureDirectory: root, failRecoveryInstallation: true)
+        let album = try await store.addAlbum(.init(title: "Archive title"))
+        let art = root.appending(path: "Artwork/cover.jpg")
+        try FileManager.default.createDirectory(at: art.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data([1]).write(to: art)
+        let archive = try await store.exportCompleteCatalogueArchive(to: root.appending(path: "Exports"))
+        try await store.updateAlbum(album.id, with: .init(title: "Live title before failure"))
+        try Data([9]).write(to: art)
+        let revision = store.catalogueRevision
+        do { try await store.restoreCompleteCatalogueArchive(from: archive); Issue.record("Expected injected failure") }
+        catch { #expect(error as? DatabaseError == .invalidOperation("Injected recovery installation failure.")) }
+        try await store.reload()
+        #expect(store.catalogueAlbums.first?.title == "Live title before failure")
+        #expect(store.catalogueRevision == revision)
+        #expect(try Data(contentsOf: art) == Data([9]))
+        #expect(!store.transferActivity.isBusy)
+        let recovery = root.appending(path: "Recovery/CatalogueArchives/before-archive-restore")
+        let saved = try #require(FileManager.default.contentsOfDirectory(at: recovery, includingPropertiesForKeys: nil).first)
+        _ = try CompleteCatalogueArchive.verify(at: saved)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: root.path).allSatisfy { !$0.hasPrefix("RestoreRollback-") })
+        try await store.updateAlbum(album.id, with: .init(title: "Writable after rollback"))
+        try await store.restoreCompleteCatalogueArchive(from: archive)
+        #expect(store.catalogueAlbums.first?.title == "Archive title")
+        #expect(try Data(contentsOf: art) == Data([1]))
+        #expect(!store.transferActivity.isBusy)
+    }
+
+    @Test("Database installation failure rolls back the live database, leaves artwork intact and permits retry")
+    func databaseInstallationRollback() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try await LibraryStore(recoveryFixtureDirectory: root, failRecoveryInstallation: true)
+        let album = try await store.addAlbum(.init(title: "Backup title"))
+        let backup = try await createDatabaseBackup(in: root)
+        try await store.updateAlbum(album.id, with: .init(title: "Live database before failure"))
+        let art = root.appending(path: "Artwork/current.jpg")
+        try FileManager.default.createDirectory(at: art.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data([8]).write(to: art)
+        let revision = store.catalogueRevision
+        do { try await store.restoreMasterBackup(from: backup); Issue.record("Expected injected failure") }
+        catch { #expect(error as? DatabaseError == .invalidOperation("Injected recovery installation failure.")) }
+        try await store.reload()
+        #expect(store.catalogueAlbums.first?.title == "Live database before failure")
+        #expect(store.catalogueRevision == revision)
+        #expect(try Data(contentsOf: art) == Data([8]))
+        #expect(!store.transferActivity.isBusy)
+        try await store.updateAlbum(album.id, with: .init(title: "Writable after rollback"))
+        try await store.restoreMasterBackup(from: backup)
+        #expect(store.catalogueAlbums.first?.title == "Backup title")
+        #expect(try Data(contentsOf: art) == Data([8]))
+        #expect(!store.transferActivity.isBusy)
+    }
+
     @Test("Reset requires exact confirmation, preserves roots and audio, and verifies complete recovery")
     func resetPreservesRoots() async throws {
         let root = temporaryDirectory()
