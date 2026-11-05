@@ -60,8 +60,9 @@ public enum MasterBackupArchive {
         let data = try Data(contentsOf: fileURL)
         let checksum = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
         guard checksum == manifest.sha256 else { throw DatabaseError.invalidOperation("Master backup checksum failed.") }
-        let backup = try MusicDatabase(url: fileURL)
-        try await backup.migrate()
+        // Verification must not change the payload covered by the manifest hash.
+        // Migration belongs to the installed catalogue, after restore copies it.
+        try MusicDatabase.verifyStandaloneBackupFile(at: fileURL)
     }
 
     public static func retain(in directory: URL, daily: Int = 7, monthly: Int = 12) throws {

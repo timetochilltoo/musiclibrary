@@ -157,15 +157,37 @@ public actor MusicDatabase {
     }
 
     public static func verifyDatabaseFile(at url: URL) throws {
+        try verifyDatabaseFile(at: url, immutable: false)
+    }
+
+    /// Only for self-contained backup payloads, never a live catalogue/WAL pair.
+    public static func verifyStandaloneBackupFile(at url: URL) throws {
+        try verifyDatabaseFile(at: url, immutable: true)
+    }
+
+    private static func verifyDatabaseFile(at url: URL, immutable: Bool) throws {
         var handle: OpaquePointer?
-        let result = sqlite3_open_v2(url.path, &handle, SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX, nil)
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: true)
+        components?.queryItems = [URLQueryItem(name: "immutable", value: "1")]
+        let path: String
+        if immutable {
+            guard url.isFileURL, let uri = components?.url?.absoluteString else {
+                throw DatabaseError.invalidOperation("Standalone backup verification requires a local file URL.")
+            }
+            path = uri
+        } else {
+            path = url.path
+        }
+        let flags = SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX | (immutable ? SQLITE_OPEN_URI : 0)
+        let result = sqlite3_open_v2(path, &handle, flags, nil)
         guard result == SQLITE_OK, let handle else {
             defer { if let handle { sqlite3_close(handle) } }
             throw DatabaseError.sqlite(message: "Unable to open the catalogue archive database.")
         }
         defer { sqlite3_close(handle) }
-        guard Self.textResult("PRAGMA integrity_check;", on: handle) == "ok" else {
-            throw DatabaseError.sqlite(message: "Catalogue archive database integrity check failed.")
+        let integrity = Self.textResult("PRAGMA integrity_check;", on: handle)
+        guard integrity == "ok" else {
+            throw DatabaseError.sqlite(message: "Catalogue archive database integrity check failed: \(integrity ?? String(cString: sqlite3_errmsg(handle)))")
         }
         let version = Int(try Self.scalarInt("PRAGMA user_version;", on: handle))
         guard (1...SchemaMigrator.currentVersion).contains(version) else {

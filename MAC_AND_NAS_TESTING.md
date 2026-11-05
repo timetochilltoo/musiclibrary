@@ -7,7 +7,7 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 ## 1. Launch the packaged Mac app
 
 1. In Finder, open the project folder.
-2. Open the newest sequential package, currently `build/Music Library 0.60.app`. An older `/Applications/Music Library.app` installation is not automatically updated by packaging.
+2. Open the newest sequential package, currently `build/Music Library 0.61.app`. An older `/Applications/Music Library.app` installation is not automatically updated by packaging.
 3. If macOS blocks the first launch, Control-click the app, choose **Open**, then choose **Open** again.
 4. The app opens a catalogue in its Application Support folder. It does not use a SQLite database on the NAS.
 5. Keep the app open while following the tests below. If anything unexpected happens, take a screenshot and note the exact action just before it happened.
@@ -20,6 +20,10 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 4. Do not move, rename, or edit the original media during this guide.
 
 ### R8 Settings recovery/sharing presentation (0.52)
+
+0.61 backup verification regression: verify a disposable database backup more than once, checking exact payload bytes remain unchanged each time, then restore it through LibraryStore. Verification must be read-only; migration happens only on the copied installed catalogue. Do not assume backups already changed by older verification can be repaired or bypass their checksum; those remain refused.
+
+Reset/database-only automated acceptance: RecoveryTransferIntegrationTests exercise actual public service paths under the temporary recovery composition. Nonexact RESET must create no recovery files or revision changes. Confirmed reset must preserve registered roots and source sentinel bytes, create a verified archive containing earlier catalogue/artwork, and empty managed catalogue/artwork. Database-only restore must retain a valid previous database and leave current artwork/source bytes intact. Tampered backup payload must refuse before replacement/recovery creation and permit later queue work. This does not authorize or establish live catalogue reset, actual NAS behavior or forced installation-failure rollback.
 
 Dark fixture: run `Scripts/run-navigation-fixture.sh --queue-activity-fixture --compact-settings-fixture --dark-appearance-fixture`. Inspect General, Health, recovery activity and Sharing with no destination. Text/icon state cues must remain readable, health actions should retain album-specific AX labels, disclosure expansion should expose state, and activity should disappear at idle. Native screenshots/AX passed for these views; no numerical contrast or spoken VoiceOver result is claimed. Do not change the system theme or enable global accessibility preferences merely to force automated acceptance.
 

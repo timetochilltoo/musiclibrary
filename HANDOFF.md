@@ -4,7 +4,23 @@ Last updated: 5 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — R8 dark presentation and accessibility inspection
+## Current resume — R8 reset/database restore acceptance and read-only backup verification
+
+Current slice: **Music Library 0.61 (build 62)**; schema **17**. Only temporary integration catalogues, artwork and byte sentinels were used. No native app, personal catalogue/preferences, NAS destination or actual source audio was opened/changed.
+
+Three new RecoveryTransferIntegrationTests exercise public LibraryStore service paths. Reset rejects lowercase/whitespace/empty confirmations before revision changes or Recovery creation. Exact RESET creates a checksum-verified complete recovery archive containing the original catalogue/artwork, empties catalogue/managed artwork and preserves complete registered-root values plus source sentinel bytes. Database-only restore recovers the archived title, leaves current artwork/audio bytes intact and keeps a valid prior database in Recovery. A tampered database backup fails before Recovery creation/replacement, preserving revision/title and permitting later publication. Backup fixture paths contain spaces and URI punctuation.
+
+The tests exposed a real defect: MasterBackupArchive.verify opened the hashed payload as MusicDatabase and migrated it, changing bytes so repeated verification/restoration could fail its checksum. Verification now uses a new MusicDatabase.verifyStandaloneBackupFile helper: immutable URI plus SQLITE_OPEN_READONLY, integrity_check and supported schema validation. It is explicitly for self-contained backup payloads, never live/WAL catalogues. Existing verifyDatabaseFile retains its connection mode; integrity errors now include the underlying SQLite detail. Installation still migrates the copied database. Repeated verification asserts exact payload bytes remain unchanged. The initial plain read-only attempt failed on standalone WAL-header files, resolved with backup-specific immutable mode per SQLite documentation. No checksum bypass or repair of previously changed backups is added.
+
+Final Debug suite passed **209 tests/45 suites**; Release passed **205/44**. Incremental build passed. Logs `/private/tmp/musiclibrary-061-*.log`. Final suite logs supersede diagnostic failures; the first checksum failure demonstrated the regression before the fix. No new native UI check is claimed for this service change.
+
+Artifact: `build/Music Library 0.61.app` passed Release packaging, plist lint, version 0.61/build 62, strict deep signature and whitespace checks.
+
+Limits: these are local success and preflight-refusal tests, not forced installation failure/rollback, interrupted reset recovery, NAS permissions/endurance or live acceptance. Existing typed reset, verified complete recovery, source-file and registered-root safeguards remain. Full Tab/VoiceOver, multi-window/sheets, long queues, R7 drag, real audio/NAS/iPad remain open; full R8 is not claimed complete.
+
+Next: **isolated forced installation-failure rollback coverage** for database/complete-archive restore, with explicit temporary fault injection and retained recovery checks. Do not weaken validation or exercise failures on personal data. Git was synchronized at resume; inspect status for delivery outcome.
+
+## Previous resume — R8 dark presentation and accessibility inspection
 
 This is a **Debug fixture/validation checkpoint**. User-facing Release remains **Music Library 0.60 (build 61)** at `build/Music Library 0.60.app`; schema **17**. No new Release package/version was produced because production appearance/services did not change. Only the separately identified temporary Debug navigation app was launched. No personal catalogue, preferences, media or sharing destination was accessed/changed.
 

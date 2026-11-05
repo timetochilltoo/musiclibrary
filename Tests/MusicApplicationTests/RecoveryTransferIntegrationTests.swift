@@ -7,6 +7,96 @@ import MusicPersistence
 @Suite("Isolated recovery transfer integration")
 @MainActor
 struct RecoveryTransferIntegrationTests {
+    @Test("Reset requires exact confirmation, preserves roots and audio, and verifies complete recovery")
+    func resetPreservesRoots() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try await LibraryStore(recoveryFixtureDirectory: root)
+        try await seedPublishedAlbum(in: root)
+        try await store.reload()
+        let roots = store.storageRoots
+        let revision = store.catalogueRevision
+        let audio = root.appending(path: "AudioReferences/synthetic.flac")
+        try FileManager.default.createDirectory(at: audio.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let sentinel = Data("Disposable source sentinel".utf8)
+        try sentinel.write(to: audio)
+        let artwork = root.appending(path: "Artwork/cover.jpg")
+        try FileManager.default.createDirectory(at: artwork.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data([1, 2, 3]).write(to: artwork)
+        for confirmation in ["reset", " RESET", "RESET ", ""] {
+            do { _ = try await store.resetCatalogue(confirmation: confirmation); Issue.record("Invalid reset accepted") } catch {}
+        }
+        #expect(store.catalogueRevision == revision)
+        #expect(!FileManager.default.fileExists(atPath: root.appending(path: "Recovery").path))
+        let archive = try await store.resetCatalogue(confirmation: "RESET")
+        let manifest = try CompleteCatalogueArchive.verify(at: archive)
+        #expect(manifest.revision == revision)
+        #expect(manifest.artwork.map(\.fileName) == ["cover.jpg"])
+        #expect(store.storageRoots == roots)
+        #expect(store.catalogueAlbums.isEmpty)
+        #expect(try Data(contentsOf: audio) == sentinel)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: artwork.deletingLastPathComponent().path).isEmpty)
+        let archived = try MusicDatabase(url: archive.appending(path: CompleteCatalogueArchive.databaseFileName))
+        #expect(try await archived.albums().first?.title == "Archived original")
+        #expect(!store.transferActivity.isBusy)
+    }
+
+    @Test("Database-only restore preserves current artwork/audio and keeps the prior database")
+    func databaseRestore() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try await LibraryStore(recoveryFixtureDirectory: root)
+        let album = try await store.addAlbum(.init(title: "Backed up title"))
+        let backup = try await createDatabaseBackup(in: root)
+        try await store.updateAlbum(album.id, with: .init(title: "Before restore"))
+        let artwork = root.appending(path: "Artwork/current.jpg")
+        try FileManager.default.createDirectory(at: artwork.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data([9, 8, 7]).write(to: artwork)
+        let audio = root.appending(path: "source-sentinel.flac")
+        try Data([4, 5]).write(to: audio)
+        try await store.restoreMasterBackup(from: backup)
+        #expect(store.catalogueAlbums.first?.title == "Backed up title")
+        #expect(try Data(contentsOf: artwork) == Data([9, 8, 7]))
+        #expect(try Data(contentsOf: audio) == Data([4, 5]))
+        let recovery = root.appending(path: "Recovery")
+        let saved = try #require(FileManager.default.contentsOfDirectory(at: recovery, includingPropertiesForKeys: nil).first(where: { $0.pathExtension == "sqlite" }))
+        try MusicDatabase.verifyStandaloneBackupFile(at: saved)
+        let previous = try MusicDatabase(url: saved)
+        #expect(try await previous.albums().first?.title == "Before restore")
+        #expect(!store.transferActivity.isBusy)
+    }
+
+    @Test("Tampered database backup refuses before recovery or replacement and leaves queue reusable")
+    func tamperedDatabaseRestore() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try await LibraryStore(recoveryFixtureDirectory: root)
+        _ = try await store.addAlbum(.init(title: "Keep live title"))
+        let manifestURL = try await createDatabaseBackup(in: root)
+        let manifest = try JSONDecoder().decode(MasterBackupManifest.self, from: Data(contentsOf: manifestURL))
+        let payload = try MasterBackupArchive.validatedBackupURL(for: manifest, in: manifestURL.deletingLastPathComponent())
+        try Data([0]).write(to: payload)
+        let revision = store.catalogueRevision
+        do { try await store.restoreMasterBackup(from: manifestURL); Issue.record("Tampered backup accepted") } catch {}
+        #expect(store.catalogueRevision == revision)
+        #expect(store.catalogueAlbums.first?.title == "Keep live title")
+        #expect(!FileManager.default.fileExists(atPath: root.appending(path: "Recovery").path))
+        #expect(!store.transferActivity.isBusy)
+        _ = try await store.publishSnapshot(to: root.appending(path: "Shared"))
+    }
+
+    private func createDatabaseBackup(in root: URL) async throws -> URL {
+        let database = try MusicDatabase(url: root.appending(path: "MusicLibrary.sqlite"))
+        let destination = root.appending(path: "Database Backups #? fixture")
+        let manifest = try await MasterBackupArchive.create(database: database, in: destination)
+        let payload = try MasterBackupArchive.validatedBackupURL(for: manifest, in: destination)
+        let original = try Data(contentsOf: payload)
+        try await MasterBackupArchive.verify(manifest, in: destination)
+        #expect(try Data(contentsOf: payload) == original)
+        try await MasterBackupArchive.verify(manifest, in: destination)
+        return destination.appending(path: manifest.fileName + ".manifest.json")
+    }
+
     @Test("Queued real restore replaces catalogue and artwork before later publication")
     func restoreThenPublish() async throws {
         let root = temporaryDirectory()
