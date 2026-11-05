@@ -4,7 +4,21 @@ Last updated: 5 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — R8 compact layout and partial keyboard acceptance
+## Current resume — R8 direct Settings keyboard navigation
+
+Current slice: **Music Library 0.60 (build 61)**, schema **17**. Only the disposable Debug compact queue fixture was launched for native checks. No personal catalogue/preferences, source audio or sharing destination was opened/changed, and no real recovery/publication operation was run.
+
+The audit confirmed Settings lacked an app-level command. New LibrarySettingsCommands replaces the appSettings command group with Settings… (Command-comma) and adds a Settings Categories menu exposing Command-Option-1…7 in category order: General, Library Health, Playback, Music Folders, iPad Sharing, Backup & Restore, Advanced. A focused-scene callback belongs to LibraryShellView, so commands route through that window's state and disable without a shell (such as unavailable/error fixture scenes). The standard Settings command retains the current category; explicit category commands select it. Navigation clears album detail and selects Settings without executing action buttons. No SQL/service, confirmation, recovery or system focus preference changed.
+
+Native evidence: Command-comma opened General from Albums. Command-Option-6 selected Backup & Restore; with its content list focused, Command-Option-5 selected Sharing. The menu exposed all seven categories; Command-Option-7 selected Advanced (menu AX remained stale until its Cancel accessibility action closed inspection). Started the synthetic queue and used shortcut 6: activity remained one running/two waiting. Opened Fixture Album 001, then Command-comma returned to the previous Backup & Restore category with the queue intact. Finished all three synthetic tasks and shortcut 1 opened General at unchanged revision 499/241 issues. The fixture was quit and confirmed absent from running apps. No chooser, export, restore, cleanup, reset or actual publication ran.
+
+Required checks passed: Debug **206 tests/45 suites**, Release **202/44**, incremental build, Release packaging and whitespace check. `build/Music Library 0.60.app` passed plist lint, version 0.60/build 61 and strict deep signature verification. Logs `/private/tmp/musiclibrary-060-keys-*.log`. No new domain tests were added for scene/menu navigation; native checks validate the route and existing suites cover persistence/queue invariants. Category shortcuts 2/3/4 were listed but not individually executed in this walkthrough; Playback cache inspection was avoided in the fixture.
+
+This adds a direct keyboard route; it does not establish complete Tab/Shift-Tab traversal, disclosure activation or VoiceOver announcements. Multiple-window isolation, disabled-command scenes, sheet interactions, dark appearance, long queues, forced installation rollback, database-only restore/reset, R7 drag and real audio/NAS/iPad remain pending. Full R8 is not claimed complete.
+
+Next: **dark-appearance and accessibility presentation pass using a Debug-only appearance fixture**, then targeted remaining keyboard/VoiceOver acceptance. Keep system-wide settings unchanged and all fixture work isolated from personal data. Git was synchronized at resume; inspect status for delivery outcome.
+
+## Previous resume — R8 compact layout and partial keyboard acceptance
 
 This is a **Debug fixture/validation checkpoint**. User-facing app remains **Music Library 0.59 (build 60)** at `build/Music Library 0.59.app`; no new Release package/version was produced. Schema remains **17**. Only separately identified disposable navigation fixtures were launched. No personal catalogue/preferences, destination or source media was accessed or changed, and no recovery/file operation was executed.
 

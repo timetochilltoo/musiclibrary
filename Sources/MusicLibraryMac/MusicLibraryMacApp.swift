@@ -46,6 +46,7 @@ struct MusicLibraryMacApp: App {
             #endif
             }
         }
+        .commands { LibrarySettingsCommands() }
     }
 
     private var mainWorkspace: some View {
@@ -134,6 +135,36 @@ private enum LibrarySettingsCategory: String, CaseIterable, Identifiable {
         case .sharing: "Update the read-only catalogue shared with your iPad"
         case .backupRestore: "Recover catalogue records and managed artwork; back up source audio separately"
         case .advanced: "Health, cleanup, history, and recovery safeguards"
+        }
+    }
+}
+
+private struct SettingsNavigationKey: FocusedValueKey {
+    typealias Value = (LibrarySettingsCategory?) -> Void
+}
+
+private extension FocusedValues {
+    var settingsNavigation: SettingsNavigationKey.Value? {
+        get { self[SettingsNavigationKey.self] }
+        set { self[SettingsNavigationKey.self] = newValue }
+    }
+}
+
+private struct LibrarySettingsCommands: Commands {
+    @FocusedValue(\.settingsNavigation) private var navigate
+
+    var body: some Commands {
+        CommandGroup(replacing: .appSettings) {
+            Button("Settings…") { navigate?(nil) }
+                .keyboardShortcut(",", modifiers: .command)
+                .disabled(navigate == nil)
+        }
+        CommandMenu("Settings Categories") {
+            ForEach(Array(LibrarySettingsCategory.allCases.enumerated()), id: \.element.id) { index, category in
+                Button(category.title) { navigate?(category) }
+                    .keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: [.command, .option])
+                    .disabled(navigate == nil)
+            }
         }
     }
 }
@@ -310,6 +341,11 @@ private struct LibraryShellView: View {
         .fileImporter(isPresented: $showsStorageRootPicker, allowedContentTypes: [.folder]) { result in
             if case let .success(url) = result { Task { do { try await library.addStorageRoot(url: url) } catch { library.presentError(error) } } }
         }
+        .focusedSceneValue(\.settingsNavigation, { category in
+            selectedAlbumID = nil
+            if let category { settingsCategory = category }
+            section = .settings
+        })
         .alert("Music Library", isPresented: Binding(
             get: { library.errorMessage != nil },
             set: { if !$0 { library.dismissError() } }
