@@ -14,6 +14,8 @@ Current baseline: inspect `main` with `git log --oneline -5`; [HANDOFF.md](HANDO
 
 Completed and verified:
 
+- Debug dark appearance validation: navigation mode recognizes `--dark-appearance-fixture` through preferredColorScheme, combinable with compact/synthetic queue flags. It does not change system theme or normal/Release startup. Native inspection covered General, recovery activity, Health and unconfigured Sharing plus queue progression/idle and AX disclosure state. No production presentation change was needed from observed evidence; numerical contrast, dynamic error appearance and spoken VoiceOver remain unverified.
+
 - R8 Settings keyboard commands: scene commands replace appSettings with Settings… (Command-comma) and add a Settings Categories menu with seven category shortcuts (Command-Option-1…7). A focused-scene callback lives on LibraryShellView; unavailable fixture/error scenes have disabled commands. Routing clears album detail, preserves the current category for the standard Settings command and selects explicit categories without invoking action buttons. No SQL/service behavior or focus/system preference changes. These direct routes supplement, rather than establish, full Tab/VoiceOver coverage.
 
 - Debug compact acceptance fixture adds an optional exact 980 × 640 content frame only to navigation launch mode. Normal/Release sizing is unchanged. Native screenshots/AX verified compact recovery/activity readability and scrolling to expanded database options. Arrow/Return menu selection passed, but Tab/Shift-Tab did not establish a complete keyboard-only route under the current host configuration. No production focus fix is inferred from this partial result; keyboard/disclosure and VoiceOver acceptance remain open.

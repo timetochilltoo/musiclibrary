@@ -4,7 +4,21 @@ Last updated: 5 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — R8 direct Settings keyboard navigation
+## Current resume — R8 dark presentation and accessibility inspection
+
+This is a **Debug fixture/validation checkpoint**. User-facing Release remains **Music Library 0.60 (build 61)** at `build/Music Library 0.60.app`; schema **17**. No new Release package/version was produced because production appearance/services did not change. Only the separately identified temporary Debug navigation app was launched. No personal catalogue, preferences, media or sharing destination was accessed/changed.
+
+Debug navigation mode now supports `--dark-appearance-fixture`, applying preferredColorScheme(.dark) only in that branch. Combine with `--compact-settings-fixture --queue-activity-fixture` through the existing script. Normal startup/Release and the Mac's theme are unchanged. No new domain tests were added for this appearance-only modifier.
+
+Native evidence: General cards/text were readable in compact dark appearance at revision 499/241 issues. Started synthetic queue and used shortcut 6: recovery header/explanations and Running/Waiting labels remained readable with icons/text, without obvious overlap. Shortcut 2 opened Library Health: recorded issue count, caveat, long album title and issue groups were visible; AX exposed album-specific Show Album descriptions. Shortcut 5 opened unconfigured Sharing; disabled update was visually distinct, and Technical details expanded through its AX action with expanded/collapsed state exposed. Three Finish actions progressed sharing → archive restore → database backup and removed the panel at idle. Shortcut 1 returned to unchanged revision 499/241 issues. No chooser, file export, restore, cleanup, reset or actual publication ran. Fixture quit and was confirmed absent from running apps; no helper crash.
+
+Required validation passed: Debug **206 tests/45 suites**, Release **202/44**, incremental build and whitespace check. Logs `/private/tmp/musiclibrary-dark-*.log`; temporary fixture built/signed through the documented script. Prior compact/light and direct keyboard shortcut evidence remains applicable.
+
+Acceptance limits: screenshots are a visual inspection, not numerical contrast certification. AX labels and expanded state are not spoken VoiceOver/rotor/announcement evidence. Full Tab traversal, disclosure keyboard activation, errors/success states in dark appearance, increased contrast/reduced motion and long queues remain pending. Multiple-window/sheet isolation, forced installation rollback, database-only restore/reset, R7 drag, audio/NAS and iPad remain open. Full R8 is not claimed complete.
+
+Next: **isolated reset/root-preservation and database-only restore acceptance** using the existing temporary recovery composition. Expand only fixture/service tests, preserving typed confirmation, verified recovery and source-media safety. Keep full keyboard/VoiceOver acceptance explicitly pending rather than repeat the same inconclusive host traversal. Git was synchronized at resume; inspect status for delivery outcome.
+
+## Previous resume — R8 direct Settings keyboard navigation
 
 Current slice: **Music Library 0.60 (build 61)**, schema **17**. Only the disposable Debug compact queue fixture was launched for native checks. No personal catalogue/preferences, source audio or sharing destination was opened/changed, and no real recovery/publication operation was run.
 

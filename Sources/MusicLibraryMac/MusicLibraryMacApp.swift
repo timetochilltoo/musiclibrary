@@ -29,6 +29,7 @@ struct MusicLibraryMacApp: App {
             case .navigationFixture:
             #if DEBUG
                 LibraryNavigationFixtureWorkspace()
+                    .preferredColorScheme(ProcessInfo.processInfo.arguments.contains("--dark-appearance-fixture") ? .dark : nil)
                     .frame(
                         width: ProcessInfo.processInfo.arguments.contains("--compact-settings-fixture") ? 980 : nil,
                         height: ProcessInfo.processInfo.arguments.contains("--compact-settings-fixture") ? 640 : nil
