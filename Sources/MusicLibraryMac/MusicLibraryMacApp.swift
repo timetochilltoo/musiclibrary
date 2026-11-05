@@ -29,6 +29,10 @@ struct MusicLibraryMacApp: App {
             case .navigationFixture:
             #if DEBUG
                 LibraryNavigationFixtureWorkspace()
+                    .frame(
+                        width: ProcessInfo.processInfo.arguments.contains("--compact-settings-fixture") ? 980 : nil,
+                        height: ProcessInfo.processInfo.arguments.contains("--compact-settings-fixture") ? 640 : nil
+                    )
                     .frame(minWidth: 980, minHeight: 640)
             #else
                 EmptyView()

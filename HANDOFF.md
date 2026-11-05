@@ -4,7 +4,21 @@ Last updated: 5 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — R8 native queue walkthrough
+## Current resume — R8 compact layout and partial keyboard acceptance
+
+This is a **Debug fixture/validation checkpoint**. User-facing app remains **Music Library 0.59 (build 60)** at `build/Music Library 0.59.app`; no new Release package/version was produced. Schema remains **17**. Only separately identified disposable navigation fixtures were launched. No personal catalogue/preferences, destination or source media was accessed or changed, and no recovery/file operation was executed.
+
+Debug navigation launch mode now recognizes `--compact-settings-fixture`, applying an exact 980 × 640 content frame before the existing minimum frame. Combine with `--queue-activity-fixture`. Production/Release sizing and controls are unchanged. This explicit layout constraint replaces a failed native resize gesture, which reported windowNotFoundAtPosition; the failed gesture is not compact evidence.
+
+Native evidence in the fixed-size fixture: Backup & Restore header text wrapped cleanly beside the category picker, and running/waiting labels remained readable. Database-only disclosure expanded through its accessibility action; scrolling reached the lower backup/restore controls. Finish controls advanced the synthetic queue and the activity panel disappeared at idle. Both disposable fixtures were quit and confirmed absent from the running-app inventory. No chooser, export, restore, cleanup, reset or publication service was invoked.
+
+Keyboard evidence is deliberately partial: after opening the category menu with the pointer, Down/Return selected Sharing in the first fixture and Backup & Restore in the fixed-size fixture. Tab reached the content list. Further Tab/Shift-Tab/Space attempts did not establish a complete route to the category picker or keyboard-only disclosure activation under the host's current focus configuration. No global keyboard preferences were read/changed and no product focus defect was inferred without evidence. Full keyboard-only acceptance is still pending.
+
+Required checks passed: Debug **206 tests/45 suites**, Release **202/44**, incremental build and whitespace check. No new domain test was added for this Debug-only frame modifier. Logs `/private/tmp/musiclibrary-compact-*.log`; existing fixture script built and strictly signed the temporary app. Previous full standard/light progression and isolated restore/publication tests remain valid.
+
+Next: **focused keyboard traversal/accessibility audit**, including a reproducible focus-state fixture if needed. Establish the app route and host configuration before changing production focus behavior. Dark/VoiceOver, long queues, forced installation rollback, database-only restore/reset acceptance, R7 drag, real audio/NAS and iPad remain open. Full R8 is not claimed complete. Git was synchronized at resume; inspect status for delivery outcome.
+
+## Previous resume — R8 native queue walkthrough
 
 This is a **Debug fixture/validation checkpoint**. User-facing Release remains **Music Library 0.59 (build 60)** at `build/Music Library 0.59.app`; no new Release package/version was produced because production UI/services did not change. Schema remains **17**. Personal catalogue, preferences, media and destinations were not opened/configured or changed.
 
