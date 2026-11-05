@@ -61,7 +61,16 @@ private struct LibraryNavigationFixtureWorkspace: View {
     var body: some View {
         Group {
             if let store {
-                LibraryShellView(library: store)
+                VStack(spacing: 0) {
+                    if ProcessInfo.processInfo.arguments.contains("--queue-activity-fixture") {
+                        HStack {
+                            Text("Synthetic queue — no file operations").font(.caption)
+                            Button("Start Synthetic Queue") { Task { await store.beginSyntheticQueueActivity() } }
+                            Button("Finish Current Synthetic Task") { store.finishSyntheticQueueTask() }
+                        }.padding(8)
+                    }
+                    LibraryShellView(library: store)
+                }
             } else if let failure {
                 ContentUnavailableView("Fixture failed", systemImage: "exclamationmark.triangle", description: Text(failure))
             } else {

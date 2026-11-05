@@ -6,6 +6,27 @@ import Testing
 @Suite("Navigation fixture")
 @MainActor
 struct LibraryNavigationFixtureTests {
+    @Test("Synthetic queue controls step through activity without changing the catalogue")
+    func syntheticQueue() async throws {
+        let fixture = try await LibraryStore.makeNavigationFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+        let store = fixture.store
+        let revision = store.catalogueRevision
+        await store.beginSyntheticQueueActivity()
+        while store.transferActivity.active == nil { await Task.yield() }
+        #expect(store.transferActivity.waiting.count == 2)
+        for remaining in [1, 0] {
+            store.finishSyntheticQueueTask()
+            while store.transferActivity.waiting.count != remaining || store.transferActivity.active == nil { await Task.yield() }
+        }
+        store.finishSyntheticQueueTask()
+        while store.transferActivity.isBusy { await Task.yield() }
+        #expect(store.catalogueRevision == revision)
+        let normal = LibraryStore()
+        await normal.beginSyntheticQueueActivity()
+        #expect(!normal.transferActivity.isBusy)
+    }
+
     @Test("Attachment preview is read-only and explicit attachment preserves the target and retries idempotently")
     func attachmentReview() async throws {
         let fixture = try await LibraryStore.makeNavigationFixture(includeImportReview: true)

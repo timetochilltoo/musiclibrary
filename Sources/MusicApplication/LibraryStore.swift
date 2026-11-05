@@ -74,6 +74,28 @@ public final class LibraryStore: ObservableObject {
     private let lastMasterBackupAtKey = "MusicLibrary.lastMasterBackupAt"
     private var publicationSchedule = SnapshotPublicationSchedule()
     let transferQueue = LibraryTransferQueue()
+    #if DEBUG
+    private var syntheticQueueRelease: CheckedContinuation<Void, Never>?
+
+    /// Explicit test-only queue work: no publication, recovery or filesystem calls.
+    public func beginSyntheticQueueActivity() async {
+        guard !permitsBackgroundServices, catalogueURL == nil, !transferQueue.isBusy else { return }
+        for kind in [LibraryTransferActivity.Kind.sharing, .archiveRestore, .databaseBackup] {
+            Task {
+                try await transferQueue.run(kind) {
+                    await withCheckedContinuation { self.syntheticQueueRelease = $0 }
+                }
+            }
+        }
+        while transferActivity.waiting.count < 2 { await Task.yield() }
+    }
+
+    public func finishSyntheticQueueTask() {
+        let release = syntheticQueueRelease
+        syntheticQueueRelease = nil
+        release?.resume()
+    }
+    #endif
     private var catalogueURL: URL?
     private var recoveryFixtureDirectory: URL?
     private let metadataLookupProvider: any MetadataLookupProviding

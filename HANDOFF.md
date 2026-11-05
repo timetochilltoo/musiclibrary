@@ -4,7 +4,21 @@ Last updated: 5 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — R8 isolated recovery integration
+## Current resume — R8 native queue walkthrough
+
+This is a **Debug fixture/validation checkpoint**. User-facing Release remains **Music Library 0.59 (build 60)** at `build/Music Library 0.59.app`; no new Release package/version was produced because production UI/services did not change. Schema remains **17**. Personal catalogue, preferences, media and destinations were not opened/configured or changed.
+
+The Debug navigation workspace now recognizes `--queue-activity-fixture` and shows explicit synthetic Start/Finish controls above the shell. Debug-only LibraryStore methods require a non-background injected store without a live catalogue URL. They enqueue three held synthetic operations labelled sharing, complete archive restore and database backup; Finish resumes the current continuation. These operations contain no file/publication/recovery calls. The existing launch-mode boundary keeps controls out of normal startup and Release. New navigation-fixture regression steps all three tasks, verifies unchanged catalogue revision and checks a normal store refuses to start synthetic work.
+
+Validation: Debug passed **206 tests/45 suites**; Release passed **202/44**, and incremental build/whitespace checks passed. Logs `/private/tmp/musiclibrary-060-*.log` (060 identifies the checkpoint logs, not a delivered version). The existing script rebuilt and signed the separately identified temporary Debug navigation app before launch.
+
+Native evidence: General initially showed revision 499/241 issues. Sharing showed Running: Shared library update and Waiting: Complete archive restore/Database backup, readable without overlap in the standard-width light screenshot. Navigating to Backup & Restore retained the queue; Finish promoted archive restore to running with backup waiting, then promoted backup. Advanced retained the final active task. Finishing hid the entire activity section. General still showed revision 499/241 issues. No file chooser or actual export, restore, publication, cleanup or reset was invoked. The fixture was quit and confirmed absent from the running-app inventory. Two automation stale-state notices required fresh AX queries; no helper crash occurred.
+
+This proves native standard/light activity progression and category retention, not compact/dark layout, full keyboard-only navigation, VoiceOver announcements, long queues or actual remote I/O. Existing isolated local restore/publication integration remains valid; forced installation rollback, database-only restore/reset acceptance, R7 drag, real audio/NAS and iPad remain pending. Full R8 is not claimed complete.
+
+Next: **compact-width and keyboard activity-panel acceptance** using the synthetic Debug fixture; fix concrete layout/focus findings, then check dark/VoiceOver separately. Preserve production safety boundaries and avoid personal data. Git was synchronized at resume; inspect status for final delivery outcome.
+
+## Previous resume — R8 isolated recovery integration
 
 Current slice: **Music Library 0.59 (build 60)**; schema **17**. Internal fixture composition now runs actual archive export/restore and explicit snapshot publication under a temporary child directory. No personal catalogue/preferences, NAS destination or source audio was opened or changed. No native app was launched.
 
