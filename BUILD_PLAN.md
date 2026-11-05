@@ -923,6 +923,8 @@ R7 playlist foundation checkpoint (8 October 2026): name search, counts and no-m
 
 Settings has functional selection routing:
 
+R8 queue activity checkpoint (5 November 2026): Settings Sharing, Backup & Restore and Advanced now show the active service operation and waiting requests in FIFO order, including automatic work. Per-action spinners describe submitted requests rather than claiming queued work is executing. Activity clears after completion/failure/cancelled waiters; labels contain no destination paths or media details. Next: isolated configured recovery/transfer integration fixture and native activity-panel acceptance.
+
 R8 recovery exclusion checkpoint (5 November 2026): archive export/restore, database restore, reset and safe cleanup join the sharing/backup queue. Recovery waits for existing writers and later transfers wait for verification, recovery creation, replacement/rollback and reload to finish. RESET confirmation remains mandatory. Scope does not cover arbitrary concurrent catalogue edits/scans. Next: expose queue waiting/running state clearly in Settings and validate recovery versus transfer ordering in an isolated configured integration fixture.
 
 R8 sharing/backup service queue (30 October 2026): publication and database backup now share a FIFO service queue across manual, automatic, daily and termination-flush callers. Explicit-destination publication uses the same queue. Destination changes wait until tasks finish (action refuses while busy). Cancelled waiting requests do not run; prior writers are preserved and failures do not block later retries. This does not establish global recovery/mutation exclusion. Next: audit archive restore/reset versus background transfers using disposable data before expanding the guard.

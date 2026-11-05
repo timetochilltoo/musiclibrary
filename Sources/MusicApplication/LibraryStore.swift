@@ -57,6 +57,7 @@ public final class LibraryStore: ObservableObject {
     @Published public private(set) var isSnapshotPublishPending = false
     @Published public private(set) var masterBackupStatus = "Master backup destination not configured"
     @Published public private(set) var catalogueMaintenanceStatus = "No catalogue cleanup has been run"
+    @Published public private(set) var transferActivity = LibraryTransferActivity()
 
     private var database: MusicDatabase?
     private var startGate = LibraryStartGate()
@@ -85,6 +86,7 @@ public final class LibraryStore: ObservableObject {
 
     public init(metadataLookupProvider: any MetadataLookupProviding = MusicBrainzMetadataProvider()) {
         self.metadataLookupProvider = metadataLookupProvider
+        transferQueue.onChange = { [weak self] in self?.transferActivity = $0 }
     }
 
     /// Isolated fixture composition: never starts Application Support or resolves
@@ -94,6 +96,7 @@ public final class LibraryStore: ObservableObject {
          metadataLookupProvider: any MetadataLookupProviding = MusicBrainzMetadataProvider()) {
         self.database = database
         self.metadataLookupProvider = metadataLookupProvider
+        transferQueue.onChange = { [weak self] in self?.transferActivity = $0 }
         if let albumSearch { self.albumSearch = albumSearch }
         permitsBackgroundServices = false
         startGate.succeed()
@@ -846,7 +849,7 @@ public final class LibraryStore: ObservableObject {
     }
 
     public func performCatalogueCleanup(_ options: CatalogueCleanupOptions) async throws -> CatalogueCleanupResult {
-        try await transferQueue.run { try await self.performCatalogueCleanupUncoordinated(options) }
+        try await transferQueue.run(.cleanup) { try await self.performCatalogueCleanupUncoordinated(options) }
     }
 
     private func performCatalogueCleanupUncoordinated(_ options: CatalogueCleanupOptions) async throws -> CatalogueCleanupResult {
@@ -861,7 +864,7 @@ public final class LibraryStore: ObservableObject {
     }
 
     public func exportCompleteCatalogueArchive(to destinationDirectory: URL) async throws -> URL {
-        try await transferQueue.run { try await self.exportCompleteCatalogueArchiveUncoordinated(to: destinationDirectory) }
+        try await transferQueue.run(.archiveExport) { try await self.exportCompleteCatalogueArchiveUncoordinated(to: destinationDirectory) }
     }
 
     private func exportCompleteCatalogueArchiveUncoordinated(to destinationDirectory: URL) async throws -> URL {
@@ -879,7 +882,7 @@ public final class LibraryStore: ObservableObject {
     }
 
     public func restoreCompleteCatalogueArchive(from archiveURL: URL) async throws {
-        try await transferQueue.run { try await self.restoreCompleteCatalogueArchiveUncoordinated(from: archiveURL) }
+        try await transferQueue.run(.archiveRestore) { try await self.restoreCompleteCatalogueArchiveUncoordinated(from: archiveURL) }
     }
 
     private func restoreCompleteCatalogueArchiveUncoordinated(from archiveURL: URL) async throws {
@@ -943,7 +946,7 @@ public final class LibraryStore: ObservableObject {
 
     public func resetCatalogue(confirmation: String) async throws -> URL {
         guard confirmation == "RESET" else { throw DatabaseError.invalidOperation("Type RESET exactly before clearing the catalogue.") }
-        return try await transferQueue.run { try await self.resetCatalogueUncoordinated(confirmation: confirmation) }
+        return try await transferQueue.run(.reset) { try await self.resetCatalogueUncoordinated(confirmation: confirmation) }
     }
 
     private func resetCatalogueUncoordinated(confirmation: String) async throws -> URL {
@@ -970,7 +973,7 @@ public final class LibraryStore: ObservableObject {
         }
     }
     public func publishSnapshot(to directory: URL) async throws -> SnapshotManifest {
-        try await transferQueue.run { try await self.publishSnapshotUncoordinated(to: directory) }
+        try await transferQueue.run(.sharing) { try await self.publishSnapshotUncoordinated(to: directory) }
     }
 
     private func publishSnapshotUncoordinated(to directory: URL) async throws -> SnapshotManifest {
@@ -994,7 +997,7 @@ public final class LibraryStore: ObservableObject {
         masterBackupStatus = "Ready to back up master database"
     }
     public func publishSnapshotNow() async throws {
-        try await transferQueue.run { try await self.publishSnapshotNowUncoordinated() }
+        try await transferQueue.run(.sharing) { try await self.publishSnapshotNowUncoordinated() }
     }
 
     private func publishSnapshotNowUncoordinated() async throws {
@@ -1012,7 +1015,7 @@ public final class LibraryStore: ObservableObject {
     }
 
     public func createMasterBackupNow() async throws {
-        try await transferQueue.run { try await self.createMasterBackupUncoordinated() }
+        try await transferQueue.run(.databaseBackup) { try await self.createMasterBackupUncoordinated() }
     }
 
     private func createMasterBackupUncoordinated() async throws {
@@ -1032,7 +1035,7 @@ public final class LibraryStore: ObservableObject {
     }
 
     public func restoreMasterBackup(from manifestURL: URL) async throws {
-        try await transferQueue.run { try await self.restoreMasterBackupUncoordinated(from: manifestURL) }
+        try await transferQueue.run(.databaseRestore) { try await self.restoreMasterBackupUncoordinated(from: manifestURL) }
     }
 
     private func restoreMasterBackupUncoordinated(from manifestURL: URL) async throws {

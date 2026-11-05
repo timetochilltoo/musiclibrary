@@ -4,6 +4,30 @@ import Testing
 @Suite("Library transfer queue")
 @MainActor
 struct LibraryTransferQueueTests {
+    @Test("Published activity distinguishes running and waiting work and clears after cancellation")
+    func activity() async throws {
+        let store = LibraryStore()
+        var release: CheckedContinuation<Void, Never>?
+        let first = Task {
+            try await store.transferQueue.run(.databaseBackup) {
+                await withCheckedContinuation { release = $0 }
+            }
+        }
+        while release == nil { await Task.yield() }
+        #expect(store.transferActivity.active == .databaseBackup)
+        let waiting = Task {
+            try await store.transferQueue.run(.archiveRestore) { _ = Issue.record("Cancelled restore ran") }
+        }
+        while store.transferActivity.waiting.isEmpty { await Task.yield() }
+        #expect(store.transferActivity.active == .databaseBackup)
+        #expect(store.transferActivity.waiting == [.archiveRestore])
+        waiting.cancel()
+        release?.resume()
+        try await first.value
+        do { try await waiting.value; Issue.record("Expected cancellation") } catch {}
+        #expect(store.transferActivity == LibraryTransferActivity())
+    }
+
     @Test("Suspended writer finishes before later writers; failure does not poison the queue")
     func ordering() async throws {
         let queue = LibraryTransferQueue()

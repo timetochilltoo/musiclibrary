@@ -40,9 +40,9 @@ struct SettingsBackupRecoverySections: View {
                 .font(.callout).foregroundStyle(.secondary)
             Button(archiveExport.failure == nil ? "Export Complete Catalogue Archive…" : "Retry Archive Export…", systemImage: "archivebox", action: onExportArchive)
                 .buttonStyle(.borderedProminent)
-            SettingsTransferFeedback(state: archiveExport, progress: "Exporting and verifying complete archive…")
+            SettingsTransferFeedback(state: archiveExport, progress: "Archive export requested…")
             Button(archiveRestore.failure == nil ? "Restore Complete Catalogue Archive…" : "Retry Archive Restore…", systemImage: "arrow.counterclockwise.circle", role: .destructive, action: onRestoreArchive)
-            SettingsTransferFeedback(state: archiveRestore, progress: "Verifying archive and restoring catalogue…")
+            SettingsTransferFeedback(state: archiveRestore, progress: "Archive restore requested…")
             if archiveRestore.failure != nil {
                 Text("Retry opens the archive chooser again and requires confirmation before restoring.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -62,7 +62,7 @@ struct SettingsBackupRecoverySections: View {
                 Text("Contains catalogue records only, not managed artwork or source audio. This is not a complete catalogue recovery archive.")
                     .font(.callout).foregroundStyle(.secondary)
                 if databaseTransfer != .running { Text(databaseStatus).font(.caption).foregroundStyle(.secondary) }
-                SettingsTransferFeedback(state: databaseTransfer, progress: "Creating verified database backup…")
+                SettingsTransferFeedback(state: databaseTransfer, progress: "Database backup requested…")
                 Text("Database backups use the MasterBackups folder inside the iPad sharing destination.")
                     .font(.caption).foregroundStyle(.secondary)
                 if !canBackUpDatabase {
@@ -106,7 +106,7 @@ struct SettingsSharingSection: View {
                 Text("Last successful update \(lastPublishedAt.formatted(date: .abbreviated, time: .shortened))")
                     .font(.caption).foregroundStyle(.secondary)
             }
-            SettingsTransferFeedback(state: transfer, progress: "Updating shared library…")
+            SettingsTransferFeedback(state: transfer, progress: "Shared library update requested…")
             if transfer != .running, let failure, failure != transfer.failure {
                 Text(failure).font(.callout).foregroundStyle(.red).textSelection(.enabled)
             }

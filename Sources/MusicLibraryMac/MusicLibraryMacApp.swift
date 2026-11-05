@@ -1607,6 +1607,20 @@ private struct StorageRootList: View {
                 }
             }
 
+            if shows(.sharing, .backupRestore, .advanced), library.transferActivity.isBusy {
+                Section("Catalogue Activity") {
+                    if let active = library.transferActivity.active {
+                        ProgressView("Running: \(active.rawValue)").controlSize(.small)
+                    }
+                    ForEach(Array(library.transferActivity.waiting.enumerated()), id: \.offset) { _, kind in
+                        Label("Waiting: \(kind.rawValue)", systemImage: "clock")
+                            .font(.callout).foregroundStyle(.secondary)
+                    }
+                    Text("Waiting requests start after the current task finishes.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+
             if shows(.sharing) {
                 SettingsSharingSection(
                     status: library.snapshotPublishStatus,

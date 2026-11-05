@@ -4,7 +4,23 @@ Last updated: 5 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — R8 recovery/transfer exclusion
+## Current resume — R8 queue activity in Settings
+
+Current slice: **Music Library 0.58 (build 59)**, schema **17**. Validation uses injected operations and existing temporary fixtures, without opening a personal catalogue, selecting a sharing destination or changing source media. No normal app/native fixture was launched this slice; native progress-panel appearance remains pending.
+
+New LibraryTransferActivity is a public Sendable/Equatable snapshot of the active operation kind and FIFO waiting kinds. LibraryTransferQueue emits on enqueue, execution start and completion/cancellation, and LibraryStore publishes the snapshot through a weak callback configured in both production and fixture initializers. Operation kinds cover sharing, database backup, archive export/restore, database restore, reset and cleanup. The snapshot contains labels only, not destination paths or media data. Queue execution order, cancellation behavior and recovery protections remain unchanged.
+
+StorageRootList shows a Catalogue Activity section in Sharing, Backup & Restore and Advanced while service work is active/pending. It distinguishes Running from Waiting entries, including automatic tasks, and explains that waiting requests start after the current task finishes. Existing action-level spinners now say that an update, backup or archive operation was requested rather than claiming a queued request is already writing/verifying/restoring. Local success/error/retry state and confirmations remain as before. No percentages or duration estimates are invented.
+
+The new unstarted-store regression suspends a database-backup operation, enqueues archive restore, checks published active/waiting identity and cancels the waiter; activity must return to idle after the writer completes. It touches no files or preferences. Existing queue ordering/failure and recovery-entry tests continue to apply. Debug passed **202 tests/44 suites**; Release passed **199/43**. Incremental build passed. Logs: `/private/tmp/musiclibrary-058-*.log`.
+
+Artifact: Release package `build/Music Library 0.58.app`, version 0.58/build 59, passed plist lint, strict deep signature and whitespace checks.
+
+Pending: native panel appearance, navigation during running/waiting work, long/compact queues, keyboard/VoiceOver and configured recovery/transfer integration. Scans, arbitrary catalogue edits and other file workflows remain outside this queue. Previous R7 drag/audio/NAS/iPad limitations remain open; full R8 is not claimed complete.
+
+Next: **isolated configured recovery/transfer integration fixture**, then native activity-panel acceptance. Keep all fixtures temporary and fail closed against personal Application Support, preferences and source media. Preserve verified recovery, typed reset and confirmation. Git was clean and synchronized at resume; inspect status for final delivery state.
+
+## Previous resume — R8 recovery/transfer exclusion
 
 Current slice: **Music Library 0.57 (build 58)**; schema **17**. No personal catalogue, source media or sharing destination was used for validation, and no normal app/native fixture was launched.
 
