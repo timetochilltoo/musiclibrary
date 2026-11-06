@@ -7,7 +7,7 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 ## 1. Launch the packaged Mac app
 
 1. In Finder, open the project folder.
-2. Open the newest sequential package, currently `build/Music Library 0.63.app`. An older `/Applications/Music Library.app` installation is not automatically updated by packaging.
+2. Open the newest sequential package, currently `build/Music Library 0.64.app`. An older `/Applications/Music Library.app` installation is not automatically updated by packaging.
 3. If macOS blocks the first launch, Control-click the app, choose **Open**, then choose **Open** again.
 4. The app opens a catalogue in its Application Support folder. It does not use a SQLite database on the NAS.
 5. Keep the app open while following the tests below. If anything unexpected happens, take a screenshot and note the exact action just before it happened.
@@ -20,6 +20,8 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 4. Do not move, rename, or edit the original media during this guide.
 
 ### R8 Settings recovery/sharing presentation (0.52)
+
+0.64 native message fixture: run `Scripts/run-navigation-fixture.sh --compact-settings-fixture --recovery-message-fixture`, optionally with `--dark-appearance-fixture`. In Backup & Restore, Show Recovered Outcome must display previous-catalogue reopened wording and an enabled retry with chooser/confirmation explanation. Show Incomplete Outcome must display retained recovery guidance/path once, disable export/restore and hide the retry explanation. Expand database-only options and check their disabled controls. Synthetic outcomes invoke no file or restore services; they do not create a recovery archive at the displayed synthetic path. Check read/copy selection separately; native AX text presence alone is not spoken VoiceOver or clipboard acceptance.
 
 0.63 recovery outcomes: injected post-copy errors with successful rollback must report the previous catalogue restored/reopened, preserve the original error detail, and allow retry. Injected rollback failure must report incomplete recovery plus both errors and retained recovery location, preserve recovery payload, leave catalogue edits unavailable and release the queue. Settings recovery guidance must remain readable while affected sharing/backup/restore/maintenance controls are blocked for that session. Native presentation, manual review/resolution, restart/crash behavior and real filesystem failures remain separate; use temporary fixtures only.
 

@@ -1,10 +1,26 @@
 # Music Library — Project Handoff
 
-Last updated: 5 November 2026
+Last updated: 6 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — R8 recovery outcome/status reporting
+## Current resume — R8 native recovery-message validation and duplicate guidance fix
+
+Current slice: **Music Library 0.64 (build 65)**, schema **17**. Native checks launched only separately identified temporary Debug navigation apps. Synthetic outcomes invoke no file/recovery operations and create nothing at the displayed synthetic recovery path. No personal catalogue/preferences, actual recovery data, source media or NAS destination was accessed/changed.
+
+Debug `--recovery-message-fixture` adds Show Recovered Outcome/Show Incomplete Outcome controls in navigation mode. LibraryStore's Debug-only setter requires a non-background injected store without a live catalogue URL, builds a clearly synthetic RestoreRecoveryError and updates presentation-only state. A Debug onChange feeds the actual SettingsTransferTasks failure pipeline, including initial Settings category mount. Normal stores refuse these setters. New navigation regression verifies outcomes/review state and unchanged revision; fixture controls/state compile out of Release.
+
+The initial compact light walkthrough showed correct successful-rollback wording and enabled retry/confirmation explanation, and disabled incomplete-recovery controls. It also exposed duplicate long incomplete guidance: both the stable review message and local restore feedback rendered the same error. Settings now suppresses local archive feedback only when it exactly matches the retained review message. Different failures remain visible; recovery checks and disabled-state logic are unchanged.
+
+Fresh corrected compact fixtures passed in dark and light: incomplete guidance/path appeared once, wrapped inside the content area, archive export/retry controls were visibly disabled, and retry explanation was absent. Expanded dark database-only controls also appeared disabled. Recovered outcome retained its error detail and retry explanation; no chooser was opened. In corrected light mode, double-click selection of a recovery-path segment was confirmed by the AX selected-text result/highlight. Clipboard copying and spoken VoiceOver were not tested. Dark General returned revision 499/241 issues. All three fixture apps were quit and confirmed absent from running inventory; no helper crash.
+
+Required final suites passed: Debug **213 tests/45 suites**, Release **208/44**, incremental build and whitespace check. Release `build/Music Library 0.64.app` passed plist lint, version 0.64/build 65 and strict deep signature verification. Logs `/private/tmp/musiclibrary-064-*.log` and initial `/private/tmp/musiclibrary-recovery-ui-*.log`. Existing service rollback/backup/reset tests remain applicable; native checks validate presentation, not another real restore.
+
+Pending: incomplete recovery context while visiting Sharing/Advanced (controls are blocked but guidance is currently concentrated in Backup & Restore), full Tab/VoiceOver, multi-window/sheets, long queues, forced partial-copy/restart handling, R7 drag and actual NAS/audio/iPad acceptance. Full R8 is not claimed complete.
+
+Next: **show consistent recovery-review context on other affected Settings categories**, avoiding duplicated guidance and keeping navigation available. Use the synthetic fixture for light/dark checks; do not invoke failures on personal data. Git was synchronized at resume; inspect status for delivery outcome.
+
+## Previous resume — R8 recovery outcome/status reporting
 
 Current slice: **Music Library 0.63 (build 64)**; schema **17**. Service tests use only temporary recovery fixtures; no native app, personal catalogue/preferences, source audio or NAS destination was opened/changed.
 

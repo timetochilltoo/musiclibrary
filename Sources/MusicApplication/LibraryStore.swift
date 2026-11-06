@@ -77,6 +77,20 @@ public final class LibraryStore: ObservableObject {
     private var publicationSchedule = SnapshotPublicationSchedule()
     let transferQueue = LibraryTransferQueue()
     #if DEBUG
+    @Published public private(set) var syntheticRecoveryFailure: RestoreRecoveryError?
+
+    public func showSyntheticRecoveryFailure(incomplete: Bool) {
+        guard !permitsBackgroundServices, catalogueURL == nil, !transferQueue.isBusy else { return }
+        let report = RestoreRecoveryError(
+            outcome: incomplete ? .recoveryIncomplete : .restoredPreviousCatalogue,
+            restoreFailure: "Synthetic installation failure — no files were changed.",
+            recoveryFailure: incomplete ? "Synthetic rollback failure — presentation fixture only." : nil,
+            recoveryURL: FileManager.default.temporaryDirectory.appending(path: "Synthetic Recovery/Retained catalogue archive.musiclibraryarchive")
+        )
+        recoveryReviewMessage = incomplete ? report.localizedDescription : nil
+        syntheticRecoveryFailure = report
+    }
+
     private var syntheticQueueRelease: CheckedContinuation<Void, Never>?
 
     /// Explicit test-only queue work: no publication, recovery or filesystem calls.

@@ -50,7 +50,9 @@ struct SettingsBackupRecoverySections: View {
             SettingsTransferFeedback(state: archiveExport, progress: "Archive export requested…")
             Button(archiveRestore.failure == nil ? "Restore Complete Catalogue Archive…" : "Retry Archive Restore…", systemImage: "arrow.counterclockwise.circle", role: .destructive, action: onRestoreArchive)
                 .disabled(recoveryRequiresReview)
-            SettingsTransferFeedback(state: archiveRestore, progress: "Archive restore requested…")
+            if recoveryReviewMessage == nil || archiveRestore.failure != recoveryReviewMessage {
+                SettingsTransferFeedback(state: archiveRestore, progress: "Archive restore requested…")
+            }
             if archiveRestore.failure != nil && !recoveryRequiresReview {
                 Text("Retry opens the archive chooser again and requires confirmation before restoring.")
                     .font(.caption).foregroundStyle(.secondary)

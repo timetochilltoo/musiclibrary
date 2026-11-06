@@ -6,6 +6,25 @@ import Testing
 @Suite("Navigation fixture")
 @MainActor
 struct LibraryNavigationFixtureTests {
+    @Test("Synthetic recovery messages retain fixture data and refuse normal stores")
+    func syntheticRecoveryMessages() async throws {
+        let fixture = try await LibraryStore.makeNavigationFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+        let store = fixture.store
+        let revision = store.catalogueRevision
+        store.showSyntheticRecoveryFailure(incomplete: false)
+        #expect(store.syntheticRecoveryFailure?.outcome == .restoredPreviousCatalogue)
+        #expect(!store.recoveryRequiresReview)
+        store.showSyntheticRecoveryFailure(incomplete: true)
+        #expect(store.syntheticRecoveryFailure?.outcome == .recoveryIncomplete)
+        #expect(store.recoveryRequiresReview)
+        #expect(store.catalogueRevision == revision)
+        let normal = LibraryStore()
+        normal.showSyntheticRecoveryFailure(incomplete: true)
+        #expect(normal.syntheticRecoveryFailure == nil)
+        #expect(!normal.recoveryRequiresReview)
+    }
+
     @Test("Synthetic queue controls step through activity without changing the catalogue")
     func syntheticQueue() async throws {
         let fixture = try await LibraryStore.makeNavigationFixture()

@@ -75,6 +75,13 @@ private struct LibraryNavigationFixtureWorkspace: View {
                             Button("Finish Current Synthetic Task") { store.finishSyntheticQueueTask() }
                         }.padding(8)
                     }
+                    if ProcessInfo.processInfo.arguments.contains("--recovery-message-fixture") {
+                        HStack {
+                            Text("Synthetic messages — no restore/file operations").font(.caption)
+                            Button("Show Recovered Outcome") { store.showSyntheticRecoveryFailure(incomplete: false) }
+                            Button("Show Incomplete Outcome") { store.showSyntheticRecoveryFailure(incomplete: true) }
+                        }.padding(8)
+                    }
                     LibraryShellView(library: store)
                 }
             } else if let failure {
@@ -1983,6 +1990,13 @@ private struct StorageRootList: View {
                 }
             }
         }
+        #if DEBUG
+        .onChange(of: library.syntheticRecoveryFailure?.localizedDescription, initial: true) { _, _ in
+            if let report = library.syntheticRecoveryFailure {
+                transferTasks.start(.archiveRestore) { throw report }
+            }
+        }
+        #endif
         .fileImporter(isPresented: $showsSnapshotDestinationPicker, allowedContentTypes: [.folder]) { result in
             if case let .success(url) = result { do { try library.setSnapshotDestination(url) } catch { library.presentError(error) } }
         }
