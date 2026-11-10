@@ -203,8 +203,12 @@ files off-main in bounded chunks, detects file/root replacement and propagates
 cancellation without returning a partial report. Outcomes retain the original
 manifest and reference groups. Caller-owned permission, catalogue staleness and
 cooperative cancellation during blocked NAS calls remain explicit boundaries.
-Next: permission-scoped preview orchestration and stale-result handling, then UI;
-no root update/apply action is included.
+Preview orchestration (11 November 2026): explicit Verify now owns balanced folder
+permission, coalesced progress, cancellation draining and selection-generation
+guards. A full manifest recheck distinguishes unchanged versus historical
+changed/unavailable results, including hash changes without a revision increment.
+Next: replacement-folder selection/progress/results UI; no root update/apply
+action is included. Native permission grants and NAS acceptance remain pending.
 
 Store more than an absolute path:
 

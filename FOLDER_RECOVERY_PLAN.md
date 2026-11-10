@@ -1,9 +1,10 @@
 # Music folder recovery plan
 
-Status: FR1 manifest/preflight and verifier backend, 10 November 2026. **Not an implemented relocation feature.**
+Status: FR1 preview orchestration backend, 11 November 2026. **Not an implemented relocation feature.**
 
 Implemented so far: a coherent read-only root manifest, pure reference preflight
-grouping and a cancellable read-only candidate-file verifier. The Mac app has no
+grouping, a cancellable read-only candidate-file verifier and permission-scoped
+preview orchestration with catalogue freshness checks. The Mac app has no
 replacement preview UI or Apply operation yet. The remaining FR1 stages below
 are still planned.
 
@@ -103,9 +104,22 @@ The caller must own any required security scope for the operation's duration;
 the verifier does not acquire or persist permission. Cancellation is cooperative
 between chunks/metadata operations; it cannot forcibly interrupt a blocked NAS
 system call. A report is historical per-file evidence, not an atomic filesystem
-snapshot. The future UI must compare a freshly captured manifest, including hash
-fields, to detect catalogue staleness; revision alone is insufficient because
-recordAssetFingerprint does not increment the catalogue revision.
+snapshot. FolderRecoveryPreviewSession compares a freshly captured manifest,
+including hash fields, when verification finishes; revision alone is insufficient
+because recordAssetFingerprint does not increment the catalogue revision. An
+unchanged result means equal at that recheck, not a guarantee about later edits.
+
+Preview orchestration implemented: selection alone performs no reads. Explicit
+Verify captures the manifest and acquires operation-scoped permission, balancing
+release after success, failure or cancellation. A cancelled worker must drain
+before another run starts; changing selection discards old progress/results.
+Progress is coalesced to one pending update. Completed reports retain their
+captured manifest and distinguish unchanged, changed and unavailable rechecks;
+the latter two remain historical evidence. Tests substitute permission only
+through an internal factory confined to disposable temporary children, not a
+normal-launch bypass. Actual picker/security-scope grants remain unverified.
+The UI must cancel on dismissal and present historical status accurately. Later
+catalogue changes require a new verification; there is no global writer lock.
 
 1. **MusicDatabase:** add a read-only root-scoped reference manifest query. Return
    root identity/path/bookmark digest/volume/scope and catalogue revision, plus

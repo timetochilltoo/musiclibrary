@@ -1,10 +1,24 @@
 # Music Library — Project Handoff
 
-Last updated: 10 November 2026
+Last updated: 11 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — FR1 cancellable candidate verifier backend
+## Current resume — FR1 permission-scoped preview orchestration
+
+This is a **backend orchestration checkpoint**. Latest delivered app remains **Music Library 0.70 (build 71)** at `build/Music Library 0.70.app`; schema **17**. No UI, version metadata or packaged artifact changes were needed. No native app, personal catalogue/preferences, real media or NAS destination was opened. All tests use disposable databases and synthetic files; catalogue fingerprint changes in the freshness test are deliberate fixture actions.
+
+New `FolderRecoveryPreviewSession` provides main-actor observable state for a future replacement-folder preview. Selecting a URL is inert. Explicit Verify captures the current root manifest, acquires security-scoped access and runs the existing read-only verifier. Access ends on success, failure or cancellation only after the worker drains. An admission latch prevents duplicate runs, including synchronous phase observers; cancellation or a new selection cannot start overlapping access. Selection/run identities discard late progress and results. A newest-only stream bounds pending progress updates. Session disposal cancels work without retaining the session across worker waits.
+
+Completion re-reads the full manifest through LibraryStore and compares root metadata, revision and references including hashes. This catches fingerprint changes that do not increment revision. Results distinguish unchanged-at-recheck, changed and unavailable recheck; changed/unavailable results retain the captured historical evidence. No later freshness guarantee or global catalogue lock is claimed. No bookmark is persisted, root association/status changed, scan started or source file modified.
+
+New `FolderRecoveryPreviewSessionTests` covers inert selection, permission refusal, balanced scope release, failure/retry, cancellation draining, superseded selections, late progress, duplicate admission, disposal and initial/final manifest failures. An integration test uses real temporary SQLite and the verifier, checks hash-only staleness, unchanged root records/revision and unchanged source bytes. Permission substitution is internal and restricted to disposable temporary child paths; these tests do not establish real OS grants.
+
+Required checks passed: `swift test` **246 tests/51 suites**, `swift test -c release` **239/50**, `swift build`. Logs: `/private/tmp/musiclibrary-fr1-session-{debug,release,build}.log`. After test-only warning cleanup, all **8 focused session tests** passed again in both configurations. `git diff --check` also passed. Existing AVMetadataItem deprecation remains.
+
+Next: **FR1 replacement-folder selection/progress/results UI**, using this session. Cancel on dismissal; show historical freshness and local retry/errors, preserve the original registered folder context, and keep Apply absent. A new Verify is needed for later catalogue changes. Actual picker/security-scope grants, remount/NAS/device acceptance, keyboard/VoiceOver and other R8 limits remain open. Cancellation cannot forcibly interrupt blocked filesystem calls. FR2 association writes remain deferred. Session GitHub push authorization remains applicable; inspect Git status/history for the delivered checkpoint.
+
+## Previous resume — FR1 cancellable candidate verifier backend
 
 This is a **backend verification checkpoint**. Latest delivered app remains **Music Library 0.70 (build 71)** at `build/Music Library 0.70.app`; schema **17**. No replacement UI, version metadata or app artifact changes were made. No native app, personal catalogue/preferences, real media or NAS destination was opened. Tests read/write only their disposable fixture directories; mutations used to test races are deliberate fixture actions, not verifier writes.
 
