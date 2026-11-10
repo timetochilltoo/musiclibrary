@@ -567,6 +567,11 @@ public final class LibraryStore: ObservableObject {
         try await reload()
     }
 
+    public func folderRecoveryManifest(rootID: StorageRootID) async throws -> FolderRecoveryManifest {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        return try await database.folderRecoveryManifest(rootID: rootID)
+    }
+
     public func renewStorageRootAccess(_ id: StorageRootID, selecting url: URL) async throws {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
         guard let root = try await database.storageRoots().first(where: { $0.id == id }) else {

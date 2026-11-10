@@ -1,6 +1,7 @@
 import Foundation
 import SQLite3
 import MusicDomain
+import CryptoKit
 
 public enum DatabaseError: Error, Equatable, LocalizedError, Sendable {
     case sqlite(message: String)
@@ -365,6 +366,49 @@ public actor MusicDatabase {
             try Self.stepDone(statement, connection: connection)
             guard sqlite3_changes(connection) == 1 else { throw DatabaseError.invalidOperation("The registered folder changed or was removed. Reopen Music Folders and try again.") }
             try incrementRevision()
+        }
+    }
+
+    /// A coherent read snapshot; does not refresh roots, migrate, or change revision.
+    public func folderRecoveryManifest(rootID: StorageRootID) throws -> FolderRecoveryManifest {
+        try Self.execute("BEGIN DEFERRED;", on: connection)
+        do {
+            let rootStatement = try Self.prepare("SELECT display_name, last_known_path, volume_identifier, scope, status, bookmark_data FROM storage_root WHERE id = ?;", on: connection)
+            defer { sqlite3_finalize(rootStatement) }
+            try Self.bind(rootID.description, at: 1, to: rootStatement)
+            let rootResult = sqlite3_step(rootStatement)
+            guard rootResult == SQLITE_ROW else {
+                if rootResult == SQLITE_DONE { throw DatabaseError.notFound("Storage root") }
+                throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(connection)))
+            }
+            guard let name = Self.text(at: 0, from: rootStatement), let path = Self.text(at: 1, from: rootStatement),
+                  let scopeValue = Self.text(at: 3, from: rootStatement), let scope = StorageRootScope(rawValue: scopeValue),
+                  let statusValue = Self.text(at: 4, from: rootStatement), let status = StorageRootStatus(rawValue: statusValue) else {
+                throw DatabaseError.invalidOperation("Registered folder metadata is invalid.")
+            }
+            let digest = Self.data(at: 5, from: rootStatement).map { SHA256.hash(data: $0).map { String(format: "%02x", $0) }.joined() }
+            let root = FolderRecoveryRootSnapshot(id: rootID, displayName: name, registeredPath: path,
+                volumeIdentifier: Self.text(at: 2, from: rootStatement), scope: scope, status: status, bookmarkDigest: digest)
+            let revision = try currentRevision()
+            let statement = try Self.prepare("SELECT id, track_id, relative_path, content_hash, cue_start_ms, cue_end_ms FROM digital_asset WHERE storage_root_id = ? ORDER BY relative_path COLLATE BINARY, id;", on: connection)
+            defer { sqlite3_finalize(statement) }
+            try Self.bind(rootID.description, at: 1, to: statement)
+            var references: [FolderRecoveryReference] = []
+            var result = sqlite3_step(statement)
+            while result == SQLITE_ROW {
+                guard let asset = Self.text(at: 0, from: statement).flatMap(UUID.init(uuidString:)),
+                      let track = Self.text(at: 1, from: statement).flatMap(UUID.init(uuidString:)),
+                      let relativePath = Self.text(at: 2, from: statement) else { throw DatabaseError.invalidIdentifier("Recovery reference") }
+                references.append(.init(assetID: .init(rawValue: asset), trackID: .init(rawValue: track), relativePath: relativePath,
+                    expectedContentHash: Self.text(at: 3, from: statement), cueStartMilliseconds: Self.int(at: 4, from: statement), cueEndMilliseconds: Self.int(at: 5, from: statement)))
+                result = sqlite3_step(statement)
+            }
+            guard result == SQLITE_DONE else { throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(connection))) }
+            try Self.execute("COMMIT;", on: connection)
+            return .init(root: root, catalogueRevision: revision, references: references)
+        } catch {
+            try? Self.execute("ROLLBACK;", on: connection)
+            throw error
         }
     }
 

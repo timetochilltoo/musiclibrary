@@ -4,7 +4,23 @@ Last updated: 10 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — R8 moved-folder recovery design
+## Current resume — FR1 read-only manifest and preflight foundation
+
+This is a **backend foundation checkpoint**. Latest delivered app remains **Music Library 0.70 (build 71)** at `build/Music Library 0.70.app`; schema **17**. No user-facing UI, version metadata or app artifact changes are needed. No native app, candidate directory, personal catalogue/preferences, media or NAS destination was opened. All validation uses temporary databases and synthetic references, with no candidate-file reads.
+
+MusicDatabase.folderRecoveryManifest(rootID:) now captures one root's metadata, catalogue revision and every digital-asset reference in a deferred read transaction. It returns only a SHA-256 bookmark digest, never bookmark bytes. References retain asset IDs, track IDs, exact relative paths, expected hashes and CUE start/end ranges. Other roots and unconfirmed import candidates are not included. Unknown roots fail cleanly and release the read transaction; repeated snapshots do not change revision or root access status. LibraryStore exposes this read-only use case without invoking access refresh, scanning or migration.
+
+New domain snapshot/reference/manifest types are immutable, Equatable and Sendable, without a client/export encoding route. FolderRecoveryReferencePlan groups identical relative-path strings, preserving every reference. This is not proof that aliases or symlinks name one physical file. Groups are ready-to-verify only when every reference has the same valid full SHA-256 value; missing/malformed values remain unverified, contradictory hashes conflict, and unsafe/ambiguous path syntax is rejected. Hex case is normalized for comparison, not persisted. No verified/missing/unreadable file verdict is produced because no file has been opened. Empty groups do not establish a verified empty root.
+
+Focused coverage passed **6 tests/2 suites**, including 11 parameterized unsafe-path cases. Persistence coverage uses real synthetic CUE references for two roots, checks isolation/bookmark digest/track and range preservation, unchanged root records/revision and transaction cleanup. Application coverage checks grouping, incomplete/conflicting evidence and no access refresh. Final required checks passed: Debug **231 tests/49 suites**, Release **224/48**, incremental build and whitespace check. Logs `/private/tmp/musiclibrary-fr1-manifest-*.log`.
+
+Changed files: FolderRecoveryManifest domain models, MusicDatabase query, LibraryStore use case, FolderRecoveryReferencePlan and their application/persistence tests. BUILD_PLAN, IMPLEMENTATION_SPEC and FOLDER_RECOVERY_PLAN distinguish this foundation from remaining FR1 work.
+
+Next: **cancellable candidate-file verifier**, with containment/symlink protection, stable-file checks, off-main chunked hashing and temporary fixture coverage. Replacement selection/progress UI follows the verifier. No Apply control or path-writing service is authorized by a verified preview; FR2 remains deferred. Actual OS permission renewal, remount/device/NAS acceptance, global catalogue exclusion, keyboard/VoiceOver and other R8 limits remain open.
+
+Delivery: the preceding accumulated changes were pushed as 9474c6b. The user's GitHub push authorization and established origin/main destination remain in session; inspect Git status/history for this checkpoint's resulting delivery state.
+
+## Previous resume — R8 moved-folder recovery design
 
 This is a **documentation/design checkpoint**. Latest runnable artifact remains **Music Library 0.70 (build 71)** at `build/Music Library 0.70.app`; schema **17**. No source implementation, version metadata, app artifact or catalogue changed this slice. No native app, permission picker, personal catalogue/preferences, media or NAS destination was opened. Existing uncommitted implementation from earlier checkpoints was preserved.
 

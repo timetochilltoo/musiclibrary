@@ -1,6 +1,10 @@
 # Music folder recovery plan
 
-Status: design checkpoint, 10 November 2026. **Not an implemented relocation feature.**
+Status: FR1 manifest/preflight foundation, 10 November 2026. **Not an implemented relocation feature.**
+
+Implemented so far: a coherent read-only root manifest and pure reference preflight
+grouping. No replacement picker, candidate-file reader, verification result, or
+Apply operation is exposed. The remaining FR1 stages below are still planned.
 
 Operational state and the current next slice remain in [HANDOFF.md](HANDOFF.md).
 Architecture/invariants remain in [IMPLEMENTATION_SPEC.md](IMPLEMENTATION_SPEC.md).
@@ -39,7 +43,7 @@ Do not offer Add Music Folder as recovery for an existing root: it creates anoth
 root rather than repairing the original references. Never remove the old root to
 work around a permission or relocation failure.
 
-## FR1 — next implementation slice: read-only replacement preview
+## FR1 — read-only replacement preview
 
 Add **Review Replacement Folder…** beside an unavailable root's existing access
 actions. The sheet explains the registered name/path and asks the user to select
@@ -75,6 +79,16 @@ unverified; do not manufacture a baseline from the replacement and compare it to
 itself. Keep the existing individual-relink route available for later user review.
 
 ### Code and data boundaries
+
+Foundation implemented: `folderRecoveryManifest(rootID:)` reads root metadata,
+revision and references in one deferred read transaction. Bookmark bytes are
+represented only by a SHA-256 digest. Track IDs and CUE ranges are retained.
+`FolderRecoveryReferencePlan` groups identical relative-path strings (not proven
+physical file identities). It classifies ready-to-verify, unverified, unsafe-path
+and conflicting-hash groups without opening files or producing verified evidence.
+All references in a group must carry matching valid full hashes to be ready.
+Ambiguous separators/dot components are conservatively unsafe. Resolved-path,
+symlink and file-stability checks still belong to the future verifier.
 
 1. **MusicDatabase:** add a read-only root-scoped reference manifest query. Return
    root identity/path/bookmark digest/volume/scope and catalogue revision, plus

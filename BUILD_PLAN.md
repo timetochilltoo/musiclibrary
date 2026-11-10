@@ -190,6 +190,13 @@ recovery are specified in [FOLDER_RECOVERY_PLAN.md](FOLDER_RECOVERY_PLAN.md).
 Its next slice is a read-only replacement preview; whole-root apply remains a
 separate deferred slice. Same-path Renew Access must not be widened into relocation.
 
+FR1 foundation (10 November 2026): the root-scoped reference manifest now captures
+root state, bookmark digest, revision, expected hashes and asset/track/CUE links in
+a read-only transaction. Pure preflight groups identical relative paths and flags
+unsafe paths, incomplete hashes and contradictory evidence. It performs no file
+reads or catalogue changes. Next: cancellable candidate-file verification with
+containment/stability checks; replacement UI and all path writes remain pending.
+
 Store more than an absolute path:
 
 - storage-root ID plus relative path;
