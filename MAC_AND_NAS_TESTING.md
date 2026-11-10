@@ -7,7 +7,7 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 ## 1. Launch the packaged Mac app
 
 1. In Finder, open the project folder.
-2. Open the newest sequential package, currently `build/Music Library 0.64.app`. An older `/Applications/Music Library.app` installation is not automatically updated by packaging.
+2. Open the newest sequential package, currently `build/Music Library 0.70.app`. An older `/Applications/Music Library.app` installation is not automatically updated by packaging.
 3. If macOS blocks the first launch, Control-click the app, choose **Open**, then choose **Open** again.
 4. The app opens a catalogue in its Application Support folder. It does not use a SQLite database on the NAS.
 5. Keep the app open while following the tests below. If anything unexpected happens, take a screenshot and note the exact action just before it happened.
@@ -20,6 +20,16 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 4. Do not move, rename, or edit the original media during this guide.
 
 ### R8 Settings recovery/sharing presentation (0.52)
+
+0.70 Renew Access: in the temporary registered-folder fixture, Command-Option-4 must expose Renew Access and the expected registered path. Open the picker and Cancel without selecting a personal folder; the root must remain permission-required. Separately, with a disposable authorized folder, select the exact registered folder and verify one root with the same ID/name/scope/path, updated access and preserved album/file references, without an automatic scan. Different/child/parent paths and mismatched known volume UUIDs must refuse. Successful OS permission grants, remount behavior and unknown-volume identity remain separate acceptance.
+
+0.69 Music Folders: in the registered-folder fixture, Command-Option-4 must show Scan Folder disabled for unavailable permission, visible Check Access, Not scanned yet and access guidance. Show Synthetic Folder Scan Error must render locally without a global alert. In --import-review-fixture, Music Folders must show completed counts, Rescan Folder and Review Scan; Review Scan opens that recorded batch even while the synthetic root is offline. Actual scan startup, progress updates and renewed permission remain separate acceptance using disposable authorized folders.
+
+0.68 scan-entry fixture: run `Scripts/run-navigation-fixture.sh --compact-settings-fixture --registered-folder-fixture`. Import Music Folder opens the chooser. The temporary folder has no bookmark and may already be unavailable after startup access recheck; verify its disabled state, subfolder guard and Settings guidance. Show Synthetic Scan Error exercises the same task-local error handler without a scan/file operation. Cancel returns to zero albums without a global alert. The service regression separately verifies permission refusal before batch creation. With an explicitly disposable authorized folder, separately check admitted startup opens its Imports batch and later scan errors remain in batch review.
+
+0.67 first-run fixture: run `Scripts/run-navigation-fixture.sh --compact-settings-fixture --empty-library-fixture`, optionally adding `--dark-appearance-fixture`. Check both starting cards, Add Physical Album opening the existing entry sheet and Cancel returning to zero albums. Import Music Folder must open Music Folders setup with a named Add Music Folder action and permission/scan guidance. Do not choose a personal folder during automated acceptance. Searching must show No matching albums; Clear Search and Filters must restore the starting cards. Registered-folder scan progression and actual permission grants are separate acceptance.
+
+0.65 cross-category recovery context: in the synthetic message fixture, Show Incomplete Outcome then use Command-Option-5/7 to inspect Sharing/Advanced. Each must explain the blocked actions, retain the selectable message/path and keep category navigation available. Command-Option-6 must retain its original once-only recovery guidance. Show Recovered Outcome must remove the incomplete banner and release review-only control blocks (normal destination guards still apply). Repeat light/dark at compact size without configuring destinations or executing maintenance. The fixture does not seed matching Advanced maintenance text; exact-match deduplication requires separate source/fixture validation.
 
 0.64 native message fixture: run `Scripts/run-navigation-fixture.sh --compact-settings-fixture --recovery-message-fixture`, optionally with `--dark-appearance-fixture`. In Backup & Restore, Show Recovered Outcome must display previous-catalogue reopened wording and an enabled retry with chooser/confirmation explanation. Show Incomplete Outcome must display retained recovery guidance/path once, disable export/restore and hide the retry explanation. Expand database-only options and check their disabled controls. Synthetic outcomes invoke no file or restore services; they do not create a recovery archive at the displayed synthetic path. Check read/copy selection separately; native AX text presence alone is not spoken VoiceOver or clipboard acceptance.
 

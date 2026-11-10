@@ -116,6 +116,12 @@ public final class LibraryStore: ObservableObject {
     private var recoveryFixtureDirectory: URL?
     private var failRecoveryFixtureInstallation = false
     private var failRecoveryFixtureRollback = false
+    private var failRecoveryFixtureDatabaseCopy = false
+    private var failRecoveryFixtureArtworkCopy = false
+    enum RecoveryFixtureMoveFailure: Sendable { case database, artwork }
+    private var recoveryFixtureMoveFailure: RecoveryFixtureMoveFailure?
+    enum RecoveryFixtureRollbackFailure: Sendable { case afterDatabase, afterArtwork }
+    private var recoveryFixtureRollbackFailure: RecoveryFixtureRollbackFailure?
     private let metadataLookupProvider: any MetadataLookupProviding
     private var reloadGeneration = 0
     private var searchGeneration = 0
@@ -145,7 +151,7 @@ public final class LibraryStore: ObservableObject {
     }
 
     /// Internal integration composition, confined to a disposable temporary child.
-    convenience init(recoveryFixtureDirectory directory: URL, failRecoveryInstallation: Bool = false, failRecoveryRollback: Bool = false) async throws {
+    convenience init(recoveryFixtureDirectory directory: URL, failRecoveryInstallation: Bool = false, failRecoveryRollback: Bool = false, failRecoveryDatabaseCopy: Bool = false, failRecoveryArtworkCopy: Bool = false, failRecoveryMove: RecoveryFixtureMoveFailure? = nil, failRecoveryRollbackAt: RecoveryFixtureRollbackFailure? = nil) async throws {
         guard RegisteredPathSecurity.relativePath(of: directory, within: FileManager.default.temporaryDirectory)?.isEmpty == false else {
             throw DatabaseError.invalidOperation("Recovery fixtures require a temporary child directory.")
         }
@@ -157,6 +163,10 @@ public final class LibraryStore: ObservableObject {
         self.recoveryFixtureDirectory = directory
         self.failRecoveryFixtureInstallation = failRecoveryInstallation
         self.failRecoveryFixtureRollback = failRecoveryRollback
+        self.failRecoveryFixtureDatabaseCopy = failRecoveryDatabaseCopy
+        self.failRecoveryFixtureArtworkCopy = failRecoveryArtworkCopy
+        self.recoveryFixtureMoveFailure = failRecoveryMove
+        self.recoveryFixtureRollbackFailure = failRecoveryRollbackAt
         self.catalogueURL = url
         self.managedArtworkStore = .init(directory: directory.appending(path: "Artwork"))
         try await reload()
@@ -177,6 +187,81 @@ public final class LibraryStore: ObservableObject {
         guard recoveryFixtureDirectory != nil, failRecoveryFixtureRollback else { return }
         failRecoveryFixtureRollback = false
         throw DatabaseError.invalidOperation("Injected recovery rollback failure.")
+    }
+
+    private func checkRecoveryFixtureRollback(at point: RecoveryFixtureRollbackFailure) throws {
+        guard recoveryFixtureDirectory != nil, recoveryFixtureRollbackFailure == point else { return }
+        recoveryFixtureRollbackFailure = nil
+        let step = point == .afterDatabase ? "database" : "artwork"
+        throw DatabaseError.invalidOperation("Injected recovery rollback failure after \(step) restoration.")
+    }
+
+    private func takePartialCopyFixtureRoot() -> URL? {
+        guard let recoveryFixtureDirectory, failRecoveryFixtureDatabaseCopy else { return nil }
+        failRecoveryFixtureDatabaseCopy = false
+        return recoveryFixtureDirectory
+    }
+
+    private func takeRecoveryFixtureMoveFailure() -> RecoveryFixtureMoveFailure? {
+        guard recoveryFixtureDirectory != nil else { return nil }
+        defer { recoveryFixtureMoveFailure = nil }
+        return recoveryFixtureMoveFailure
+    }
+
+    nonisolated private static func moveRecoveryOriginal(from source: URL, to destination: URL, failureFixtureRoot: URL?) throws {
+        if let root = failureFixtureRoot {
+            guard RegisteredPathSecurity.contains(source, within: root), RegisteredPathSecurity.contains(destination, within: root) else {
+                throw DatabaseError.invalidOperation("Move-failure fixtures require temporary fixture paths.")
+            }
+            throw DatabaseError.invalidOperation("Injected recovery original move failure.")
+        }
+        try FileManager.default.moveItem(at: source, to: destination)
+    }
+
+    nonisolated private static func copyRecoveryDatabase(from source: URL, to destination: URL, partialCopyFixtureRoot: URL?) throws {
+        if let root = partialCopyFixtureRoot {
+            guard RegisteredPathSecurity.contains(source, within: root), RegisteredPathSecurity.contains(destination, within: root) else {
+                throw DatabaseError.invalidOperation("Partial-copy fixtures require temporary fixture paths.")
+            }
+            // Leave an actual truncated replacement at the destination, just as an
+            // interrupted copy may do. Only internal temporary composition enables this.
+            let handle = try FileHandle(forReadingFrom: source)
+            defer { try? handle.close() }
+            let prefix = try handle.read(upToCount: 128) ?? Data()
+            try prefix.write(to: destination)
+            throw DatabaseError.invalidOperation("Injected recovery database copy failure after 128 bytes.")
+        }
+        try FileManager.default.copyItem(at: source, to: destination)
+    }
+
+    private func takePartialArtworkCopyFixtureRoot() -> URL? {
+        guard let recoveryFixtureDirectory, failRecoveryFixtureArtworkCopy else { return nil }
+        failRecoveryFixtureArtworkCopy = false
+        return recoveryFixtureDirectory
+    }
+
+    nonisolated private static func copyRecoveryArtwork(from source: URL, to destination: URL, partialCopyFixtureRoot: URL?) throws {
+        if let root = partialCopyFixtureRoot {
+            guard RegisteredPathSecurity.contains(source, within: root), RegisteredPathSecurity.contains(destination, within: root) else {
+                throw DatabaseError.invalidOperation("Partial artwork-copy fixtures require temporary fixture paths.")
+            }
+            let files = try FileManager.default.contentsOfDirectory(at: source, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey]).sorted { $0.path < $1.path }
+            guard let first = files.first, RegisteredPathSecurity.contains(first, within: root),
+                  try first.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true,
+                  try first.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink != true else {
+                throw DatabaseError.invalidOperation("Partial artwork-copy fixture requires an artwork file.")
+            }
+            let partialFile = destination.appending(path: first.lastPathComponent)
+            guard RegisteredPathSecurity.contains(partialFile, within: root) else {
+                throw DatabaseError.invalidOperation("Partial artwork-copy destination escaped the fixture.")
+            }
+            try FileManager.default.createDirectory(at: partialFile.deletingLastPathComponent(), withIntermediateDirectories: true)
+            let handle = try FileHandle(forReadingFrom: first)
+            defer { try? handle.close() }
+            try (handle.read(upToCount: 128) ?? Data()).write(to: partialFile)
+            throw DatabaseError.invalidOperation("Injected recovery artwork copy failure after a partial file.")
+        }
+        try FileManager.default.copyItem(at: source, to: destination)
     }
 
     private func validateRecoveryFixtureURL(_ url: URL) throws {
@@ -479,6 +564,24 @@ public final class LibraryStore: ObservableObject {
     public func renameStorageRoot(_ id: StorageRootID, to displayName: String) async throws {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
         try await database.renameStorageRoot(id, to: displayName)
+        try await reload()
+    }
+
+    public func renewStorageRootAccess(_ id: StorageRootID, selecting url: URL) async throws {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        guard let root = try await database.storageRoots().first(where: { $0.id == id }) else {
+            throw DatabaseError.notFound("Storage root")
+        }
+        try StorageRootAccessRenewal.validatePath(url, for: root)
+        let accessed = url.startAccessingSecurityScopedResource()
+        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+        guard accessed else { throw DatabaseError.invalidOperation("Permission to access the selected folder was not available.") }
+        let values = try url.resourceValues(forKeys: [.isDirectoryKey, .volumeUUIDStringKey])
+        guard values.isDirectory == true else { throw DatabaseError.invalidOperation("Choose the registered music folder, not a file.") }
+        try StorageRootAccessRenewal.validateVolume(values.volumeUUIDString, for: root)
+        let bookmark = try url.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil)
+        try await database.renewStorageRootBookmark(id, expectedPath: root.lastKnownPath, bookmarkData: bookmark)
+        storageRootLocalities.removeValue(forKey: id)
         try await reload()
     }
 
@@ -998,13 +1101,26 @@ public final class LibraryStore: ObservableObject {
         let hadArtwork = FileManager.default.fileExists(atPath: liveArtworkDirectory.path)
         self.database = nil
         removeSQLiteSidecars(for: catalogueURL)
+        let partialCopyFixtureRoot = takePartialCopyFixtureRoot()
+        let partialArtworkCopyFixtureRoot = takePartialArtworkCopyFixtureRoot()
+        let moveFailure = takeRecoveryFixtureMoveFailure()
+        let moveFixtureRoot = recoveryFixtureDirectory
+        var databaseMoved = false
+        var artworkMoved = false
         do {
             try await Task.detached(priority: .userInitiated) {
-                let installManager = FileManager.default
-                if installManager.fileExists(atPath: catalogueURL.path) { try installManager.moveItem(at: catalogueURL, to: rollbackDatabase) }
-                if installManager.fileExists(atPath: liveArtworkDirectory.path) { try installManager.moveItem(at: liveArtworkDirectory, to: rollbackArtwork) }
-                try installManager.copyItem(at: staged.databaseURL, to: catalogueURL)
-                try installManager.copyItem(at: staged.artworkDirectory, to: liveArtworkDirectory)
+                try Self.moveRecoveryOriginal(from: catalogueURL, to: rollbackDatabase, failureFixtureRoot: moveFailure == .database ? moveFixtureRoot : nil)
+            }.value
+            databaseMoved = true
+            if hadArtwork {
+                try await Task.detached(priority: .userInitiated) {
+                    try Self.moveRecoveryOriginal(from: liveArtworkDirectory, to: rollbackArtwork, failureFixtureRoot: moveFailure == .artwork ? moveFixtureRoot : nil)
+                }.value
+                artworkMoved = true
+            }
+            try await Task.detached(priority: .userInitiated) {
+                try Self.copyRecoveryDatabase(from: staged.databaseURL, to: catalogueURL, partialCopyFixtureRoot: partialCopyFixtureRoot)
+                try Self.copyRecoveryArtwork(from: staged.artworkDirectory, to: liveArtworkDirectory, partialCopyFixtureRoot: partialArtworkCopyFixtureRoot)
             }.value
             try checkRecoveryFixtureInstallation()
             let restored = try MusicDatabase(url: catalogueURL)
@@ -1020,15 +1136,28 @@ public final class LibraryStore: ObservableObject {
             self.database = nil
             do {
                 try checkRecoveryFixtureRollback()
-                guard FileManager.default.fileExists(atPath: rollbackDatabase.path),
-                      !hadArtwork || FileManager.default.fileExists(atPath: rollbackArtwork.path) else {
+                let manager = FileManager.default
+                guard databaseMoved
+                        ? manager.fileExists(atPath: rollbackDatabase.path)
+                        : manager.fileExists(atPath: catalogueURL.path) && !manager.fileExists(atPath: rollbackDatabase.path),
+                      !hadArtwork || (artworkMoved
+                        ? manager.fileExists(atPath: rollbackArtwork.path)
+                        : manager.fileExists(atPath: liveArtworkDirectory.path) && !manager.fileExists(atPath: rollbackArtwork.path)) else {
                     throw DatabaseError.invalidOperation("Previous catalogue rollback files are unavailable.")
                 }
                 try removeRecoverySidecars(for: catalogueURL)
-                if FileManager.default.fileExists(atPath: catalogueURL.path) { try FileManager.default.removeItem(at: catalogueURL) }
-                if FileManager.default.fileExists(atPath: liveArtworkDirectory.path) { try FileManager.default.removeItem(at: liveArtworkDirectory) }
-                try FileManager.default.moveItem(at: rollbackDatabase, to: catalogueURL)
-                if hadArtwork { try FileManager.default.moveItem(at: rollbackArtwork, to: liveArtworkDirectory) }
+                if databaseMoved {
+                    if manager.fileExists(atPath: catalogueURL.path) { try manager.removeItem(at: catalogueURL) }
+                    try manager.moveItem(at: rollbackDatabase, to: catalogueURL)
+                }
+                try checkRecoveryFixtureRollback(at: .afterDatabase)
+                if artworkMoved {
+                    if manager.fileExists(atPath: liveArtworkDirectory.path) { try manager.removeItem(at: liveArtworkDirectory) }
+                    try manager.moveItem(at: rollbackArtwork, to: liveArtworkDirectory)
+                } else if !hadArtwork, manager.fileExists(atPath: liveArtworkDirectory.path) {
+                    try manager.removeItem(at: liveArtworkDirectory)
+                }
+                try checkRecoveryFixtureRollback(at: .afterArtwork)
                 let recovered = try MusicDatabase(url: catalogueURL)
                 try await recovered.migrate()
                 self.database = recovered
@@ -1147,7 +1276,7 @@ public final class LibraryStore: ObservableObject {
 
     private func restoreMasterBackupUncoordinated(from manifestURL: URL) async throws {
         try validateRecoveryFixtureURL(manifestURL)
-        guard let catalogueURL else { throw DatabaseError.notFound("Catalogue database") }
+        guard let catalogueURL, database != nil else { throw DatabaseError.notFound("Catalogue database") }
         let accessed = manifestURL.startAccessingSecurityScopedResource()
         defer { if accessed { manifestURL.stopAccessingSecurityScopedResource() } }
         guard accessed || hasRecoveryFixtureAccess(to: manifestURL) else { throw DatabaseError.invalidOperation("Permission to access the selected master backup was not available.") }
@@ -1157,16 +1286,18 @@ public final class LibraryStore: ObservableObject {
         let backupURL = try MasterBackupArchive.validatedBackupURL(for: manifest, in: archive)
         let recoveryDirectory = catalogueURL.deletingLastPathComponent().appending(path: "Recovery", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: recoveryDirectory, withIntermediateDirectories: true)
-        let recoveryURL = recoveryDirectory.appending(path: "MusicLibrary-before-restore-\(Int64(Date.now.timeIntervalSince1970)).sqlite")
+        let recoveryURL = recoveryDirectory.appending(path: "MusicLibrary-before-restore-\(Int64(Date.now.timeIntervalSince1970))-\(UUID().uuidString).sqlite")
         try await database?.checkpointWAL()
         database = nil
         try? FileManager.default.removeItem(at: URL(fileURLWithPath: catalogueURL.path + "-wal"))
         try? FileManager.default.removeItem(at: URL(fileURLWithPath: catalogueURL.path + "-shm"))
+        let partialCopyFixtureRoot = takePartialCopyFixtureRoot()
+        let moveFailure = takeRecoveryFixtureMoveFailure()
+        var databaseMoved = false
         do {
-            if FileManager.default.fileExists(atPath: catalogueURL.path) {
-                try FileManager.default.moveItem(at: catalogueURL, to: recoveryURL)
-            }
-            try FileManager.default.copyItem(at: backupURL, to: catalogueURL)
+            try Self.moveRecoveryOriginal(from: catalogueURL, to: recoveryURL, failureFixtureRoot: moveFailure == .database ? recoveryFixtureDirectory : nil)
+            databaseMoved = true
+            try Self.copyRecoveryDatabase(from: backupURL, to: catalogueURL, partialCopyFixtureRoot: partialCopyFixtureRoot)
             try checkRecoveryFixtureInstallation()
             let restored = try MusicDatabase(url: catalogueURL)
             try await restored.migrate()
@@ -1178,12 +1309,18 @@ public final class LibraryStore: ObservableObject {
             database = nil
             do {
                 try checkRecoveryFixtureRollback()
-                guard FileManager.default.fileExists(atPath: recoveryURL.path) else {
+                let manager = FileManager.default
+                guard databaseMoved
+                        ? manager.fileExists(atPath: recoveryURL.path)
+                        : manager.fileExists(atPath: catalogueURL.path) && !manager.fileExists(atPath: recoveryURL.path) else {
                     throw DatabaseError.invalidOperation("Previous database recovery file is unavailable.")
                 }
                 try removeRecoverySidecars(for: catalogueURL)
-                if FileManager.default.fileExists(atPath: catalogueURL.path) { try FileManager.default.removeItem(at: catalogueURL) }
-                try FileManager.default.moveItem(at: recoveryURL, to: catalogueURL)
+                if databaseMoved {
+                    if manager.fileExists(atPath: catalogueURL.path) { try manager.removeItem(at: catalogueURL) }
+                    try manager.moveItem(at: recoveryURL, to: catalogueURL)
+                }
+                try checkRecoveryFixtureRollback(at: .afterDatabase)
                 let recovered = try MusicDatabase(url: catalogueURL)
                 try await recovered.migrate()
                 database = recovered

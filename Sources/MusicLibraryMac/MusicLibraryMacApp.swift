@@ -92,7 +92,10 @@ private struct LibraryNavigationFixtureWorkspace: View {
         }
         .task {
             guard store == nil, failure == nil else { return }
-            do { store = try await LibraryStore.makeNavigationFixture(includeImportReview: ProcessInfo.processInfo.arguments.contains("--import-review-fixture")).store }
+            do {
+                let registeredFolder = ProcessInfo.processInfo.arguments.contains("--registered-folder-fixture")
+                store = try await LibraryStore.makeNavigationFixture(includeImportReview: ProcessInfo.processInfo.arguments.contains("--import-review-fixture"), emptyLibrary: ProcessInfo.processInfo.arguments.contains("--empty-library-fixture") || registeredFolder, includeMusicFolders: registeredFolder).store
+            }
             catch { failure = error.localizedDescription }
         }
     }
@@ -341,7 +344,12 @@ private struct LibraryShellView: View {
         }
         .sheet(isPresented: $showsLocationEditor) { LocationEditor(library: library) }
         .sheet(isPresented: $showsBoxSetEditor) { BoxSetEditor(library: library) }
-        .sheet(isPresented: $showsScanRootPicker) { ScanRootPicker(library: library) }
+        .sheet(isPresented: $showsScanRootPicker) {
+            ScanRootPicker(library: library, onStarted: { batchID in
+                section = .importInbox
+                selectedImportBatchID = batchID
+            })
+        }
         .sheet(isPresented: $showsPlaylistEditor) { PlaylistEditor(library: library) }
         .sheet(item: $albumToEdit) { album in EditAlbumEditor(library: library, album: album) }
         .sheet(item: $playlistToRename) { playlist in PlaylistRenameEditor(library: library, playlist: playlist) }
@@ -506,19 +514,26 @@ private struct LibraryShellView: View {
             }
             .overlay {
                 if library.isReady && displayedAlbums.isEmpty {
-                    ContentUnavailableView {
-                        Label(activeAlbumFilter || !searchText.isEmpty ? "No matching albums" : "Add your first album", systemImage: "opticaldisc")
-                    } description: {
-                        Text(albumRootFilter == "thisMac" ? "This Mac includes folders confirmed on a local volume. For offline or unverified folders, choose their name in the Music Folder filter." : (activeAlbumFilter || !searchText.isEmpty ? "Try another search or clear your filters." : "Add a physical album or scan a registered music folder."))
-                    } actions: {
-                        if activeAlbumFilter || !searchText.isEmpty {
+                    if !activeAlbumFilter && searchText.isEmpty {
+                        AlbumLibraryEmptyState(hasMusicFolders: !library.storageRoots.isEmpty,
+                            addPhysicalAlbum: { showsAlbumEditor = true },
+                            importMusicFolder: {
+                                if library.storageRoots.isEmpty {
+                                    settingsCategory = .musicFolders
+                                    section = .settings
+                                } else { showsScanRootPicker = true }
+                            })
+                        .disabled(selectedAlbumID != nil)
+                    } else {
+                        ContentUnavailableView {
+                            Label("No matching albums", systemImage: "opticaldisc")
+                        } description: {
+                            Text(albumRootFilter == "thisMac" ? "This Mac includes folders confirmed on a local volume. For offline or unverified folders, choose their name in the Music Folder filter." : "Try another search or clear your filters.")
+                        } actions: {
                             Button("Clear Search and Filters") { clearAlbumFilters(); searchText = "" }
-                        } else {
-                            Button("Add Physical Album") { showsAlbumEditor = true }
-                            Button("Scan Music Folder") { showsScanRootPicker = true }
                         }
+                        .disabled(selectedAlbumID != nil)
                     }
-                    .disabled(selectedAlbumID != nil)
                 }
             }
         case .locations:
@@ -767,6 +782,7 @@ private struct LibraryShellView: View {
                     .help("Add a physical album to the catalogue")
                 } else if section == .settings && settingsCategory == .musicFolders {
                     Button("Add Music Folder", systemImage: "plus") { showsStorageRootPicker = true }
+                        .labelStyle(.titleAndIcon)
                 } else if section == .locations || section == .boxSets || section == .importInbox || section == .playlists {
                     Button(section == .locations ? "Add Location" : section == .boxSets ? "Add Box Set" : section == .importInbox ? "Rescan Music Folder" : "Add Playlist", systemImage: "plus") {
                         switch section {
@@ -1664,6 +1680,14 @@ private struct StorageRootList: View {
                 }
             }
 
+            if category == .sharing || category == .advanced, let message = library.recoveryReviewMessage {
+                Section("Recovery Needs Review") {
+                    Text(message).foregroundStyle(.red).textSelection(.enabled)
+                    Text("Sharing, backup and maintenance actions are unavailable while recovery needs review.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+
             if shows(.sharing, .backupRestore, .advanced), library.transferActivity.isBusy {
                 Section("Catalogue Activity") {
                     if let active = library.transferActivity.active {
@@ -1739,9 +1763,11 @@ private struct StorageRootList: View {
                     ProgressView("Working on catalogue recovery data…")
                         .controlSize(.small)
                 }
-                Text(library.catalogueMaintenanceStatus)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if library.catalogueMaintenanceStatus != library.recoveryReviewMessage {
+                    Text(library.catalogueMaintenanceStatus)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 Button("Review Safe Cleanup…", systemImage: "sparkles") {
                     loadCleanupPreview()
                 }
@@ -1813,7 +1839,7 @@ private struct StorageRootList: View {
                     }
                 }
                 if library.storageRoots.isEmpty {
-                    ContentUnavailableView("No music folders", systemImage: "externaldrive", description: Text("Add a local or NAS folder. The app saves access permission, not NAS credentials."))
+                    ContentUnavailableView("Add your first music folder", systemImage: "folder.badge.plus", description: Text("Choose Add Music Folder above to grant access to a local or NAS folder. Then use its Scan action to find releases for review. Source audio stays in place; NAS credentials are not stored."))
                 }
                 ForEach(library.storageRoots) { root in
                     VStack(alignment: .leading, spacing: 8) {
@@ -1826,23 +1852,7 @@ private struct StorageRootList: View {
                             Spacer()
                             Text(label(for: root.status)).font(.caption).foregroundStyle(color(for: root.status))
                         }
-                        HStack {
-                            Picker("Use", selection: Binding(get: { root.scope }, set: { scope in
-                                Task { do { try await library.updateStorageRootScope(root.id, to: scope) } catch { library.presentError(error) } }
-                            })) {
-                                ForEach(StorageRootScope.allCases, id: \.self) { scope in Text(scope.displayName).tag(scope) }
-                            }
-                            .labelsHidden()
-                            .pickerStyle(.menu)
-                            Button("Rescan", systemImage: "arrow.clockwise") {
-                                Task { do { _ = try await library.startImportScan(rootID: root.id) } catch { library.presentError(error) } }
-                            }
-                            .disabled(root.status != .available)
-                            if let lastScan = latestBatch(for: root.id) {
-                                Text("Last scan \(lastScan.startedAt.formatted(date: .abbreviated, time: .shortened))")
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }
-                        }
+                        MusicFolderScanControls(library: library, root: root, latestBatch: latestBatch(for: root.id), onReview: onShowImportBatch)
                     }
                     .contextMenu {
                         Button("Rename") { rootToRename = root }
@@ -2389,59 +2399,6 @@ private struct StorageRootRenameEditor: View {
     }
 
     private func save() { Task { do { try await library.renameStorageRoot(root.id, to: name); dismiss() } catch { library.presentError(error) } } }
-}
-
-struct ScanRootPicker: View {
-    @Environment(\.dismiss) private var dismiss
-    @ObservedObject var library: LibraryStore
-    var onStarted: (ImportBatchID) -> Void = { _ in }
-    @State private var showsChildFolderPicker = false
-    @State private var isStarting = false
-
-    var body: some View {
-        NavigationStack {
-            List(library.storageRoots) { root in
-                Button { scan(root) } label: {
-                    HStack { VStack(alignment: .leading) { Text(root.displayName); Text(root.lastKnownPath).font(.caption).foregroundStyle(.secondary).lineLimit(1) }; Spacer(); Text(root.status.rawValue).font(.caption).foregroundStyle(root.status == .available ? .green : .secondary) }
-                }
-                .disabled(root.status != .available)
-            }
-            .navigationTitle("Choose Music Folder")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .primaryAction) { Button("Scan Album Folder…", systemImage: "folder") { showsChildFolderPicker = true } }
-            }
-        }
-        .disabled(isStarting)
-        .overlay { if isStarting { ProgressView("Starting scan…") } }
-        .interactiveDismissDisabled(isStarting)
-        .frame(width: 520, height: 360)
-        .fileImporter(isPresented: $showsChildFolderPicker, allowedContentTypes: [.folder]) { result in
-            guard case let .success(url) = result else { return }
-            guard !isStarting else { return }
-            isStarting = true
-            Task {
-                defer { isStarting = false }
-                do {
-                    let id = try await library.startImportScan(containing: url)
-                    onStarted(id)
-                    dismiss()
-                } catch {
-                    library.presentError(error)
-                }
-            }
-        }
-    }
-
-    private func scan(_ root: StorageRoot) {
-        guard !isStarting else { return }
-        isStarting = true
-        Task {
-            defer { isStarting = false }
-            do { let id = try await library.startImportScan(rootID: root.id); onStarted(id); dismiss() }
-            catch { library.presentError(error) }
-        }
-    }
 }
 
 private struct PlaylistEditor: View {

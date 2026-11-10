@@ -6,12 +6,24 @@ import MusicPersistence
 extension LibraryStore {
     /// Real services over disposable synthetic data; never calls live startup.
     /// The caller may remove the returned temporary directory after closing the fixture.
-    public static func makeNavigationFixture(includeImportReview: Bool = false) async throws -> (store: LibraryStore, directory: URL) {
+    public static func makeNavigationFixture(includeImportReview: Bool = false, emptyLibrary: Bool = false, includeMusicFolders: Bool = false) async throws -> (store: LibraryStore, directory: URL) {
         let directory = FileManager.default.temporaryDirectory
             .appending(path: "MusicLibrary-Navigation-\(UUID().uuidString)", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let database = try MusicDatabase(url: directory.appending(path: "fixture.sqlite"))
         try await database.migrate()
+        if emptyLibrary {
+            if includeMusicFolders {
+                let folder = directory.appending(path: "Temporary permission fixture")
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                // Deliberately stale available state: admission rechecks the absent
+                // bookmark and refuses before creating a scan or reading media.
+                _ = try await database.createStorageRoot(.init(displayName: "Temporary folder — permission test", lastKnownPath: folder.path, bookmarkData: nil, status: .available))
+            }
+            let store = LibraryStore(database: database, metadataLookupProvider: NavigationMetadataFixture())
+            try await store.reload()
+            return (store, directory)
+        }
         let location = try await database.createLocation(.init(name: "Fixture shelf"))
         let box = try await database.createBoxSet(.init(title: "Fixture collected editions", physicalLocationID: location.id))
         let contributor = try await database.createContributor(.init(name: "Fixture Orchestra"))

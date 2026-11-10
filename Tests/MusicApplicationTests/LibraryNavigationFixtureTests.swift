@@ -6,6 +6,31 @@ import Testing
 @Suite("Navigation fixture")
 @MainActor
 struct LibraryNavigationFixtureTests {
+    @Test("Registered-folder fixture refuses stale permission before creating a scan")
+    func registeredFolderPermission() async throws {
+        let fixture = try await LibraryStore.makeNavigationFixture(emptyLibrary: true, includeMusicFolders: true)
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+        let root = try #require(fixture.store.storageRoots.first)
+        #expect(root.lastKnownPath.hasPrefix(fixture.directory.path + "/"))
+        #expect(root.status == .available && root.bookmarkData == nil)
+        do { _ = try await fixture.store.startImportScan(rootID: root.id); Issue.record("Missing permission admitted scan") } catch {}
+        #expect(fixture.store.importBatches.isEmpty)
+        #expect(fixture.store.storageRoots.first?.status == .permissionRequired)
+        #expect(fixture.store.errorMessage == nil)
+        #expect(fixture.store.catalogueAlbums.isEmpty)
+    }
+
+    @Test("Empty-library navigation fixture starts without catalogue records or folders")
+    func emptyLibrary() async throws {
+        let fixture = try await LibraryStore.makeNavigationFixture(emptyLibrary: true)
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+        #expect(fixture.store.isReady)
+        #expect(fixture.store.catalogueAlbums.isEmpty)
+        #expect(fixture.store.storageRoots.isEmpty)
+        #expect(fixture.store.importBatches.isEmpty)
+        #expect(fixture.store.contributors.isEmpty)
+    }
+
     @Test("Synthetic recovery messages retain fixture data and refuse normal stores")
     func syntheticRecoveryMessages() async throws {
         let fixture = try await LibraryStore.makeNavigationFixture()

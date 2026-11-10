@@ -7,6 +7,8 @@ public enum LibraryLaunchMode: Equatable, Sendable {
         let navigation = bundleIdentifier == "com.timetochilltoo.MusicLibraryNavigationFixture"
             || arguments.contains("--navigation-fixture")
             || arguments.contains("--import-review-fixture")
+            || arguments.contains("--empty-library-fixture")
+            || arguments.contains("--registered-folder-fixture")
         let browse = bundleIdentifier == "com.timetochilltoo.MusicLibraryBrowseFixture"
             || arguments.contains("--browse-fixture")
         guard navigation || browse else { return .catalogue }

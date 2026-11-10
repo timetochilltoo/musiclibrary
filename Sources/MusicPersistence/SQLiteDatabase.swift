@@ -353,6 +353,21 @@ public actor MusicDatabase {
         }
     }
 
+    public func renewStorageRootBookmark(_ id: StorageRootID, expectedPath: String, bookmarkData: Data) throws {
+        guard !bookmarkData.isEmpty else { throw DatabaseError.invalidOperation("Folder permission bookmark is empty.") }
+        try transaction {
+            let statement = try Self.prepare("UPDATE storage_root SET bookmark_data = ?, status = 'available', bookmark_needs_refresh = 0, last_seen_at = ? WHERE id = ? AND last_known_path = ?;", on: connection)
+            defer { sqlite3_finalize(statement) }
+            try Self.bind(bookmarkData, at: 1, to: statement)
+            try Self.bind(Self.milliseconds(Date()), at: 2, to: statement)
+            try Self.bind(id.description, at: 3, to: statement)
+            try Self.bind(expectedPath, at: 4, to: statement)
+            try Self.stepDone(statement, connection: connection)
+            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.invalidOperation("The registered folder changed or was removed. Reopen Music Folders and try again.") }
+            try incrementRevision()
+        }
+    }
+
     public func deleteStorageRoot(_ id: StorageRootID) throws {
         try transaction {
             guard !(try Self.exists("SELECT 1 FROM digital_asset WHERE storage_root_id = ? LIMIT 1;", value: id.description, on: connection)) else { throw DatabaseError.invalidOperation("A storage root with digital assets cannot be removed.") }

@@ -14,7 +14,7 @@ struct LibraryLaunchModeTests {
         for identifier in ["com.timetochilltoo.MusicLibraryNavigationFixture", "com.timetochilltoo.MusicLibraryBrowseFixture"] {
             #expect(LibraryLaunchMode.resolve(bundleIdentifier: identifier, arguments: [], supportsFixtures: false) == .unavailableFixture)
         }
-        for flag in ["--navigation-fixture", "--browse-fixture", "--import-review-fixture"] {
+        for flag in ["--navigation-fixture", "--browse-fixture", "--import-review-fixture", "--empty-library-fixture", "--registered-folder-fixture"] {
             #expect(LibraryLaunchMode.resolve(bundleIdentifier: nil, arguments: [flag], supportsFixtures: false) == .unavailableFixture)
         }
     }

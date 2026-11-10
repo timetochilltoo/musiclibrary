@@ -7,6 +7,280 @@ import MusicPersistence
 @Suite("Isolated recovery transfer integration")
 @MainActor
 struct RecoveryTransferIntegrationTests {
+    @Test("Interrupted archive rollback retains recovery after restoring some originals", arguments: [LibraryStore.RecoveryFixtureRollbackFailure.afterDatabase, .afterArtwork])
+    func archiveRollbackInterruption(point: LibraryStore.RecoveryFixtureRollbackFailure) async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let manager = FileManager.default
+        let store = try await LibraryStore(recoveryFixtureDirectory: root, failRecoveryInstallation: true, failRecoveryRollbackAt: point)
+        let album = try await store.addAlbum(.init(title: "Archived title"))
+        let cover = root.appending(path: "Artwork/cover.jpg")
+        try manager.createDirectory(at: cover.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data([1, 2]).write(to: cover)
+        let archive = try await store.exportCompleteCatalogueArchive(to: root.appending(path: "Exports"))
+        try await store.updateAlbum(album.id, with: .init(title: "Live original"))
+        try Data([9, 8]).write(to: cover)
+        let audio = root.appending(path: "source-sentinel.flac")
+        try Data([4, 5]).write(to: audio)
+        let revision = store.catalogueRevision
+        var caught: RestoreRecoveryError?
+        do { try await store.restoreCompleteCatalogueArchive(from: archive); Issue.record("Expected interrupted rollback") }
+        catch { caught = try #require(error as? RestoreRecoveryError) }
+        let report = try #require(caught)
+        let step = point == .afterDatabase ? "database" : "artwork"
+        #expect(report.outcome == .recoveryIncomplete)
+        #expect(report.restoreFailure == "Injected recovery installation failure.")
+        #expect(report.recoveryFailure == "Injected recovery rollback failure after \(step) restoration.")
+        #expect(store.recoveryReviewMessage == report.localizedDescription)
+        #expect(!report.localizedDescription.contains("was restored and reopened"))
+        #expect(try CompleteCatalogueArchive.verify(at: report.recoveryURL).revision == revision)
+        let restoredDatabase = root.appending(path: "MusicLibrary.sqlite")
+        try MusicDatabase.verifyStandaloneBackupFile(at: restoredDatabase)
+        let original = try MusicDatabase(url: restoredDatabase)
+        #expect(try await original.albums().first?.title == "Live original")
+        let rollback = try #require(manager.contentsOfDirectory(at: root, includingPropertiesForKeys: nil).first { $0.lastPathComponent.hasPrefix("RestoreRollback-") })
+        #expect(!manager.fileExists(atPath: rollback.appending(path: CompleteCatalogueArchive.databaseFileName).path))
+        if point == .afterDatabase {
+            #expect(try Data(contentsOf: cover) == Data([1, 2]))
+            #expect(try Data(contentsOf: rollback.appending(path: "Artwork/cover.jpg")) == Data([9, 8]))
+        } else {
+            #expect(try Data(contentsOf: cover) == Data([9, 8]))
+            #expect(!manager.fileExists(atPath: rollback.appending(path: "Artwork").path))
+        }
+        #expect(try Data(contentsOf: audio) == Data([4, 5]))
+        #expect(!store.transferActivity.isBusy)
+        do { _ = try await store.addAlbum(.init(title: "Must refuse")); Issue.record("Interrupted rollback accepted edits") } catch {}
+        do { try await store.restoreCompleteCatalogueArchive(from: archive); Issue.record("Interrupted rollback accepted restore") } catch {}
+        #expect(store.recoveryReviewMessage == report.localizedDescription)
+        #expect(try CompleteCatalogueArchive.verify(at: report.recoveryURL).revision == revision)
+    }
+
+    @Test("Database rollback interruption retains the original without enabling catalogue edits")
+    func databaseRollbackInterruption() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try await LibraryStore(recoveryFixtureDirectory: root, failRecoveryInstallation: true, failRecoveryRollbackAt: .afterDatabase)
+        let album = try await store.addAlbum(.init(title: "Backed up title"))
+        let backup = try await createDatabaseBackup(in: root)
+        try await store.updateAlbum(album.id, with: .init(title: "Live original"))
+        let cover = root.appending(path: "Artwork/cover.jpg")
+        try FileManager.default.createDirectory(at: cover.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data([9, 8]).write(to: cover)
+        var caught: RestoreRecoveryError?
+        do { try await store.restoreMasterBackup(from: backup); Issue.record("Expected interrupted rollback") }
+        catch { caught = try #require(error as? RestoreRecoveryError) }
+        let report = try #require(caught)
+        #expect(report.outcome == .recoveryIncomplete)
+        #expect(report.restoreFailure == "Injected recovery installation failure.")
+        #expect(report.recoveryFailure == "Injected recovery rollback failure after database restoration.")
+        #expect(report.recoveryURL == root.appending(path: "MusicLibrary.sqlite"))
+        try MusicDatabase.verifyStandaloneBackupFile(at: report.recoveryURL)
+        let original = try MusicDatabase(url: report.recoveryURL)
+        #expect(try await original.albums().first?.title == "Live original")
+        #expect(try Data(contentsOf: cover) == Data([9, 8]))
+        #expect(store.recoveryReviewMessage == report.localizedDescription)
+        #expect(!store.transferActivity.isBusy)
+        do { _ = try await store.addAlbum(.init(title: "Must refuse")); Issue.record("Interrupted rollback accepted edits") } catch {}
+        do { try await store.restoreMasterBackup(from: backup); Issue.record("Interrupted rollback accepted restore") } catch {}
+        #expect(store.recoveryReviewMessage == report.localizedDescription)
+        try MusicDatabase.verifyStandaloneBackupFile(at: report.recoveryURL)
+    }
+
+    @Test("Archive move failure preserves unmoved originals and permits retry", arguments: [LibraryStore.RecoveryFixtureMoveFailure.database, .artwork])
+    func archiveOriginalMoveFailure(point: LibraryStore.RecoveryFixtureMoveFailure) async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try await LibraryStore(recoveryFixtureDirectory: root, failRecoveryMove: point)
+        let album = try await store.addAlbum(.init(title: "Archive before move failure"))
+        let cover = root.appending(path: "Artwork/cover.jpg")
+        try FileManager.default.createDirectory(at: cover.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data([1, 2]).write(to: cover)
+        let archive = try await store.exportCompleteCatalogueArchive(to: root.appending(path: "Exports"))
+        try await store.updateAlbum(album.id, with: .init(title: "Live before move failure"))
+        try Data([9, 8]).write(to: cover)
+        let audio = root.appending(path: "source-sentinel.flac")
+        try Data([4, 5]).write(to: audio)
+        let revision = store.catalogueRevision
+        do { try await store.restoreCompleteCatalogueArchive(from: archive); Issue.record("Expected move failure") }
+        catch {
+            let report = try #require(error as? RestoreRecoveryError)
+            #expect(report.restoreFailure == "Injected recovery original move failure.")
+            #expect(report.outcome == .restoredPreviousCatalogue)
+            #expect(try CompleteCatalogueArchive.verify(at: report.recoveryURL).revision == revision)
+        }
+        #expect(!store.recoveryRequiresReview)
+        #expect(!store.transferActivity.isBusy)
+        #expect(try Data(contentsOf: audio) == Data([4, 5]))
+        guard !store.recoveryRequiresReview else { return }
+        try await store.reload()
+        #expect(store.catalogueRevision == revision)
+        #expect(store.catalogueAlbums.first?.title == "Live before move failure")
+        #expect(try Data(contentsOf: cover) == Data([9, 8]))
+        #expect(try FileManager.default.contentsOfDirectory(atPath: root.path).allSatisfy { !$0.hasPrefix("RestoreRollback-") })
+        try await store.updateAlbum(album.id, with: .init(title: "Writable after move failure"))
+        try await store.restoreCompleteCatalogueArchive(from: archive)
+        #expect(store.catalogueAlbums.first?.title == "Archive before move failure")
+        #expect(try Data(contentsOf: cover) == Data([1, 2]))
+    }
+
+    @Test("Database move failure reopens the untouched original and permits retry")
+    func databaseOriginalMoveFailure() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try await LibraryStore(recoveryFixtureDirectory: root, failRecoveryMove: .database)
+        let album = try await store.addAlbum(.init(title: "Backup before move failure"))
+        let backup = try await createDatabaseBackup(in: root)
+        try await store.updateAlbum(album.id, with: .init(title: "Live before move failure"))
+        let revision = store.catalogueRevision
+        do { try await store.restoreMasterBackup(from: backup); Issue.record("Expected move failure") }
+        catch {
+            let report = try #require(error as? RestoreRecoveryError)
+            #expect(report.restoreFailure == "Injected recovery original move failure.")
+            #expect(report.outcome == .restoredPreviousCatalogue)
+        }
+        #expect(!store.recoveryRequiresReview)
+        #expect(!store.transferActivity.isBusy)
+        guard !store.recoveryRequiresReview else { return }
+        try await store.reload()
+        #expect(store.catalogueRevision == revision)
+        #expect(store.catalogueAlbums.first?.title == "Live before move failure")
+        try await store.updateAlbum(album.id, with: .init(title: "Writable after move failure"))
+        try await store.restoreMasterBackup(from: backup)
+        #expect(store.catalogueAlbums.first?.title == "Backup before move failure")
+        // Consecutive successful restores must retain separate prior catalogues.
+        try await store.restoreMasterBackup(from: backup)
+        let retained = try FileManager.default.contentsOfDirectory(at: root.appending(path: "Recovery"), includingPropertiesForKeys: nil).filter { $0.pathExtension == "sqlite" }
+        #expect(retained.count == 2)
+        for file in retained { try MusicDatabase.verifyStandaloneBackupFile(at: file) }
+    }
+
+    @Test("Partial artwork copies restore the original tree or retain verified recovery", arguments: [false, true])
+    func partialArtworkCopy(rollbackFails: Bool) async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let manager = FileManager.default
+        let store = try await LibraryStore(recoveryFixtureDirectory: root, failRecoveryRollback: rollbackFails, failRecoveryArtworkCopy: true)
+        let album = try await store.addAlbum(.init(title: "Archived artwork edition"))
+        let artwork = root.appending(path: "Artwork")
+        let cover = artwork.appending(path: "a-cover.jpg")
+        let back = artwork.appending(path: "z-back.jpg")
+        let liveOnly = artwork.appending(path: "live-only.jpg")
+        try manager.createDirectory(at: cover.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(repeating: 1, count: 512).write(to: cover)
+        try Data(repeating: 2, count: 256).write(to: back)
+        let archive = try await store.exportCompleteCatalogueArchive(to: root.appending(path: "Exports"))
+        try await store.updateAlbum(album.id, with: .init(title: "Live artwork edition"))
+        try Data(repeating: 9, count: 512).write(to: cover)
+        try manager.removeItem(at: back)
+        try Data([7, 8, 9]).write(to: liveOnly)
+        let audio = root.appending(path: "source-sentinel.flac")
+        try Data([4, 5, 6]).write(to: audio)
+        let revision = store.catalogueRevision
+        var caught: RestoreRecoveryError?
+        do { try await store.restoreCompleteCatalogueArchive(from: archive); Issue.record("Expected partial artwork-copy failure") }
+        catch { caught = try #require(error as? RestoreRecoveryError) }
+        let report = try #require(caught)
+        #expect(report.restoreFailure == "Injected recovery artwork copy failure after a partial file.")
+        #expect(try CompleteCatalogueArchive.verify(at: report.recoveryURL).revision == revision)
+        #expect(store.transferActivity == LibraryTransferActivity())
+        #expect(try Data(contentsOf: audio) == Data([4, 5, 6]))
+        if rollbackFails {
+            #expect(report.outcome == .recoveryIncomplete)
+            #expect(report.recoveryFailure == "Injected recovery rollback failure.")
+            #expect(store.recoveryReviewMessage == report.localizedDescription)
+            #expect(try Data(contentsOf: cover) == Data(repeating: 1, count: 128))
+            #expect(!manager.fileExists(atPath: back.path))
+            #expect(!manager.fileExists(atPath: liveOnly.path))
+            // Database copy completed before artwork failed, but must remain unavailable.
+            try MusicDatabase.verifyStandaloneBackupFile(at: root.appending(path: "MusicLibrary.sqlite"))
+            let rollback = try #require(manager.contentsOfDirectory(at: root, includingPropertiesForKeys: nil).first { $0.lastPathComponent.hasPrefix("RestoreRollback-") })
+            try MusicDatabase.verifyStandaloneBackupFile(at: rollback.appending(path: CompleteCatalogueArchive.databaseFileName))
+            let originals = rollback.appending(path: CompleteCatalogueArchive.artworkDirectoryName)
+            #expect(try Data(contentsOf: originals.appending(path: "a-cover.jpg")) == Data(repeating: 9, count: 512))
+            #expect(try Data(contentsOf: originals.appending(path: "live-only.jpg")) == Data([7, 8, 9]))
+            #expect(!manager.fileExists(atPath: originals.appending(path: "z-back.jpg").path))
+            do { _ = try await store.addAlbum(.init(title: "Must refuse")); Issue.record("Partial artwork installation accepted edits") } catch {}
+        } else {
+            #expect(report.outcome == .restoredPreviousCatalogue)
+            #expect(!store.recoveryRequiresReview)
+            try await store.reload()
+            #expect(store.catalogueRevision == revision)
+            #expect(store.catalogueAlbums.first?.title == "Live artwork edition")
+            #expect(try Data(contentsOf: cover) == Data(repeating: 9, count: 512))
+            #expect(try Data(contentsOf: liveOnly) == Data([7, 8, 9]))
+            #expect(!manager.fileExists(atPath: back.path))
+            #expect(try manager.contentsOfDirectory(atPath: root.path).allSatisfy { !$0.hasPrefix("RestoreRollback-") })
+            try await store.updateAlbum(album.id, with: .init(title: "Writable after artwork failure"))
+            try await store.restoreCompleteCatalogueArchive(from: archive)
+            #expect(store.catalogueAlbums.first?.title == "Archived artwork edition")
+            #expect(try Data(contentsOf: cover) == Data(repeating: 1, count: 512))
+            #expect(try Data(contentsOf: back) == Data(repeating: 2, count: 256))
+            #expect(!manager.fileExists(atPath: liveOnly.path))
+            #expect(!store.transferActivity.isBusy)
+        }
+    }
+
+    @Test("Partial database copies recover or retain originals safely", arguments: [true, false], [true, false])
+    func partialDatabaseCopy(archive: Bool, rollbackFails: Bool) async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try await LibraryStore(recoveryFixtureDirectory: root, failRecoveryRollback: rollbackFails, failRecoveryDatabaseCopy: true)
+        let album = try await store.addAlbum(.init(title: "Archived before partial copy"))
+        let artwork = root.appending(path: "Artwork/cover.jpg")
+        try FileManager.default.createDirectory(at: artwork.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data([1, 2, 3]).write(to: artwork)
+        let source = archive
+            ? try await store.exportCompleteCatalogueArchive(to: root.appending(path: "Exports"))
+            : try await createDatabaseBackup(in: root)
+        try await store.updateAlbum(album.id, with: .init(title: "Live before partial copy"))
+        try Data([9, 8, 7]).write(to: artwork)
+        let audio = root.appending(path: "source-sentinel.flac")
+        try Data([4, 5, 6]).write(to: audio)
+        let revision = store.catalogueRevision
+        var caught: RestoreRecoveryError?
+        do {
+            if archive { try await store.restoreCompleteCatalogueArchive(from: source) }
+            else { try await store.restoreMasterBackup(from: source) }
+            Issue.record("Expected partial-copy failure")
+        } catch { caught = try #require(error as? RestoreRecoveryError) }
+        let report = try #require(caught)
+        #expect(report.restoreFailure == "Injected recovery database copy failure after 128 bytes.")
+        #expect(store.transferActivity == LibraryTransferActivity())
+        #expect(try Data(contentsOf: audio) == Data([4, 5, 6]))
+        if archive {
+            let manifest = try CompleteCatalogueArchive.verify(at: report.recoveryURL)
+            #expect(manifest.revision == revision)
+        }
+        if rollbackFails {
+            #expect(report.outcome == .recoveryIncomplete)
+            #expect(report.recoveryFailure == "Injected recovery rollback failure.")
+            #expect(store.recoveryReviewMessage == report.localizedDescription)
+            #expect(try Data(contentsOf: root.appending(path: "MusicLibrary.sqlite")).count == 128)
+            if archive {
+                let rollback = try #require(FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil).first { $0.lastPathComponent.hasPrefix("RestoreRollback-") })
+                try MusicDatabase.verifyStandaloneBackupFile(at: rollback.appending(path: CompleteCatalogueArchive.databaseFileName))
+                #expect(try Data(contentsOf: rollback.appending(path: CompleteCatalogueArchive.artworkDirectoryName).appending(path: "cover.jpg")) == Data([9, 8, 7]))
+            } else {
+                try MusicDatabase.verifyStandaloneBackupFile(at: report.recoveryURL)
+                #expect(try Data(contentsOf: artwork) == Data([9, 8, 7]))
+            }
+            do { _ = try await store.addAlbum(.init(title: "Must refuse")); Issue.record("Unresolved catalogue accepted edits") } catch {}
+        } else {
+            #expect(report.outcome == .restoredPreviousCatalogue)
+            #expect(!store.recoveryRequiresReview)
+            try await store.reload()
+            #expect(store.catalogueRevision == revision)
+            #expect(store.catalogueAlbums.first?.title == "Live before partial copy")
+            #expect(try Data(contentsOf: artwork) == Data([9, 8, 7]))
+            try await store.updateAlbum(album.id, with: .init(title: "Writable after partial copy"))
+            if archive { try await store.restoreCompleteCatalogueArchive(from: source) }
+            else { try await store.restoreMasterBackup(from: source) }
+            #expect(store.catalogueAlbums.first?.title == "Archived before partial copy")
+            #expect(try Data(contentsOf: artwork) == (archive ? Data([1, 2, 3]) : Data([9, 8, 7])))
+            #expect(!store.transferActivity.isBusy)
+        }
+    }
+
     @Test("Complete archive installation failure rolls back catalogue/artwork and permits retry")
     func archiveInstallationRollback() async throws {
         let root = temporaryDirectory()
@@ -103,6 +377,16 @@ struct RecoveryTransferIntegrationTests {
         }
         #expect(!store.transferActivity.isBusy)
         do { _ = try await store.addAlbum(.init(title: "Must refuse while recovery unresolved")); Issue.record("Unresolved catalogue accepted edits") } catch {}
+        let review = store.recoveryReviewMessage
+        let replacementURL = root.appending(path: "MusicLibrary.sqlite")
+        let replacementBytes = try Data(contentsOf: replacementURL)
+        do {
+            if archive { try await store.restoreCompleteCatalogueArchive(from: source) }
+            else { try await store.restoreMasterBackup(from: source) }
+            Issue.record("Unresolved recovery accepted another restore")
+        } catch {}
+        #expect(store.recoveryReviewMessage == review)
+        #expect(try Data(contentsOf: replacementURL) == replacementBytes)
     }
 
     @Test("Reset requires exact confirmation, preserves roots and audio, and verifies complete recovery")

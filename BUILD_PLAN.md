@@ -185,6 +185,11 @@ Never silently rewrite original music files after an online match.
 
 ### File identity and relocation
 
+The implementation sequence and evidence requirements for manual moved-folder
+recovery are specified in [FOLDER_RECOVERY_PLAN.md](FOLDER_RECOVERY_PLAN.md).
+Its next slice is a read-only replacement preview; whole-root apply remains a
+separate deferred slice. Same-path Renew Access must not be widened into relocation.
+
 Store more than an absolute path:
 
 - storage-root ID plus relative path;
@@ -922,6 +927,24 @@ R7 playlist foundation checkpoint (8 October 2026): name search, counts and no-m
 ### 12.13 Settings, issues, onboarding, and recovery
 
 Settings has functional selection routing:
+
+R8 existing-folder permission renewal (6 November 2026): Renew Access selects the registered folder and replaces its bookmark in place. Selection must match the standardized stored path; a known stored volume UUID must match the selected volume. The database write checks the expected stored path atomically, preserves root ID/name/scope/volume and all relative references, and rejects stale/removed roots or empty bookmarks. No relocation, duplicate root creation, scan or asset relink occurs. Next: disposable authorized-folder renewal acceptance and explicit moved-folder recovery design; do not relax identity checks to imply relocation support.
+
+R8 Music Folders scan controls (6 November 2026): per-folder controls distinguish Scan Folder from Rescan Folder, show current scan progress/latest outcome and provide Review Scan even when the folder is offline. Newly admitted scans route to their Imports batch. Startup, access-check and scope errors stay next to the folder; duplicate starts are blocked while startup/access checking or any known scan on that root is active. Check Access is now visible rather than only in the context menu. Service/global scan coordination and explicit permission renewal remain separate. Next: existing-root permission renewal workflow audit, preserving root identity and references.
+
+R8 scan chooser feedback (6 November 2026): extracted ScanRootPicker explains whole-folder versus album-subfolder scans, registration/access requirements and review before adding releases. Startup/file-selection errors remain selectable inside the sheet; duplicate submission and dismissal stay blocked during startup. Albums routes a newly admitted batch into Imports; album attachment retains its own callback. Debug registered-folder acceptance supplies a stale temporary root without a bookmark, exercising permission refusal without a scan/media read. Next: Music Folders first-scan labels, progress and review routing; successful real permission/scan acceptance remains separate.
+
+R8 first-run guidance (6 November 2026): the unfiltered empty album library now presents physical-collection and digital-music starting cards with purpose and safety explanations. Import Music Folder opens Music Folders setup when no root exists, or the registered-folder scan picker otherwise. Empty Music Folders explains permission, registration and scan/review steps. Search/filter no-results retain their clear action. Debug empty-library composition supports isolated native checks; it does not register folders or scan automatically. Next: registered-folder first-import progression and task-local permission/scan feedback audit.
+
+R8 partial rollback checkpoint (6 November 2026): temporary-fixture coverage now stops recovery after the original database has returned and after archive artwork has returned, before reopen. Both restore types retain valid originals/recovery references, refuse edits/retry and keep review-required guidance rather than claiming success. No production behavior change was needed. Next: return to the R8 first-run empty-library workflow audit; crash/restart recovery and full accessibility/device acceptance remain separate open scope.
+
+R8 original-move recovery (6 November 2026): temporary regressions exposed false incomplete recovery when a database/artwork move failed before all originals reached rollback storage. Restore now tracks completed moves, preserves originals still in place and reopens the prior catalogue before reporting recovery. Both archive move boundaries and database-only move failure are covered with retry. Database-only restore refuses a missing/unresolved database; unique recovery filenames preserve consecutive prior catalogues. Next: audit rollback failures after some originals have already been restored; process restart remains separate acceptance.
+
+R8 partial artwork-copy checkpoint (6 November 2026): temporary-fixture coverage interrupts archive installation after the database copy and a partial first artwork file. It checks recovery of the original live artwork set, writable catalogue/retry, and retained originals plus blocked edits when rollback fails. This uses the existing flat artwork archive contract. Next: original-file move failure acceptance; crash/restart and unrelated scan/edit coordination remain separate gaps.
+
+R8 partial-copy checkpoint (6 November 2026): temporary-fixture tests now cover a truncated database replacement in both restore types, with successful rollback/retry and deliberately failed rollback/retained recovery. The fault is internal, one-shot and confined to validated temporary paths. This does not cover partial artwork copying, failure while moving originals or process termination/restart. Next: bounded archive artwork-copy interruption coverage using the same temporary-only safeguards.
+
+R8 cross-category recovery context (6 November 2026): Sharing and Advanced now show the retained Recovery Needs Review guidance and explain unavailable actions. Backup & Restore retains its existing guidance location. Advanced suppresses a maintenance status that exactly duplicates the review message; different status details remain. Navigation/category shortcuts stay available. This presentation change does not clear recovery state or enable a repair/retry action. Next: R8 acceptance-gap audit and a bounded next slice, retaining explicit device/VoiceOver/partial-copy limitations.
 
 R8 recovery-message native checkpoint (6 November 2026): Debug navigation can supply synthetic recovered/incomplete outcomes through existing local feedback without executing restore/file operations. Native compact light inspection confirmed recovered wording/retry explanation and blocked incomplete-recovery controls, but found duplicate long guidance. The matching local archive error is now suppressed when the retained review message already shows it; different errors remain visible. Corrected light/dark evidence and limitations are recorded in HANDOFF. Next: recovery context on other affected Settings categories and remaining accessibility acceptance.
 
