@@ -4,7 +4,23 @@ Last updated: 10 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — FR1 read-only manifest and preflight foundation
+## Current resume — FR1 cancellable candidate verifier backend
+
+This is a **backend verification checkpoint**. Latest delivered app remains **Music Library 0.70 (build 71)** at `build/Music Library 0.70.app`; schema **17**. No replacement UI, version metadata or app artifact changes were made. No native app, personal catalogue/preferences, real media or NAS destination was opened. Tests read/write only their disposable fixture directories; mutations used to test races are deliberate fixture actions, not verifier writes.
+
+New FolderRecoveryVerifier accepts an immutable reference plan and an explicitly supplied accessible candidate URL. It runs on a detached worker, propagates parent cancellation and returns Sendable progress/evidence with the original manifest and all reference links. Only preflight-ready groups are opened; unverified, conflicting and syntactically unsafe groups produce evidence without file reads. Empty plans produce no verified-file evidence. Stable full hashes classify verified versus different content; missing/unreadable/unsafe/unstable paths carry local details, without bookmark or database writes.
+
+The worker canonicalizes the root with realpath before strict no-symlink opening, anchors relative opens to its directory descriptor and rejects every referenced symlink, including in-root links. Files must be regular; nonblocking opens avoid FIFO waits. SHA-256 reads use bounded 256 KiB chunks and cancellation checks. Device/inode, size, mtime/ctime and a fresh anchored path walk must remain consistent. Root replacement invalidates the entire report. Descriptor lifetimes are explicitly retained around reads/traversal and closed on all exits.
+
+Initial tests exposed Foundation preserving /var after symlink resolution, causing the strict root open to fail. Using filesystem realpath fixes that alias without loosening open flags. Focused tests cover stable/empty hashes, CUE grouping/read-once counts, missing/non-regular paths, symlink rejection, directory substitution, in-place mutation, atomic replacement, root replacement and parent/pre-start cancellation. A main-actor caller test confirms progress executes off-main. Final coverage includes nested directories and missing/non-directory parents.
+
+Full required checks passed: Debug **238 tests/50 suites**, Release **231/49**, incremental build and whitespace check. After adding nested-path fixture coverage, the **7 focused verifier tests passed again in both Debug and Release**. Logs `/private/tmp/musiclibrary-fr1-verifier-*.log`. No native picker or OS permission grant is claimed.
+
+The caller still owns security-scoped access. Cancellation is cooperative between chunks/metadata operations, not forced interruption of a blocked NAS syscall. Reports are historical per-file evidence, not an atomic filesystem snapshot. Catalogue staleness must compare a fresh manifest including hashes, not revision alone, because fingerprint recording does not increment revision.
+
+Next: **permission-scoped preview orchestration and stale-result handling**, then replacement selection/progress UI. No Apply/path-writing service is included; FR2 remains deferred. Actual permission/remount/NAS/device acceptance and the other recorded R8 limits remain open. Full FR1 UI and R8 are not complete. Session GitHub delivery authorization remains applicable; inspect Git status/history for checkpoint delivery state.
+
+## Previous resume — FR1 read-only manifest and preflight foundation
 
 This is a **backend foundation checkpoint**. Latest delivered app remains **Music Library 0.70 (build 71)** at `build/Music Library 0.70.app`; schema **17**. No user-facing UI, version metadata or app artifact changes are needed. No native app, candidate directory, personal catalogue/preferences, media or NAS destination was opened. All validation uses temporary databases and synthetic references, with no candidate-file reads.
 

@@ -197,6 +197,15 @@ unsafe paths, incomplete hashes and contradictory evidence. It performs no file
 reads or catalogue changes. Next: cancellable candidate-file verification with
 containment/stability checks; replacement UI and all path writes remain pending.
 
+FR1 verifier backend (10 November 2026): explicit read-only verification now uses
+an anchored directory descriptor, rejects referenced symlinks, hashes regular
+files off-main in bounded chunks, detects file/root replacement and propagates
+cancellation without returning a partial report. Outcomes retain the original
+manifest and reference groups. Caller-owned permission, catalogue staleness and
+cooperative cancellation during blocked NAS calls remain explicit boundaries.
+Next: permission-scoped preview orchestration and stale-result handling, then UI;
+no root update/apply action is included.
+
 Store more than an absolute path:
 
 - storage-root ID plus relative path;

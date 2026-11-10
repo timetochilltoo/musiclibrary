@@ -1,10 +1,11 @@
 # Music folder recovery plan
 
-Status: FR1 manifest/preflight foundation, 10 November 2026. **Not an implemented relocation feature.**
+Status: FR1 manifest/preflight and verifier backend, 10 November 2026. **Not an implemented relocation feature.**
 
-Implemented so far: a coherent read-only root manifest and pure reference preflight
-grouping. No replacement picker, candidate-file reader, verification result, or
-Apply operation is exposed. The remaining FR1 stages below are still planned.
+Implemented so far: a coherent read-only root manifest, pure reference preflight
+grouping and a cancellable read-only candidate-file verifier. The Mac app has no
+replacement preview UI or Apply operation yet. The remaining FR1 stages below
+are still planned.
 
 Operational state and the current next slice remain in [HANDOFF.md](HANDOFF.md).
 Architecture/invariants remain in [IMPLEMENTATION_SPEC.md](IMPLEMENTATION_SPEC.md).
@@ -87,8 +88,24 @@ represented only by a SHA-256 digest. Track IDs and CUE ranges are retained.
 physical file identities). It classifies ready-to-verify, unverified, unsafe-path
 and conflicting-hash groups without opening files or producing verified evidence.
 All references in a group must carry matching valid full hashes to be ready.
-Ambiguous separators/dot components are conservatively unsafe. Resolved-path,
-symlink and file-stability checks still belong to the future verifier.
+Ambiguous separators/dot components are conservatively unsafe.
+
+Verifier backend implemented: FolderRecoveryVerifier runs a detached worker and
+propagates parent cancellation. It canonicalizes the selected root with realpath,
+opens it with no-symlink flags and anchors component-by-component read-only opens
+to that descriptor. All referenced symlinks are rejected, including in-root links.
+It hashes regular files in 256 KiB chunks, compares file identity/size/mtime/ctime
+before and after reading, and re-walks the path to detect replacement. Candidate
+root changes discard the report. Preflight-unverified/conflicting/unsafe groups
+are reported without file reads. Empty roots remain a no-evidence result.
+
+The caller must own any required security scope for the operation's duration;
+the verifier does not acquire or persist permission. Cancellation is cooperative
+between chunks/metadata operations; it cannot forcibly interrupt a blocked NAS
+system call. A report is historical per-file evidence, not an atomic filesystem
+snapshot. The future UI must compare a freshly captured manifest, including hash
+fields, to detect catalogue staleness; revision alone is insufficient because
+recordAssetFingerprint does not increment the catalogue revision.
 
 1. **MusicDatabase:** add a read-only root-scoped reference manifest query. Return
    root identity/path/bookmark digest/volume/scope and catalogue revision, plus
