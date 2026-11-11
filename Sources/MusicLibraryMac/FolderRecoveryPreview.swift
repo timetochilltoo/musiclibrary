@@ -10,6 +10,15 @@ struct FolderRecoveryPreview: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showsPicker = false
     @State private var pickerError: String?
+    #if DEBUG
+    private var fixture: FolderRecoveryPreviewFixture?
+
+    init(fixture: FolderRecoveryPreviewFixture) {
+        root = fixture.root
+        self.fixture = fixture
+        _session = StateObject(wrappedValue: fixture.session)
+    }
+    #endif
 
     init(library: LibraryStore, root: StorageRoot) {
         self.root = root
@@ -24,6 +33,9 @@ struct FolderRecoveryPreview: View {
                     .foregroundStyle(.secondary)
             }.frame(maxWidth: .infinity, alignment: .leading).padding(20)
             Divider()
+            #if DEBUG
+            if let fixture { FolderRecoveryFixtureControls(fixture: fixture) }
+            #endif
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     GroupBox("Registered folder") {
@@ -43,6 +55,7 @@ struct FolderRecoveryPreview: View {
                                 pickerError = nil
                                 showsPicker = true
                             }
+                            .disabled(usesSyntheticCandidates)
                             Text("Choosing a folder does not start a check. Verify reads referenced files only and may take time on a NAS.")
                                 .font(.caption).foregroundStyle(.secondary)
                         }.frame(maxWidth: .infinity, alignment: .leading).padding(6)
@@ -90,6 +103,14 @@ struct FolderRecoveryPreview: View {
     private func path(_ value: String) -> some View {
         Text(value).font(.callout.monospaced()).textSelection(.enabled)
             .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var usesSyntheticCandidates: Bool {
+        #if DEBUG
+        fixture != nil
+        #else
+        false
+        #endif
     }
 
     private var progress: some View {

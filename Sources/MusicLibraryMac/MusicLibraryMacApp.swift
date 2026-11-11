@@ -28,13 +28,18 @@ struct MusicLibraryMacApp: App {
                 ContentUnavailableView("Debug build required", systemImage: "exclamationmark.shield", description: Text("This fixture cannot run in Release. The personal catalogue has not been opened."))
             case .navigationFixture:
             #if DEBUG
-                LibraryNavigationFixtureWorkspace()
-                    .preferredColorScheme(ProcessInfo.processInfo.arguments.contains("--dark-appearance-fixture") ? .dark : nil)
-                    .frame(
-                        width: ProcessInfo.processInfo.arguments.contains("--compact-settings-fixture") ? 980 : nil,
-                        height: ProcessInfo.processInfo.arguments.contains("--compact-settings-fixture") ? 640 : nil
-                    )
-                    .frame(minWidth: 980, minHeight: 640)
+                if ProcessInfo.processInfo.arguments.contains("--folder-recovery-fixture") {
+                    FolderRecoveryFixtureWorkspace()
+                        .preferredColorScheme(ProcessInfo.processInfo.arguments.contains("--dark-appearance-fixture") ? .dark : nil)
+                } else {
+                    LibraryNavigationFixtureWorkspace()
+                        .preferredColorScheme(ProcessInfo.processInfo.arguments.contains("--dark-appearance-fixture") ? .dark : nil)
+                        .frame(
+                            width: ProcessInfo.processInfo.arguments.contains("--compact-settings-fixture") ? 980 : nil,
+                            height: ProcessInfo.processInfo.arguments.contains("--compact-settings-fixture") ? 640 : nil
+                        )
+                        .frame(minWidth: 980, minHeight: 640)
+                }
             #else
                 EmptyView()
             #endif

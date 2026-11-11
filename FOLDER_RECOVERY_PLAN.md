@@ -1,13 +1,14 @@
 # Music folder recovery plan
 
-Status: FR1 preview UI implemented, acceptance partial, 11 November 2026. **Not an implemented relocation feature.**
+Status: FR1 preview UI and synthetic acceptance fixtures implemented, acceptance partial, 11 November 2026. **Not an implemented relocation feature.**
 
 Implemented so far: a coherent read-only root manifest, pure reference preflight
 grouping, a cancellable read-only candidate-file verifier and permission-scoped
 preview orchestration with catalogue freshness checks. Music Library 0.71 adds
-the replacement selection/progress/results sheet. Apply remains absent. Native
-mixed-result, cancellation, stale-state and broader accessibility/appearance
-acceptance are still pending; the implemented UI is not a relocation operation.
+the replacement selection/progress/results sheet. Apply remains absent. Synthetic
+native mixed-result, cancellation and stale-state acceptance passed in compact
+dark mode. Real nonempty picker/verifier integration and full accessibility
+acceptance are still pending; this is not a relocation operation.
 
 Operational state and the current next slice remain in [HANDOFF.md](HANDOFF.md).
 Architecture/invariants remain in [IMPLEMENTATION_SPEC.md](IMPLEMENTATION_SPEC.md).
@@ -64,6 +65,19 @@ Compact light-mode native acceptance passed selection, chooser cancellation,
 explicit verification of a disposable empty folder, details/scrolling and close
 with unchanged registered permission state. This does not cover nonempty results
 or slow filesystem cancellation; backend fixture tests cover those mechanics.
+
+Synthetic acceptance checkpoint: Debug `--folder-recovery-fixture` opens a
+standalone workspace without LibraryStore startup or SQLite. Its dedicated bundle
+guard, internal temporary-child permission substitute and disabled real picker
+prevent unrelated candidate access. All eight outcomes, ten asset references
+(including repeated CUE links), changed/unavailable rechecks and worker failure
+are generated evidence, clearly labelled synthetic. A manually released worker
+models cooperative cancellation blocked in an operation; it performs no hashing
+or NAS calls. Compact dark native checks passed group expansion, missing-baseline
+details, historical messages, retry admission, progress/cancel, superseding
+selection, balanced access, Return and Escape/dismissal. These are presentation
+and orchestration checks, not real file/grant/NAS evidence. Release refuses the
+fixture flag; production contains neither the fixture factory nor controls.
 
 The explicit **Verify References** action reads only referenced paths beneath the
 selected directory. Show progress, checked/total files and Cancel. Explain that

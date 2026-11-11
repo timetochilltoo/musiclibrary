@@ -215,8 +215,11 @@ replacement preview with inert selection, explicit Verify, progress/cancellation
 grouped outcomes and expandable hashes. Historical catalogue results and empty
 references have distinct guidance; Close cancels without changing the root.
 Compact light-mode picker/empty-result acceptance passed with a disposable folder.
-Next: synthetic mixed-result/slow-progress UI fixtures and broader native
-acceptance. Nonempty native verification, NAS/remount and FR2 writes stay open.
+Synthetic mixed-result/slow-progress fixtures now cover all eight outcomes,
+changed/unavailable rechecks and failure/retry. Compact dark native acceptance
+passed cancellation draining, superseding selection and Return/Escape, with
+balanced temporary access. Next: disposable real-file/picker integration using
+the production verifier. Full VoiceOver, NAS/remount and FR2 writes stay open.
 
 Store more than an absolute path:
 

@@ -4,7 +4,21 @@ Last updated: 11 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — FR1 replacement-folder preview UI (0.71)
+## Current resume — FR1 synthetic mixed-result and cancellation acceptance
+
+This is an **isolated fixture/acceptance checkpoint**. Latest production artifact remains **Music Library 0.71 (build 72)** at `build/Music Library 0.71.app`; schema **17**. No new production package/version is needed. The ephemeral Debug fixture runs the current preview/session with simulated reports. No personal catalogue/preferences, media or NAS destination was opened, and this fixture does not open any SQLite catalogue or read candidate files.
+
+New Debug-only FolderRecoveryPreviewFixture creates two temporary candidate directories, eight generated outcome groups and ten asset references, including repeated CUE links and contradictory expected hashes. Its factory requires the dedicated navigation-fixture bundle ID, and its internal lease factory accepts only its two temporary children. Modes cover mixed results, changed catalogue, unavailable recheck, worker failure and manually paused progress. The pause deliberately ignores cancellation until released, modelling a blocked operation without making a filesystem/NAS call. Start/release/peak counters expose balanced scope ownership; these are simulated leases, not OS grants.
+
+FolderRecoveryFixtureWorkspace opens through `Scripts/run-navigation-fixture.sh --folder-recovery-fixture --dark-appearance-fixture`. It bypasses LibraryStore startup, injects the existing production preview and disables its real folder picker. Synthetic scenario/candidate/progress/release controls are conspicuous and Debug-only. Close/Escape cancels and releases the synthetic pause; reopening resets selection. LibraryLaunchMode recognizes the new flag and refuses it in Release rather than entering normal startup. Normal production behavior remains unchanged.
+
+Focused checks passed **5 tests/2 suites**. New fixture tests cover bundle/URL boundaries, every generated report mode, missing/error rechecks, failure/retry, CUE grouping, unchanged candidate contents, cancellation drain, superseding selection and disposal. Required checks passed: `swift test` **248 tests/52 suites**, `swift test -c release` **239/50**, `swift build` and `git diff --check`. Logs `/private/tmp/musiclibrary-fr1-fixture-{focused,debug,release,build,native}.log`. Existing AVMetadataItem deprecation remains.
+
+Compact dark native acceptance passed all outcome-group availability, long-path expansion, missing-baseline details, changed/unavailable historical guidance, worker failure and retry admission, visible progress/cancel, disabled Verify while stopping, B superseding A before release, no stale result afterward, and balanced starts/releases with peak one. Return began verification; Escape dismissed and reopening showed released access and empty selection. Native menu selections needed their own state observation before Verify; a batched click initially ran the previous mode, then the observed mode verified correctly. This is automation sequencing, not a product failure. Mixed-result light mode, full keyboard traversal and spoken VoiceOver remain unverified.
+
+Next: **FR1 disposable real-file/picker integration fixture using the production verifier**, with temporary seeded catalogue references and synthetic bytes only. Distinguish generated presentation evidence from real hashing and permission grants. Keep NAS/remount/device acceptance, broader accessibility and other R8 limits open. No FR2 association writes, relinking or automatic scan belongs in this next slice. Existing GitHub delivery authorization applies; inspect Git history/status for checkpoint delivery state.
+
+## Previous resume — FR1 replacement-folder preview UI (0.71)
 
 Current artifact: **Music Library 0.71 (build 72)** at `build/Music Library 0.71.app`, Release/native architecture; schema **17**. This slice adds the read-only replacement-folder preview. No personal catalogue/preferences, real media or NAS destination was opened during validation. The native walkthrough used the existing isolated navigation fixture and its empty temporary directory only. The production bundle is packaged without launching the personal catalogue.
 

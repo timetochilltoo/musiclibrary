@@ -14,7 +14,7 @@ struct LibraryLaunchModeTests {
         for identifier in ["com.timetochilltoo.MusicLibraryNavigationFixture", "com.timetochilltoo.MusicLibraryBrowseFixture"] {
             #expect(LibraryLaunchMode.resolve(bundleIdentifier: identifier, arguments: [], supportsFixtures: false) == .unavailableFixture)
         }
-        for flag in ["--navigation-fixture", "--browse-fixture", "--import-review-fixture", "--empty-library-fixture", "--registered-folder-fixture"] {
+        for flag in ["--navigation-fixture", "--browse-fixture", "--import-review-fixture", "--empty-library-fixture", "--registered-folder-fixture", "--folder-recovery-fixture"] {
             #expect(LibraryLaunchMode.resolve(bundleIdentifier: nil, arguments: [flag], supportsFixtures: false) == .unavailableFixture)
         }
     }
@@ -26,5 +26,6 @@ struct LibraryLaunchModeTests {
         }
         #expect(LibraryLaunchMode.resolve(bundleIdentifier: nil, arguments: ["--browse-fixture", "--navigation-fixture"], supportsFixtures: true) == .navigationFixture)
         #expect(LibraryLaunchMode.resolve(bundleIdentifier: nil, arguments: ["--import-review-fixture"], supportsFixtures: true) == .navigationFixture)
+        #expect(LibraryLaunchMode.resolve(bundleIdentifier: nil, arguments: ["--folder-recovery-fixture"], supportsFixtures: true) == .navigationFixture)
     }
 }
