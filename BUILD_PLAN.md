@@ -210,6 +210,14 @@ changed/unavailable results, including hash changes without a revision increment
 Next: replacement-folder selection/progress/results UI; no root update/apply
 action is included. Native permission grants and NAS acceptance remain pending.
 
+FR1 UI (11 November 2026, 0.71): unavailable Music Folders now expose a read-only
+replacement preview with inert selection, explicit Verify, progress/cancellation,
+grouped outcomes and expandable hashes. Historical catalogue results and empty
+references have distinct guidance; Close cancels without changing the root.
+Compact light-mode picker/empty-result acceptance passed with a disposable folder.
+Next: synthetic mixed-result/slow-progress UI fixtures and broader native
+acceptance. Nonempty native verification, NAS/remount and FR2 writes stay open.
+
 Store more than an absolute path:
 
 - storage-root ID plus relative path;

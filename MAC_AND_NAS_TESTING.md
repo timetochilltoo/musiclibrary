@@ -7,7 +7,7 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 ## 1. Launch the packaged Mac app
 
 1. In Finder, open the project folder.
-2. Open the newest sequential package, currently `build/Music Library 0.70.app`. An older `/Applications/Music Library.app` installation is not automatically updated by packaging.
+2. Open the newest sequential package, currently `build/Music Library 0.71.app`. An older `/Applications/Music Library.app` installation is not automatically updated by packaging.
 3. If macOS blocks the first launch, Control-click the app, choose **Open**, then choose **Open** again.
 4. The app opens a catalogue in its Application Support folder. It does not use a SQLite database on the NAS.
 5. Keep the app open while following the tests below. If anything unexpected happens, take a screenshot and note the exact action just before it happened.
@@ -20,6 +20,8 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 4. Do not move, rename, or edit the original media during this guide.
 
 ### R8 Settings recovery/sharing presentation (0.52)
+
+0.71 replacement preview: run `Scripts/run-navigation-fixture.sh --compact-settings-fixture --registered-folder-fixture` and open Music Folders with Command-Option-4. Review Replacement Folder must show the registered path and disabled Verify until a folder is chosen. Cancel the chooser and confirm no error or candidate appears. Choose only the fixture's disposable empty directory, confirm selection alone produces no result, then Verify References. Expect the no-references explanation, never a matching-folder claim. Expand Comparison details, scroll and verify footer actions remain visible. Verify Again must work; Close must leave the root permission-required and reopen with a fresh session. Native compact/light selection, cancel, empty verification, scrolling/details and close passed this checkpoint. Nonempty mixed outcomes, slow progress/cancel, stale catalogue, dark mode and full keyboard/VoiceOver still need isolated acceptance; do not use personal media for automated checks. No Apply exists.
 
 0.70 Renew Access: in the temporary registered-folder fixture, Command-Option-4 must expose Renew Access and the expected registered path. Open the picker and Cancel without selecting a personal folder; the root must remain permission-required. Separately, with a disposable authorized folder, select the exact registered folder and verify one root with the same ID/name/scope/path, updated access and preserved album/file references, without an automatic scan. Different/child/parent paths and mismatched known volume UUIDs must refuse. Successful OS permission grants, remount behavior and unknown-volume identity remain separate acceptance.
 

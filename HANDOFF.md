@@ -4,7 +4,21 @@ Last updated: 11 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — FR1 permission-scoped preview orchestration
+## Current resume — FR1 replacement-folder preview UI (0.71)
+
+Current artifact: **Music Library 0.71 (build 72)** at `build/Music Library 0.71.app`, Release/native architecture; schema **17**. This slice adds the read-only replacement-folder preview. No personal catalogue/preferences, real media or NAS destination was opened during validation. The native walkthrough used the existing isolated navigation fixture and its empty temporary directory only. The production bundle is packaged without launching the personal catalogue.
+
+In Settings → Music Folders, unavailable roots now offer **Review Replacement Folder…** beside their access guidance. New `FolderRecoveryPreview.swift` owns a FolderRecoveryPreviewSession and shows the original folder name/path and known volume metadata, then a candidate chooser. Selection is inert; explicit Verify References starts the check. The footer keeps Close, Verify/Verify Again and Cancel Verification available independently of scroll position. Cancelling explains that blocked NAS calls may need time to drain. Dismissal cancels the session; it does not persist a replacement bookmark or change root associations/status.
+
+Results group all verifier outcomes with counts and expandable paths, hash evidence and reference counts. Missing baseline hashes remain unverified. Changed or unavailable catalogue rechecks retain historical guidance; unchanged means equal at completion only. Empty manifests show no references rather than a folder match. Comparison details show resolved path and captured revision. No Apply, automatic scan, relink, missing-asset mutation, source move or tag operation is introduced.
+
+Validation: `swift build`, `swift test` **246 tests/51 suites**, and `swift test -c release` **239/50** passed. Logs `/private/tmp/musiclibrary-fr1-ui-{build,debug,release}.log`. Existing AVMetadataItem deprecation remains. The compact light-mode native walkthrough passed entry visibility, long registered-path wrapping, disabled Verify before selection, chooser cancellation without an error, inert selection of the temporary empty folder, successful explicit verification, no-references wording, expandable comparison details, scrolling and close with the original root still permission-required. This verifies a temporary-folder picker grant for the empty case, not nonempty real media or NAS permission/remount behavior. No new mirror-of-label tests were added for presentation-only code; existing session/backend regressions cover its safety mechanics.
+
+Scripts/package-mac-app.sh succeeded; the bundle reports version 0.71/build 72. `plutil -lint`, strict deep `codesign` verification and `git diff --check` passed. BUILD_PLAN, IMPLEMENTATION_SPEC, FOLDER_RECOVERY_PLAN and MAC_AND_NAS_TESTING describe the new boundary and manual checks.
+
+Next: **FR1 synthetic mixed-outcome and slow-progress/cancellation UI fixtures**, then native acceptance of grouped nonempty evidence, retry, superseding selection and stale catalogue messages. Repeat compact dark mode and keyboard checks; full VoiceOver, NAS/remount/device acceptance and other R8 limits remain open. Keep fixtures isolated from normal startup and the personal catalogue. Do not advance into FR2 association writes or claim full FR1/R8 acceptance from the empty native case. Existing GitHub push authorization continues; use Git status/history for checkpoint delivery state.
+
+## Previous resume — FR1 permission-scoped preview orchestration
 
 This is a **backend orchestration checkpoint**. Latest delivered app remains **Music Library 0.70 (build 71)** at `build/Music Library 0.70.app`; schema **17**. No UI, version metadata or packaged artifact changes were needed. No native app, personal catalogue/preferences, real media or NAS destination was opened. All tests use disposable databases and synthetic files; catalogue fingerprint changes in the freshness test are deliberate fixture actions.
 

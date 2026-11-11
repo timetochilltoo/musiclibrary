@@ -1,12 +1,13 @@
 # Music folder recovery plan
 
-Status: FR1 preview orchestration backend, 11 November 2026. **Not an implemented relocation feature.**
+Status: FR1 preview UI implemented, acceptance partial, 11 November 2026. **Not an implemented relocation feature.**
 
 Implemented so far: a coherent read-only root manifest, pure reference preflight
 grouping, a cancellable read-only candidate-file verifier and permission-scoped
-preview orchestration with catalogue freshness checks. The Mac app has no
-replacement preview UI or Apply operation yet. The remaining FR1 stages below
-are still planned.
+preview orchestration with catalogue freshness checks. Music Library 0.71 adds
+the replacement selection/progress/results sheet. Apply remains absent. Native
+mixed-result, cancellation, stale-state and broader accessibility/appearance
+acceptance are still pending; the implemented UI is not a relocation operation.
 
 Operational state and the current next slice remain in [HANDOFF.md](HANDOFF.md).
 Architecture/invariants remain in [IMPLEMENTATION_SPEC.md](IMPLEMENTATION_SPEC.md).
@@ -51,6 +52,18 @@ Add **Review Replacement Folder…** beside an unavailable root's existing acces
 actions. The sheet explains the registered name/path and asks the user to select
 the directory that contains the same relative layout. Selection alone does not
 start verification, persist a bookmark, change root status or start an import.
+
+Implemented in FolderRecoveryPreview and MusicFolderScanControls. The scrollable
+sheet keeps Close/Verify/Cancel actions outside the results area, groups every
+outcome with counts, and expands paths, hash evidence and reference counts.
+Changed/unavailable rechecks retain explicit historical guidance; even unchanged
+results describe the completion-time comparison. Empty manifests get a separate
+no-references explanation. Dismissal cancels the session. Known registered volume
+metadata is shown, but candidate volume identity is not used as content evidence.
+Compact light-mode native acceptance passed selection, chooser cancellation,
+explicit verification of a disposable empty folder, details/scrolling and close
+with unchanged registered permission state. This does not cover nonempty results
+or slow filesystem cancellation; backend fixture tests cover those mechanics.
 
 The explicit **Verify References** action reads only referenced paths beneath the
 selected directory. Show progress, checked/total files and Cancel. Explain that

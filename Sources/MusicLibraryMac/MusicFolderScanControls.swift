@@ -13,6 +13,7 @@ struct MusicFolderScanControls: View {
     @State private var errorMessage: String?
     @State private var showsRenewalPicker = false
     @State private var renewalStatus: String?
+    @State private var showsRecoveryPreview = false
 
     private var activeBatch: ImportBatch? {
         library.importBatches.first { $0.storageRootID == root.id && $0.status == .scanning }
@@ -66,6 +67,9 @@ struct MusicFolderScanControls: View {
             if root.status != .available {
                 Text("Reconnect the drive and choose Check Access, or use Renew Access to select this same registered folder: \(root.lastKnownPath)")
                     .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                Button("Review Replacement Folder…", systemImage: "folder.badge.questionmark") { showsRecoveryPreview = true }
+                    .disabled(isBusy)
+                    .help("Compare referenced files in another folder without changing the registered folder.")
             }
             if let renewalStatus { Text(renewalStatus).font(.callout).foregroundStyle(.secondary) }
             if let errorMessage {
@@ -89,6 +93,7 @@ struct MusicFolderScanControls: View {
             case .failure(let error): errorMessage = error.localizedDescription
             }
         }
+        .sheet(isPresented: $showsRecoveryPreview) { FolderRecoveryPreview(library: library, root: root) }
     }
 
     private func start(_ operation: @escaping () async throws -> ImportBatchID) {
