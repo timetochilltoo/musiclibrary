@@ -218,8 +218,11 @@ Compact light-mode picker/empty-result acceptance passed with a disposable folde
 Synthetic mixed-result/slow-progress fixtures now cover all eight outcomes,
 changed/unavailable rechecks and failure/retry. Compact dark native acceptance
 passed cancellation draining, superseding selection and Return/Escape, with
-balanced temporary access. Next: disposable real-file/picker integration using
-the production verifier. Full VoiceOver, NAS/remount and FR2 writes stay open.
+balanced temporary access. Disposable real-file/picker integration now passed in
+light mode with real SQLite manifests, full hashing and symlink refusal. Integrity
+confirmed unchanged fixture state after repeated verification. Next: accessible
+result navigation and keyboard acceptance, including unique per-file disclosure
+labels. Full VoiceOver, NAS/remount and FR2 writes stay open.
 
 Store more than an absolute path:
 

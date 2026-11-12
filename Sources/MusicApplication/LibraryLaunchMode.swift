@@ -10,6 +10,7 @@ public enum LibraryLaunchMode: Equatable, Sendable {
             || arguments.contains("--empty-library-fixture")
             || arguments.contains("--registered-folder-fixture")
             || arguments.contains("--folder-recovery-fixture")
+            || arguments.contains("--folder-recovery-files-fixture")
         let browse = bundleIdentifier == "com.timetochilltoo.MusicLibraryBrowseFixture"
             || arguments.contains("--browse-fixture")
         guard navigation || browse else { return .catalogue }

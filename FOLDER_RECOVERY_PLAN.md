@@ -1,14 +1,15 @@
 # Music folder recovery plan
 
-Status: FR1 preview UI and synthetic acceptance fixtures implemented, acceptance partial, 11 November 2026. **Not an implemented relocation feature.**
+Status: FR1 disposable real-file/picker acceptance passed, broader acceptance partial, 12 November 2026. **Not an implemented relocation feature.**
 
 Implemented so far: a coherent read-only root manifest, pure reference preflight
 grouping, a cancellable read-only candidate-file verifier and permission-scoped
 preview orchestration with catalogue freshness checks. Music Library 0.71 adds
 the replacement selection/progress/results sheet. Apply remains absent. Synthetic
 native mixed-result, cancellation and stale-state acceptance passed in compact
-dark mode. Real nonempty picker/verifier integration and full accessibility
-acceptance are still pending; this is not a relocation operation.
+dark mode. Disposable local nonempty picker/verifier integration also passed;
+full accessibility and NAS/remount acceptance remain pending. This is not a
+relocation operation.
 
 Operational state and the current next slice remain in [HANDOFF.md](HANDOFF.md).
 Architecture/invariants remain in [IMPLEMENTATION_SPEC.md](IMPLEMENTATION_SPEC.md).
@@ -78,6 +79,19 @@ details, historical messages, retry admission, progress/cancel, superseding
 selection, balanced access, Return and Escape/dismissal. These are presentation
 and orchestration checks, not real file/grant/NAS evidence. Release refuses the
 fixture flag; production contains neither the fixture factory nor controls.
+
+Real-file acceptance checkpoint: Debug `--folder-recovery-files-fixture` seeds a
+temporary SQLite catalogue and known bytes, marks its original root offline
+after seeding, and runs the real verifier with real operation-scoped access from
+the native folder picker. Its additional selection guard accepts only the exact
+disposable candidate directory (including the macOS /var alias), not parents or
+unrelated URLs. Native light-mode selection, explicit Verify/Verify Again,
+matching/read-hash equality and symlink refusal passed. Outcomes were one each:
+verified, different content, unverified, missing and unsafe. Final integrity
+checked the unchanged manifest/revision/root state, known bytes, outside sentinel,
+symlink destination and absent original/missing paths. Baselines are controlled
+fixture values, not inferred from a user's replacement. This is local disposable
+grant/read evidence; it does not establish NAS/remount or sandbox endurance.
 
 The explicit **Verify References** action reads only referenced paths beneath the
 selected directory. Show progress, checked/total files and Cancel. Explain that

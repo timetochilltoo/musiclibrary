@@ -1,10 +1,24 @@
 # Music Library — Project Handoff
 
-Last updated: 11 November 2026
+Last updated: 12 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — FR1 synthetic mixed-result and cancellation acceptance
+## Current resume — FR1 disposable real-file/picker acceptance
+
+This is an **isolated integration fixture/acceptance checkpoint**. Latest production artifact remains **Music Library 0.71 (build 72)** at `build/Music Library 0.71.app`; schema **17**. No production package/version was needed. The ephemeral Debug fixture uses temporary SQLite and known synthetic bytes only. No personal catalogue/preferences, media or NAS destination was opened.
+
+New FolderRecoveryFileFixture seeds five catalogue asset references using MusicDatabase's import APIs, without a scanner or metadata extractor. Initial seeding exposed the existing guard refusing confirmation for an offline root; the fixture now seeds first and marks its own original root offline afterward, preserving the production safeguard. The original directory deliberately does not exist. Candidate bytes provide matching, different and no-baseline cases; one referenced path is absent and one symlink points to a known sentinel outside the candidate but inside the disposable directory. Expected hashes are controlled fixture baselines, not learned from user replacements.
+
+`Scripts/run-navigation-fixture.sh --folder-recovery-files-fixture` opens FolderRecoveryFileFixtureWorkspace, injects a real session into the production preview and keeps the native picker enabled. Session loading uses LibraryStore/MusicDatabase, permission uses the production security-scope factory, and hashing uses FolderRecoveryVerifier. An extra fixture-only guard permits exactly its candidate directory, allowing /var versus /private/var canonicalization; parents, unrelated file URLs and non-file URLs are refused. The dedicated bundle guard and Release flag refusal keep this out of normal startup. New files and injection controls are Debug-only; no permission substitute or generated report is used here.
+
+Focused checks passed **5 tests/2 suites**. New tests verify the real five-outcome report, expected/read hashes where applicable, unchanged manifest, byte sentinels and symlink destination, absent original/missing paths, and bundle/URL boundaries. Required checks passed: `swift test` **250 tests/53 suites**, `swift test -c release` **239/50**, `swift build` and `git diff --check`. Logs `/private/tmp/musiclibrary-fr1-real-files-{focused,debug,release,build,native}.log`; existing AVMetadataItem deprecation remains.
+
+Native light-mode acceptance passed choosing only the displayed temporary candidate, inert selection, explicit Verify and Verify Again, all five outcome groups, matching expected/read SHA-256 display, and symlink-refusal wording. After closing, Check Fixture Integrity reported unchanged manifest/revision/bookmark/status, candidate bytes, outside sentinel and link destination, with original/missing paths still absent. The integrity helper deliberately reads its own known sentinels for comparison; the verifier does not follow the symlink. This establishes local disposable picker/scope/read integration, not NAS/remount, sandbox endurance, or personal-media acceptance.
+
+Next: **FR1 accessible result navigation and keyboard acceptance**, including unique contextual labels for each per-file hash disclosure (repeated generic labels were ambiguous to native automation in earlier checks). Keep full spoken VoiceOver, NAS/remount/device acceptance and other R8 limits open. No FR2 association writes, relinking or automatic scans are included. Existing GitHub push authorization continues; inspect Git status/history for checkpoint delivery state.
+
+## Previous resume — FR1 synthetic mixed-result and cancellation acceptance
 
 This is an **isolated fixture/acceptance checkpoint**. Latest production artifact remains **Music Library 0.71 (build 72)** at `build/Music Library 0.71.app`; schema **17**. No new production package/version is needed. The ephemeral Debug fixture runs the current preview/session with simulated reports. No personal catalogue/preferences, media or NAS destination was opened, and this fixture does not open any SQLite catalogue or read candidate files.
 

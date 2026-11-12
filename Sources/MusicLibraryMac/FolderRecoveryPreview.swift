@@ -12,6 +12,13 @@ struct FolderRecoveryPreview: View {
     @State private var pickerError: String?
     #if DEBUG
     private var fixture: FolderRecoveryPreviewFixture?
+    private var fileFixture: FolderRecoveryFileFixture?
+
+    init(fileFixture: FolderRecoveryFileFixture) {
+        root = fileFixture.root
+        self.fileFixture = fileFixture
+        _session = StateObject(wrappedValue: fileFixture.session)
+    }
 
     init(fixture: FolderRecoveryPreviewFixture) {
         root = fixture.root
@@ -35,6 +42,13 @@ struct FolderRecoveryPreview: View {
             Divider()
             #if DEBUG
             if let fixture { FolderRecoveryFixtureControls(fixture: fixture) }
+            if let fileFixture {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("DISPOSABLE FIXTURE — real hashing and folder permission, temporary SQLite only").font(.caption.bold())
+                    Text("Choose only this directory:").font(.caption)
+                    Text(fileFixture.candidate.path).font(.caption.monospaced()).textSelection(.enabled)
+                }.padding(12).frame(maxWidth: .infinity, alignment: .leading).background(.quaternary)
+            }
             #endif
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
