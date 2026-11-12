@@ -220,9 +220,13 @@ changed/unavailable rechecks and failure/retry. Compact dark native acceptance
 passed cancellation draining, superseding selection and Return/Escape, with
 balanced temporary access. Disposable real-file/picker integration now passed in
 light mode with real SQLite manifests, full hashing and symlink refusal. Integrity
-confirmed unchanged fixture state after repeated verification. Next: accessible
-result navigation and keyboard acceptance, including unique per-file disclosure
-labels. Full VoiceOver, NAS/remount and FR2 writes stay open.
+confirmed unchanged fixture state after repeated verification. Version 0.72 adds
+contextual per-file hash disclosure labels/identifiers, explicit hash-reference
+labels and semantic result/file headings. Native accessibility-tree checks and
+Return/Escape passed. Tab traversal remains unverified with host full keyboard
+access reported off; no system preference was changed. Full spoken VoiceOver,
+NAS/remount and FR2 writes stay open. Next independent R8 slice: audit recovery
+writer admission across scans/edits before considering broader exclusion changes.
 
 Store more than an absolute path:
 

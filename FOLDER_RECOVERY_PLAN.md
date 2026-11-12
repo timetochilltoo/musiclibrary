@@ -1,6 +1,6 @@
 # Music folder recovery plan
 
-Status: FR1 disposable real-file/picker acceptance passed, broader acceptance partial, 12 November 2026. **Not an implemented relocation feature.**
+Status: FR1 local acceptance and contextual accessibility implemented, broader acceptance partial, 12 November 2026. **Not an implemented relocation feature.**
 
 Implemented so far: a coherent read-only root manifest, pure reference preflight
 grouping, a cancellable read-only candidate-file verifier and permission-scoped
@@ -10,6 +10,16 @@ native mixed-result, cancellation and stale-state acceptance passed in compact
 dark mode. Disposable local nonempty picker/verifier integration also passed;
 full accessibility and NAS/remount acceptance remain pending. This is not a
 relocation operation.
+
+Accessibility checkpoint (0.72): each hash disclosure exposes its outcome and
+relative path with a unique identifier. Its label is applied to the title only,
+preserving expanded reference counts and expected/computed hash text. Sheet,
+results and file paths expose headings; single references use singular wording.
+Native light-mode checks independently expanded unverified/conflicting files and
+retained their absent/baseline hashes. Return and Escape passed. Tab/Shift-Tab did
+not establish traversal on this host; the Debug fixture reports AppKit full
+keyboard access off. No system preference was changed. Full traversal in an
+explicitly configured test environment and spoken VoiceOver remain open.
 
 Operational state and the current next slice remain in [HANDOFF.md](HANDOFF.md).
 Architecture/invariants remain in [IMPLEMENTATION_SPEC.md](IMPLEMENTATION_SPEC.md).

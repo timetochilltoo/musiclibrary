@@ -7,7 +7,7 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 ## 1. Launch the packaged Mac app
 
 1. In Finder, open the project folder.
-2. Open the newest sequential package, currently `build/Music Library 0.71.app`. An older `/Applications/Music Library.app` installation is not automatically updated by packaging.
+2. Open the newest sequential package, currently `build/Music Library 0.72.app`. An older `/Applications/Music Library.app` installation is not automatically updated by packaging.
 3. If macOS blocks the first launch, Control-click the app, choose **Open**, then choose **Open** again.
 4. The app opens a catalogue in its Application Support folder. It does not use a SQLite database on the NAS.
 5. Keep the app open while following the tests below. If anything unexpected happens, take a screenshot and note the exact action just before it happened.
@@ -20,6 +20,8 @@ Use copies or a small test folder first. Do not begin with your only copy of a r
 4. Do not move, rename, or edit the original media during this guide.
 
 ### R8 Settings recovery/sharing presentation (0.52)
+
+0.72 recovery accessibility: use the synthetic recovery fixture below. Confirm the title, Verification results and expanded file paths expose headings. Expand Unverified and Catalogue conflict, then their hash details independently: each disclosure must expose its outcome/path, while expanded content retains the correct reference count, expected hash per reference and computed/absent hash message. Visible disclosure titles remain concise. Return must Verify and Escape must close. Native light AX/visual checks passed; Tab/Shift-Tab did not establish focus traversal while the fixture reported System full keyboard access: off. No global preference was changed. Repeat full keyboard traversal/disclosure activation with keyboard access enabled in an explicitly configured test environment; separately record spoken VoiceOver and broader appearance/contrast acceptance.
 
 Disposable real-file acceptance (Debug only): run `Scripts/run-navigation-fixture.sh --folder-recovery-files-fixture`. The banner supplies the only allowed candidate directory. Choose Folder, use Command-Shift-G to navigate to that exact temporary path, and Open. Selection alone must show no results. Verify References must produce one each Verified, Different content, Unverified, Missing and Unsafe path. Expand Verified → Hashes and references to compare expected/read hashes; Unsafe path must explain that symlinks are not followed. Verify Again must complete, then Close → Check Fixture Integrity must report unchanged catalogue/revision/bookmark/status, seeded bytes and outside sentinel, with original/missing paths still absent. This passed natively in light mode on 12 November 2026. The fixture uses real SQLite, scope acquisition and hashing; its deliberately seeded baseline bytes are not user media. Never select personal folders. Extra guards refuse other paths; Release refuses this flag. NAS/remount, sandbox endurance and full accessibility remain separate acceptance.
 

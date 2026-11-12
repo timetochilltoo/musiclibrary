@@ -35,7 +35,7 @@ struct FolderRecoveryPreview: View {
     var body: some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Review Replacement Folder").font(.title2.bold())
+                Text("Review Replacement Folder").font(.title2.bold()).accessibilityAddTraits(.isHeader)
                 Text("Compare the files referenced by this music folder before deciding what to do next.")
                     .foregroundStyle(.secondary)
             }.frame(maxWidth: .infinity, alignment: .leading).padding(20)
@@ -156,7 +156,7 @@ struct FolderRecoveryPreview: View {
 
     private func results(_ completion: FolderRecoveryPreviewSession.Completion) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Verification results").font(.headline)
+            Text("Verification results").font(.headline).accessibilityAddTraits(.isHeader)
             switch completion.freshness {
             case .unchanged:
                 Label("Catalogue matched the captured references at completion.", systemImage: "checkmark.circle")
@@ -203,18 +203,25 @@ struct FolderRecoveryPreview: View {
 
     private func evidence(_ entry: FolderRecoveryVerifier.Evidence, title: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            path(entry.group.relativePath)
+            path(entry.group.relativePath).accessibilityAddTraits(.isHeader)
             if let detail = entry.detail { Text(detail).font(.callout).foregroundStyle(.secondary).textSelection(.enabled) }
-            DisclosureGroup("Hashes and references") {
+            DisclosureGroup {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("\(entry.group.references.count) asset references").font(.caption)
+                    Text(entry.group.references.count == 1 ? "1 asset reference" : "\(entry.group.references.count) asset references").font(.caption)
                     ForEach(entry.group.references.indices, id: \.self) { index in
                         let reference = entry.group.references[index]
                         Text("Expected: \(reference.expectedContentHash ?? "No recorded full hash")").font(.caption.monospaced()).textSelection(.enabled)
+                            .accessibilityLabel("Expected SHA-256 for reference \(index + 1): \(reference.expectedContentHash ?? "No recorded full hash")")
                     }
                     Text("Read: \(entry.actualContentHash ?? "No full hash read")").font(.caption.monospaced()).textSelection(.enabled)
+                        .accessibilityLabel("Computed SHA-256: \(entry.actualContentHash ?? "No full hash read")")
                 }
-            }.font(.caption)
+            } label: {
+                Text("Hashes and references")
+                    .accessibilityLabel("\(title). Hashes and references for \(entry.group.relativePath)")
+                    .accessibilityIdentifier("folder-recovery-hashes-\(entry.group.relativePath)")
+            }
+            .font(.caption)
         }.padding(.vertical, 8).padding(.leading, 10)
     }
 

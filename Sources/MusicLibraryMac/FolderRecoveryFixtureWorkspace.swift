@@ -1,4 +1,5 @@
 #if DEBUG
+import AppKit
 import SwiftUI
 import MusicApplication
 
@@ -44,6 +45,7 @@ struct FolderRecoveryFixtureControls: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("SYNTHETIC — no catalogue or file reads").font(.caption.bold())
+            Text("System full keyboard access: \(NSApp.isFullKeyboardAccessEnabled ? "on" : "off")").font(.caption)
             Picker("Scenario for next verification", selection: $control.mode) {
                 ForEach(FolderRecoveryPreviewFixture.Mode.allCases) { mode in Text(mode.rawValue).tag(mode) }
             }.pickerStyle(.menu)

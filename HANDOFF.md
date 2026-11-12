@@ -4,7 +4,21 @@ Last updated: 12 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — FR1 disposable real-file/picker acceptance
+## Current resume — FR1 contextual accessibility (0.72)
+
+Current artifact: **Music Library 0.72 (build 73)** at `build/Music Library 0.72.app`, Release/native architecture; schema **17**. This slice improves recovery-result accessibility without changing verification, persistence or root associations. Native checks used isolated synthetic fixtures only; no personal catalogue/preferences, media or NAS destination was opened. No system keyboard preference was changed.
+
+FolderRecoveryPreview now exposes the sheet title, Verification results and file paths as headings. Each per-file hash disclosure has a contextual accessibility label containing the outcome and relative path, plus a unique path-specific identifier. Visible labels remain concise. Expected SHA-256 labels identify their reference index; computed SHA-256 and absent-hash messages remain available. A single asset reference uses singular wording. The Debug fixture displays NSApp.isFullKeyboardAccessEnabled to make the host's keyboard test mode explicit; this diagnostic does not change preferences and is excluded from Release.
+
+Native QA caught an initial SwiftUI label-propagation problem: an accessibilityLabel on the entire DisclosureGroup replaced its expanded child text with repeated context. The final implementation applies the label/identifier to its title Text only. Rebuilt native checks independently targeted unverified and conflicting-file disclosures without ambiguity and confirmed one-reference/no-baseline text, two distinct expected hashes, and no-computed-hash messages were preserved. Headings were present in the AX tree and light-mode layout remained readable. Return began verification and Escape dismissed the sheet. These are AX/visual checks, not spoken VoiceOver acceptance.
+
+Tab, Shift-Tab and an alternate Tab attempt did not establish focus traversal on this host. The Debug diagnostic explicitly reported full keyboard access **off**. Full keyboard-only traversal/disclosure activation therefore remains unverified until run in an explicitly configured test environment. Do not interpret this as passing all keyboard acceptance, or silently change the user's global settings to remove the limitation. Prior dark-mode and disposable real-file/picker evidence remains recorded below and was not rerun for this presentation-only slice.
+
+Final source checks passed: `swift test` **250 tests/53 suites**, `swift test -c release` **239/50**, `swift build` and `git diff --check`. Logs `/private/tmp/musiclibrary-fr1-accessibility-{debug,release,build,native,package}.log`. Afterward the Debug-only keyboard diagnostic compiled and was inspected natively. No label-mirroring unit tests were added for this presentation change; existing verifier/session safety coverage remains unchanged. Existing AVMetadataItem deprecation remains. Scripts/package-mac-app.sh succeeded; the bundle reports version 0.72/build 73. Plist lint and strict deep codesign verification passed.
+
+Next independent slice: **R8 recovery writer-admission audit** across scans/catalogue edits versus archive installation/reset, using source review and disposable-fixture regression design before proposing broader exclusion changes. Current service transfer serialization is not a global catalogue lock. Keep this an audit boundary; FR2 association writes/relinking remain deferred. Full keyboard traversal, spoken VoiceOver, NAS/remount/device acceptance and other R8 limits stay open. Existing GitHub delivery authorization applies; inspect Git history/status for the checkpoint.
+
+## Previous resume — FR1 disposable real-file/picker acceptance
 
 This is an **isolated integration fixture/acceptance checkpoint**. Latest production artifact remains **Music Library 0.71 (build 72)** at `build/Music Library 0.71.app`; schema **17**. No production package/version was needed. The ephemeral Debug fixture uses temporary SQLite and known synthetic bytes only. No personal catalogue/preferences, media or NAS destination was opened.
 
