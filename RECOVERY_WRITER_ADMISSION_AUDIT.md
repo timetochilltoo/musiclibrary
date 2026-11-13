@@ -4,6 +4,11 @@ Date: 13 November 2026. Scope: R8 source audit and regression design.
 Status: **gaps identified; no exclusion fix implemented**. Production remains 0.72/build 73, schema 17.
 Operational next action belongs in [HANDOFF.md](HANDOFF.md).
 
+RA1 checkpoint: [CatalogueAdmission](Sources/MusicApplication/CatalogueAdmission.swift)
+and its [lifecycle tests](Tests/MusicApplicationTests/CatalogueAdmissionTests.swift)
+now implement the isolated admission primitive. Nothing in LibraryStore uses it
+yet; the audited call-site gaps below remain open.
+
 ## Finding
 
 `LibraryTransferQueue` serializes its participating services, not all catalogue
@@ -173,12 +178,23 @@ startup. Do not add passing tests that require unsafe admission to remain allowe
 
 ## Incremental implementation order
 
-- **RA1, next:** implement/test the isolated admission state machine, lease release,
-  fairness and cancelled-waiter/drain semantics. No LibraryStore integration,
-  filesystem replacement or claim of global protection yet.
-- **RA2:** inventory and migrate LibraryStore database/artwork uses to scoped
+- **RA1, implemented in isolation:** main-actor scoped ordinary ownership,
+  FIFO maintenance reservation/drain, fail-fast new work, context membership,
+  cancellation-safe release and terminal review-required state. Nine lifecycle
+  tests include cancelled head/middle waiters, grant races, explicit nested
+  helpers and detached-worker drain. A maintenance body retains its own context
+  for cleanup after requesting review, while queued/new work refuses. Active-body
+  cancellation/rollback policy remains with that body; the coordinator does not
+  revoke ownership, force-stop a worker or inject failure after successful work.
+  Contexts are active lease tokens, not installation epochs. No LibraryStore
+  integration, filesystem replacement or global protection is established.
+- **RA2, next:** inventory and migrate LibraryStore database/artwork uses to scoped
   context, including readers, scans, metadata and fingerprints; exercise real
   temporary workflows. Partial migration must not be described as global safety.
+  Start with a context-taking helper foundation and an ordinary read/edit vertical
+  slice; do not enable production maintenance reservation until all affected
+  holders and nested helper paths are accounted for. Calling maintenance while
+  holding an ordinary lease remains a prohibited acquisition-order deadlock.
 - **RA3:** integrate queued recovery/capture boundaries and epoch invalidation;
   add the interleaving regressions above. Recheck every existing rollback/archive
   and root-preserving reset test before claiming exclusion.
@@ -188,14 +204,15 @@ startup. Do not add passing tests that require unsafe admission to remain allowe
 RA2–RA4 are a proposed sequence, not completed work or permission for FR2. A
 coordinator primitive passing its tests will not fix the present call-site gaps.
 
-## Validation for this audit
+## Evidence boundaries
 
 Source reviewed on 13 November 2026 against the files linked above. Existing
 `swift test --filter 'RecoveryTransferCoordinationTests|RecoveryTransferIntegrationTests|LibraryTransferQueueTests'`
 passed **19 tests in 3 suites**, using temporary fixtures. Log:
 `/private/tmp/musiclibrary-recovery-admission-audit.log`. Those tests cover current
 queue/rollback behavior, not the new concurrency cases in the design table.
-Whitespace and repository-local Markdown link targets were checked. No new source,
-schema, app artifact or test implementation was added; no full Debug/Release suite
-or package was rerun for documentation-only changes. Prior 0.72 results remain in
-HANDOFF history, not newly established by this audit.
+Whitespace and repository-local Markdown link targets were checked. The initial
+audit added no source/schema/test implementation and did not rerun full suites or
+package an app. The later RA1 checkpoint adds the isolated primitive and lifecycle
+tests, with current full/focused validation in HANDOFF. Neither checkpoint
+establishes application-wide exclusion or fixes the call-site races described here.

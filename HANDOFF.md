@@ -4,7 +4,21 @@ Last updated: 13 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — R8 recovery writer-admission audit
+## Current resume — RA1 isolated catalogue admission coordinator
+
+This is a **backend primitive checkpoint**. Latest runnable artifact remains **Music Library 0.72 (build 73)** at `build/Music Library 0.72.app`; schema **17**. No UI, package/version, SQLite or LibraryStore behavior changed. No native app, personal catalogue/preferences, media or NAS destination was opened. New tests use only in-memory coordination and controlled continuations; existing full suites retain their disposable-fixture boundaries.
+
+New internal main-actor `CatalogueAdmission` scopes ordinary resource use and FIFO maintenance. New operations fail locally once maintenance is queued; admitted operations drain before an exclusive context is granted. Release grants the next maintenance owner synchronously, leaving no ordinary-admission gap. Cancelled waiters are removed without cancelling earlier owners or reopening admission in front of a queued successor. A cancellation racing with grant is checked before entering the body. Running cancellation never revokes ownership early: the body and any awaited worker must drain before scope exit. The body owns safe cancellation/rollback policy; there is no automatic post-body cancellation error after successful work.
+
+Contexts identify coordinator ownership and current membership. Explicit context reuse supports nested helpers even while admission is draining, without adding another ordinary count; tokens become invalid at scope exit and refuse cross-coordinator use. There is no TaskLocal bypass and no catalogue installation epoch yet. An exclusive owner can mark review required, refusing queued/new work while retaining its own cleanup context until return. The primitive has no automatic review-clear path. These contracts do not prevent a caller from incorrectly leaking raw resources or awaiting maintenance while holding a lease; integration must follow the documented lifetime/acquisition rules.
+
+`CatalogueAdmissionTests` covers shared draining, FIFO with a cancelled middle waiter, cancelled sole/head reservations, repeated cancellation/grant races, pre-cancelled requests, actual detached-worker ownership after parent cancellation, body failures, nested/expired/foreign contexts and review-required cleanup/refusal. Tests use continuation gates, bounded condition waits and a suite time limit rather than guessed sleeps. Initial compilation required discarding Swift Testing Issue return values in diagnostic closures; no production defect was exposed.
+
+Required checks passed: Debug **259 tests/54 suites**, Release **248/51**, `swift build` and whitespace checks. Logs `/private/tmp/musiclibrary-ra1-{focused,debug,release,build}.log`; the final full suites include all **9 lifecycle tests**, including the strengthened detached-worker case. Final review moved reservation registration before any await, independently of continuation-helper executor behavior; required checks were rerun for that source. Existing AVMetadataItem deprecation remains. No app packaging is needed for this unintegrated backend slice.
+
+Next: **RA2 LibraryStore catalogue-use inventory and explicit context-taking helper foundation, then a first ordinary read/edit vertical slice with temporary-fixture coverage**. Keep production recovery reservation disabled until readers, nested helpers, background scans/metadata/fingerprints and managed-artwork holders are migrated and tested. Preserve transfer-queue → catalogue-admission order; never wait on maintenance from a held ordinary lease. The source-audited race gaps remain open despite passing RA1 tests. RA3 recovery/capture/epoch integration and RA4 archive/connection defense follow; FR2 remains deferred. Full keyboard/VoiceOver, NAS/remount/device and other R8 acceptance stay open. Existing GitHub delivery authorization applies; inspect Git history/status for the checkpoint.
+
+## Previous resume — R8 recovery writer-admission audit
 
 This is a **source-audit/documentation checkpoint**. Latest runnable artifact remains **Music Library 0.72 (build 73)** at `build/Music Library 0.72.app`; schema **17**. No production source, test implementation, package/version or catalogue changed. No native app, personal catalogue/preferences, media or NAS destination was opened. Existing automated tests used temporary recovery fixtures only.
 

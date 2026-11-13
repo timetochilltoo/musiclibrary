@@ -237,6 +237,15 @@ no race fix or live corruption is claimed. Next RA1: isolated admission state
 machine and lease/drain/cancellation tests, before integrating LibraryStore uses.
 Current app stays 0.72; global exclusion and FR2 remain unimplemented.
 
+RA1 coordinator checkpoint (13 November 2026): an internal main-actor primitive
+now implements scoped shared uses, FIFO exclusive reservation/drain, cancelled
+waiter removal, safe running-body lifetime and fail-closed review state. Explicit
+nested contexts expire at scope end and refuse cross-coordinator use. Isolated
+tests cover these mechanics; LibraryStore does not use the primitive yet.
+Next RA2: inventory and context-taking helper foundation, then an ordinary
+read/edit migration slice before background users and maintenance integration.
+Do not claim current race gaps are fixed or introduce FR2 association writes.
+
 Store more than an absolute path:
 
 - storage-root ID plus relative path;
