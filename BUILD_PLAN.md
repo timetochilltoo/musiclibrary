@@ -228,6 +228,15 @@ access reported off; no system preference was changed. Full spoken VoiceOver,
 NAS/remount and FR2 writes stay open. Next independent R8 slice: audit recovery
 writer admission across scans/edits before considering broader exclusion changes.
 
+R8 recovery admission audit (13 November 2026): source review confirms ordinary
+edits, scans, metadata/fingerprint workers and database readers do not join the
+transfer queue's recovery boundary. Archive revision/SQLite/artwork capture also
+spans separate steps. The [writer-admission audit](RECOVERY_WRITER_ADMISSION_AUDIT.md)
+records evidence, inferred race consequences and deterministic regression design;
+no race fix or live corruption is claimed. Next RA1: isolated admission state
+machine and lease/drain/cancellation tests, before integrating LibraryStore uses.
+Current app stays 0.72; global exclusion and FR2 remain unimplemented.
+
 Store more than an absolute path:
 
 - storage-root ID plus relative path;

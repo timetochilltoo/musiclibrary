@@ -1,10 +1,24 @@
 # Music Library — Project Handoff
 
-Last updated: 12 November 2026
+Last updated: 13 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — FR1 contextual accessibility (0.72)
+## Current resume — R8 recovery writer-admission audit
+
+This is a **source-audit/documentation checkpoint**. Latest runnable artifact remains **Music Library 0.72 (build 73)** at `build/Music Library 0.72.app`; schema **17**. No production source, test implementation, package/version or catalogue changed. No native app, personal catalogue/preferences, media or NAS destination was opened. Existing automated tests used temporary recovery fixtures only.
+
+Read [RECOVERY_WRITER_ADMISSION_AUDIT.md](RECOVERY_WRITER_ADMISSION_AUDIT.md) before implementing the next slice. LibraryTransferQueue orders participating backup/sharing/recovery services, but ordinary LibraryStore edits, root/access updates, managed-artwork operations, metadata/fingerprint workers and detached scans bypass it. Many operations capture a database actor across awaits; scans explicitly retain it. `database = nil` stops new captures during installation but does not drain or revoke existing holders. Scan cancellation only requests cancellation and does not wait for worker/finalization completion. Readers also matter because they can retain the old actor and publish stale state.
+
+CompleteCatalogueArchive.create separately reads revision, copies SQLite, queries live artwork paths and copies managed files. The SQLite backup has its own consistency/integrity protections; the missing contract is coherence across all resources. Reset/cleanup create recovery before later mutations, leaving a source-visible snapshot-to-mutation window for unrelated writes. Potential omitted edits, stale actor writes, archive metadata/artwork mismatches and late cache publication are inferred race consequences, not reproduced corruption. Existing rollback, verified recovery, exact RESET confirmation and root/source preservation safeguards remain in place.
+
+The audit includes an operation inventory, precise source links, proposed admission/epoch rules and twelve deterministic regression scenarios. Proposed order: RA1 isolated coordinator; RA2 scoped database/artwork-use migration including workers/readers; RA3 recovery/capture integration and epochs; RA4 coherent archive metadata/connection-close defense and native feedback. Acquisition order must avoid transfer-queue/admission deadlocks. New ordinary work should refuse once draining starts, while admitted users finish safely; never silently replay old edits against a replacement catalogue. Explicit FLAC writes keep separate backup/journal protections and must not be automatically undone.
+
+Validation: `swift test --filter 'RecoveryTransferCoordinationTests|RecoveryTransferIntegrationTests|LibraryTransferQueueTests'` passed **19 tests/3 suites**. Log `/private/tmp/musiclibrary-recovery-admission-audit.log`. Source review, local Markdown target checks and `git diff --check` cover this documentation-only slice. Full Debug/Release suites and packaging were not rerun; preceding 0.72 results below remain historical evidence, not new concurrency coverage. No tests asserting unsafe behavior were added.
+
+Next: **RA1 isolated catalogue admission coordinator and focused lease/drain/fairness/cancelled-waiter tests**. Keep it independent of LibraryStore/filesystem replacement initially; a passing primitive does not fix unintegrated call sites. Do not claim global protection until the planned migration and interleaving coverage are complete. FR2 path writes/relinking remain deferred. Full keyboard traversal with explicit keyboard-access configuration, spoken VoiceOver, NAS/remount/device and other R8 acceptance stay open. Existing GitHub push authorization applies; inspect Git history/status for delivery state.
+
+## Previous resume — FR1 contextual accessibility (0.72)
 
 Current artifact: **Music Library 0.72 (build 73)** at `build/Music Library 0.72.app`, Release/native architecture; schema **17**. This slice improves recovery-result accessibility without changing verification, persistence or root associations. Native checks used isolated synthetic fixtures only; no personal catalogue/preferences, media or NAS destination was opened. No system keyboard preference was changed.
 

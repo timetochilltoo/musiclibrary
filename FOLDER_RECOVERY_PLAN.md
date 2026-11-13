@@ -201,6 +201,10 @@ preview before any future write. FR1 must not claim a global catalogue lock.
 Before implementing a write, resolve writer exclusion for root renewal, scans,
 edits, restore/reset and publication. The current transfer queue does not cover
 all those operations; merely adding one queued task cannot establish exclusion.
+The [R8 writer-admission audit](RECOVERY_WRITER_ADMISSION_AUDIT.md) now maps these
+gaps and proposes staged coordinator/integration coverage. It is a source audit,
+not an implemented lock or evidence that live corruption occurred. RA1's isolated
+coordinator is the next implementation boundary; FR2 remains deferred.
 
 A proposed apply contract must include all of the following:
 
