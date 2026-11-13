@@ -6,8 +6,10 @@ Operational next action belongs in [HANDOFF.md](HANDOFF.md).
 
 RA1 checkpoint: [CatalogueAdmission](Sources/MusicApplication/CatalogueAdmission.swift)
 and its [lifecycle tests](Tests/MusicApplicationTests/CatalogueAdmissionTests.swift)
-now implement the isolated admission primitive. Nothing in LibraryStore uses it
-yet; the audited call-site gaps below remain open.
+implement the admission primitive. RA2 now scopes five ordinary LibraryStore
+methods; [CATALOGUE_USE_MIGRATION.md](CATALOGUE_USE_MIGRATION.md) records current and
+remaining coverage. No production recovery reservation is enabled, so the broader
+audited call-site gaps below remain open.
 
 ## Finding
 
@@ -30,23 +32,23 @@ Before integrating a gate, enumerate every public use case and private worker.
 | Operation | Present protection | Gap relevant to recovery |
 |---|---|---|
 | Sharing, database backup, archive export/restore, reset, cleanup | [Transfer queue](Sources/MusicApplication/LibraryTransferQueue.swift#L15); service entry points call `run` | Orders these services only; not an application-wide resource lease. |
-| Album create/update and other catalogue edits | [addAlbum/updateAlbum](Sources/MusicApplication/LibraryStore.swift#L398), actor SQL/transactions | Capture `database` without a maintenance gate. Album creation can await cover download before its commit. |
-| Disc/track/credit/alias, box/location, playlist and lyrics edits | LibraryStore methods around lines 441–565, 968–1033 and 1506–1535 | Same direct database access pattern. UI-local disabling is not service admission. |
-| Managed artwork import/migration/selection | [addAlbumArtwork](Sources/MusicApplication/LibraryStore.swift#L503), [downloadManagedMusicBrainzArtwork](Sources/MusicApplication/LibraryStore.swift#L827) | Catalogue records and artwork files can change outside the transfer queue. Provider work retains the managed store across an await. |
-| Root renewal/scope/deletion and access refresh | [renewStorageRootAccess](Sources/MusicApplication/LibraryStore.swift#L575), refresh around line 606 | Root metadata writes do not join recovery exclusion. Access refresh is a writer, despite its name. |
-| Metadata analysis, proposal confirmation/attachment and corrections | [analyzeImportBatch](Sources/MusicApplication/LibraryStore.swift#L709), confirmation around line 746 | Multiple await/write steps; metadata reads can return after a catalogue replacement. |
-| Scan startup and detached scan persistence | [startImportScan](Sources/MusicApplication/LibraryStore.swift#L1423) | Detached task explicitly captures `database`; persists candidates/errors/completion/reconciliation outside the queue. |
-| Scan cancellation | [cancelImportScan](Sources/MusicApplication/LibraryStore.swift#L1485) | Sets cancellation only; does not await worker completion. Recovery does not call a scan-drain barrier. |
-| Fingerprinting and availability health | [verifyFingerprints](Sources/MusicApplication/LibraryStore.swift#L1362) | Hash worker returns to a retained database and records results later. Availability checks also write. Hash recording need not increment revision. |
-| Catalogue reads, reload, search, playback resolution, FR1 manifest reads | [reload](Sources/MusicApplication/LibraryStore.swift#L295), search around line 379, manifest around line 570 | Readers also retain database actors. Reload/search generations protect their own requests, not an explicit catalogue-installation epoch. Reader lifetime matters when replacing database files. |
-| Explicit FLAC tag execution | [executeTagWrite](Sources/MusicApplication/LibraryStore.swift#L1007) | Separate opt-in source writer; not a database lease or queued service. Its already-started work must never be automatically undone to facilitate recovery. |
+| Album create/update and other catalogue edits | [addAlbum/updateAlbum](Sources/MusicApplication/LibraryStore.swift#L427), actor SQL/transactions | RA2 scopes updateAlbum, but production recovery never reserves admission. addAlbum still captures directly and can await cover download before commit. |
+| Disc/track/credit/alias, box/location, playlist and lyrics edits | LibraryStore catalogue mutation methods; see the migration inventory | Same direct database access pattern. UI-local disabling is not service admission. |
+| Managed artwork import/migration/selection | [addAlbumArtwork](Sources/MusicApplication/LibraryStore.swift#L537), [downloadManagedMusicBrainzArtwork](Sources/MusicApplication/LibraryStore.swift#L861) | Catalogue records and artwork files can change outside the transfer queue. Provider work retains the managed store across an await. |
+| Root renewal/scope/deletion and access refresh | [renewStorageRootAccess](Sources/MusicApplication/LibraryStore.swift#L609) and refreshStorageRootAccess | Root metadata writes do not join recovery exclusion. refreshStorageRootAccess is a writer, despite its name. |
+| Metadata analysis, proposal confirmation/attachment and corrections | [analyzeImportBatch](Sources/MusicApplication/LibraryStore.swift#L750) and confirmImportReleaseProposal | Multiple await/write steps; metadata reads can return after a catalogue replacement. |
+| Scan startup and detached scan persistence | [startImportScan](Sources/MusicApplication/LibraryStore.swift#L1457) | Detached task explicitly captures `database`; persists candidates/errors/completion/reconciliation outside the queue. |
+| Scan cancellation | [cancelImportScan](Sources/MusicApplication/LibraryStore.swift#L1519) | Sets cancellation only; does not await worker completion. Recovery does not call a scan-drain barrier. |
+| Fingerprinting and availability health | [verifyFingerprints](Sources/MusicApplication/LibraryStore.swift#L1396) | Hash worker returns to a retained database and records results later. Availability checks also write. Hash recording need not increment revision. |
+| Catalogue reads, reload, search, playback resolution, FR1 manifest reads | [reload](Sources/MusicApplication/LibraryStore.swift#L308), search and folderRecoveryManifest | RA2 scopes reload/search, but remaining readers retain actors directly and production recovery does not reserve admission. Request generations are not an installation epoch. |
+| Explicit FLAC tag execution | [executeTagWrite](Sources/MusicApplication/LibraryStore.swift#L1041) | Separate opt-in source writer; not a database lease or queued service. Its already-started work must never be automatically undone to facilitate recovery. |
 | Settings controls | [activity/disabled controls](Sources/MusicLibraryMac/MusicLibraryMacApp.swift#L1699) | Local submission and recovery-review flags cover selected controls, not all other workspaces, in-flight tasks or API callers. |
 
 ### A. Recovery boundary versus ordinary writes — high priority
 
 Complete restore stages the chosen archive, creates a local recovery archive,
 checkpoints, sets `self.database = nil`, then moves/copies database and artwork
-files. See [restore](Sources/MusicApplication/LibraryStore.swift#L1079).
+files. See [restore](Sources/MusicApplication/LibraryStore.swift#L1113).
 Ordinary operations can capture the old database before these steps and suspend.
 Setting the store property to nil refuses *new captures* during that interval;
 it does not revoke existing references or drain workers.
@@ -59,7 +61,7 @@ reproduced by this audit. Staging before the recovery snapshot is not itself a
 problem if the eventual exclusive boundary covers snapshot-through-install.
 
 Reset similarly awaits its complete recovery archive before deleting rows and
-moving/removing artwork. See [reset](Sources/MusicApplication/LibraryStore.swift#L1190).
+moving/removing artwork. See [reset](Sources/MusicApplication/LibraryStore.swift#L1224).
 A write admitted after that recovery snapshot can be removed by the reset
 without being represented in the snapshot. Cleanup also has a snapshot-to-delete
 window. Preserve exact RESET confirmation and root-preservation behavior.
@@ -186,13 +188,14 @@ startup. Do not add passing tests that require unsafe admission to remain allowe
   for cleanup after requesting review, while queued/new work refuses. Active-body
   cancellation/rollback policy remains with that body; the coordinator does not
   revoke ownership, force-stop a worker or inject failure after successful work.
-  Contexts are active lease tokens, not installation epochs. No LibraryStore
-  integration, filesystem replacement or global protection is established.
-- **RA2, next:** inventory and migrate LibraryStore database/artwork uses to scoped
+  Contexts are active lease tokens, not installation epochs. RA2 begins partial
+  LibraryStore integration below; global protection is not established.
+- **RA2, partial:** inventory and migrate LibraryStore database/artwork uses to scoped
   context, including readers, scans, metadata and fingerprints; exercise real
   temporary workflows. Partial migration must not be described as global safety.
-  Start with a context-taking helper foundation and an ordinary read/edit vertical
-  slice; do not enable production maintenance reservation until all affected
+  The context-taking helper foundation and first ordinary read/edit slice are
+  implemented. Next migrate the remaining ordinary album/detail CRUD and readers;
+  do not enable production maintenance reservation until all affected
   holders and nested helper paths are accounted for. Calling maintenance while
   holding an ordinary lease remains a prohibited acquisition-order deadlock.
 - **RA3:** integrate queued recovery/capture boundaries and epoch invalidation;
@@ -213,6 +216,6 @@ passed **19 tests in 3 suites**, using temporary fixtures. Log:
 queue/rollback behavior, not the new concurrency cases in the design table.
 Whitespace and repository-local Markdown link targets were checked. The initial
 audit added no source/schema/test implementation and did not rerun full suites or
-package an app. The later RA1 checkpoint adds the isolated primitive and lifecycle
-tests, with current full/focused validation in HANDOFF. Neither checkpoint
+package an app. RA1 adds the primitive/lifecycle tests; RA2 adds partial scoped
+use and temporary-database tests, with current validation in HANDOFF. None of these checkpoints
 establishes application-wide exclusion or fixes the call-site races described here.

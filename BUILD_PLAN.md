@@ -246,6 +246,16 @@ Next RA2: inventory and context-taking helper foundation, then an ordinary
 read/edit migration slice before background users and maintenance integration.
 Do not claim current race gaps are fixed or introduce FR2 association writes.
 
+RA2 first integration (13 November 2026): LibraryStore now owns the coordinator
+and captures its database inside a scoped helper for migrated use cases. Public
+reload/search, album update and disc/track reads retain ownership through their
+work; nested refresh/search reuses context. Temporary tests cover drain, refusal,
+cancellation and failure behavior. The [migration inventory](CATALOGUE_USE_MIGRATION.md)
+accounts for all 125 public declarations in LibraryStore.swift and marks the five
+scoped methods. Next: ordinary album/detail CRUD and direct readers; background
+workers/artwork and queued maintenance remain later integration boundaries.
+No production maintenance reservation, global exclusion or FR2 write is enabled.
+
 Store more than an absolute path:
 
 - storage-root ID plus relative path;

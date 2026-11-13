@@ -204,9 +204,10 @@ all those operations; merely adding one queued task cannot establish exclusion.
 The [R8 writer-admission audit](RECOVERY_WRITER_ADMISSION_AUDIT.md) now maps these
 gaps and proposes staged coordinator/integration coverage. It is a source audit,
 not an implemented application lock or evidence that live corruption occurred.
-RA1's isolated coordinator is now implemented/tested, but LibraryStore does not
-use it. RA2 scoped-use migration and later recovery integration remain necessary;
-FR2 stays deferred.
+RA1's coordinator is implemented/tested and RA2 now scopes five ordinary
+LibraryStore methods; the [remaining-use inventory](CATALOGUE_USE_MIGRATION.md)
+tracks incomplete coverage. Production recovery still does not reserve it.
+Further scoped-use migration and recovery integration are necessary; FR2 stays deferred.
 
 A proposed apply contract must include all of the following:
 

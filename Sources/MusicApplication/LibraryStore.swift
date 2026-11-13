@@ -76,6 +76,9 @@ public final class LibraryStore: ObservableObject {
     private let lastMasterBackupAtKey = "MusicLibrary.lastMasterBackupAt"
     private var publicationSchedule = SnapshotPublicationSchedule()
     let transferQueue = LibraryTransferQueue()
+    // RA2 partial migration only. Recovery must not reserve this coordinator
+    // until every database/artwork holder has a scoped lifetime.
+    let catalogueAdmission = CatalogueAdmission()
     #if DEBUG
     @Published public private(set) var syntheticRecoveryFailure: RestoreRecoveryError?
 
@@ -292,7 +295,22 @@ public final class LibraryStore: ObservableObject {
         }
     }
 
+    /// Capture the database only after admission. Callers must await resource
+    /// work and must not return the actor or start unowned workers from this scope.
+    func withCatalogueUse<Value: Sendable>(using context: CatalogueAdmission.Context? = nil,
+        _ operation: @MainActor (MusicDatabase, CatalogueAdmission.Context) async throws -> Value) async throws -> Value {
+        try await catalogueAdmission.withOperation(using: context) { context in
+            guard let database else { throw DatabaseError.notFound("Catalogue database") }
+            return try await operation(database, context)
+        }
+    }
+
     public func reload() async throws {
+        try await catalogueAdmission.withOperation { context in try await self.reload(using: context) }
+    }
+
+    private func reload(using context: CatalogueAdmission.Context) async throws {
+        try catalogueAdmission.validate(context)
         guard let database else { return }
         reloadGeneration += 1
         let generation = reloadGeneration
@@ -371,10 +389,21 @@ public final class LibraryStore: ObservableObject {
         scheduleDailyMasterBackupIfNeeded(for: revision)
         // Searches cannot cancel a catalogue refresh or make it publish an older
         // query. Refresh the latest query against the newly loaded catalogue.
-        await search(activeSearchTerm ?? "")
+        try await search(activeSearchTerm ?? "", using: context)
     }
 
     public func search(_ term: String) async {
+        guard !Task.isCancelled else { return }
+        do {
+            try await catalogueAdmission.withOperation { context in try await self.search(term, using: context) }
+        } catch {
+            guard !Task.isCancelled else { return }
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func search(_ term: String, using context: CatalogueAdmission.Context) async throws {
+        try catalogueAdmission.validate(context)
         guard !Task.isCancelled else { return }
         activeSearchTerm = term
         searchGeneration += 1
@@ -432,9 +461,10 @@ public final class LibraryStore: ObservableObject {
     }
 
     public func updateAlbum(_ id: AlbumID, with draft: NewAlbum) async throws {
-        guard let database else { throw DatabaseError.notFound("Catalogue database") }
-        _ = try await database.updateAlbum(id, with: draft)
-        try await reload()
+        try await withCatalogueUse { database, context in
+            _ = try await database.updateAlbum(id, with: draft)
+            try await self.reload(using: context)
+        }
     }
 
     public func boxMembers(of boxSetID: BoxSetID) async throws -> [BoxSetMembership] {
@@ -471,8 +501,12 @@ public final class LibraryStore: ObservableObject {
         try await reload()
     }
 
-    public func discs(albumID: AlbumID) async throws -> [Disc] { guard let database else { throw DatabaseError.notFound("Catalogue database") }; return try await database.discs(albumID: albumID) }
-    public func tracks(discID: DiscID) async throws -> [Track] { guard let database else { throw DatabaseError.notFound("Catalogue database") }; return try await database.tracks(discID: discID) }
+    public func discs(albumID: AlbumID) async throws -> [Disc] {
+        try await withCatalogueUse { database, _ in try await database.discs(albumID: albumID) }
+    }
+    public func tracks(discID: DiscID) async throws -> [Track] {
+        try await withCatalogueUse { database, _ in try await database.tracks(discID: discID) }
+    }
     public func playbackAlbumIDs(trackIDs: [TrackID]) async throws -> [TrackID: AlbumID] {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
         return try await database.playbackAlbumIDs(trackIDs: trackIDs)
