@@ -4,7 +4,45 @@ Last updated: 20 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — RA2 disc, track, alternate-title and contributor operations
+## Current resume — RA2 box sets, album placement and locations
+
+Thirteen LibraryStore declarations now use catalogue admission, bringing the
+total to 38 of 125. Box creation, empty-box deletion and restoration hold
+admission through refresh. Album move, removal and both reorder overloads use
+the same scope, including the reorder that checks the expected member order.
+Box membership and album-placement reads borrow the database only after
+admission. The location rename, move and delete methods use the shared edit
+helper. Location creation uses the value-returning scoped helper and returns
+its saved record after the reload completes. This preserves the existing
+transaction and refresh behavior.
+
+The new temporary SQLite regression pauses location creation during active
+search refresh. It checks that a synthetic maintenance reservation waits,
+that representative location and placement operations refuse without changing
+the revision, and that an exclusive reservation blocks box-member reads.
+After maintenance releases, the fixture moves an album into and out of its
+box set and checks the resulting placement. Existing box-set and location
+suites also cover stale reorder requests, location cycles and occupied
+location safeguards.
+
+Eight focused tests passed across three suites. The full Debug and Release
+suites passed with 265 and 254 tests respectively. The Swift build, whitespace
+check, declaration inventory and audit link checks passed. Logs are at
+`/private/tmp/musiclibrary-ra2-placement-{focused,debug,release,build}.log`.
+The existing AVMetadataItem deprecation remains.
+
+The [migration inventory](CATALOGUE_USE_MIGRATION.md) lists the scoped and
+remaining methods. Next migrate **playlist edits and direct playlist
+readers**, including all three move overloads and the batch-add refresh/retry path.
+Playback URL resolution, album lifecycle edits, root operations, provider and
+artwork work, scans, metadata and fingerprinting still need coverage. Production
+restore and reset continue to use the existing transfer coordination. Broader
+recovery exclusion depends on migrating all holders and testing interleaving
+before connecting the reservation. Earlier native keyboard, VoiceOver, NAS
+remount and device acceptance remain open. The latest runnable artifact is
+Music Library 0.72 build 73 with schema 17.
+
+## Previous resume — RA2 disc, track, alternate-title and contributor operations
 
 This backend slice adds catalogue admission to 20 LibraryStore entry points,
 bringing the total to 25 of 125 declarations. The latest runnable app is

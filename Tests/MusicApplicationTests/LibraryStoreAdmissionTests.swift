@@ -175,6 +175,57 @@ struct LibraryStoreAdmissionTests {
         #expect(store.catalogueAdmission.activeOperationCount == 0)
     }
 
+    @Test("Location creation returns its published record after draining and placement operations refuse new admission")
+    func placementDrain() async throws {
+        let fixture = try await Fixture.make()
+        defer { fixture.remove() }
+        let probe = Probe(), maintenance = Gate()
+        defer { probe.gate.open(); maintenance.open() }
+        let store = LibraryStore(database: fixture.database, albumSearch: { db, term in try await probe.load(db, term) })
+        let shelf = try await store.addLocation(.init(name: "Shelf"))
+        try await store.addBoxSet(.init(title: "Fixture box", physicalLocationID: shelf.id))
+        let box = try #require(store.boxSets.first)
+        await store.search("album")
+
+        probe.holdNext = true
+        let creation = Task { try await store.addLocation(.init(name: "Second shelf")) }
+        try await until { probe.gate.started }
+        let revision = try await fixture.database.currentRevision()
+        let barrier = Task { try await store.catalogueAdmission.withMaintenance { _ in await maintenance.hold() } }
+        try await until { store.catalogueAdmission.phase == .draining }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            try await store.renameLocation(shelf.id, to: "Refused name")
+        }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            try await store.addBoxSet(.init(title: "Refused box", physicalLocationID: shelf.id))
+        }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            try await store.moveAlbum(fixture.album.id, to: box.id)
+        }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            _ = try await store.boxPlacement(for: fixture.album.id)
+        }
+        #expect(try await fixture.database.currentRevision() == revision)
+        #expect(store.catalogueAdmission.activeOperationCount == 1 && !maintenance.started)
+        probe.gate.open()
+        let created = try await creation.value
+        try await until { maintenance.started }
+        #expect(store.locations.contains { $0.id == created.id && $0.name == created.name })
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            _ = try await store.boxMembers(of: box.id)
+        }
+        maintenance.open()
+        try await barrier.value
+
+        try await store.updateAlbum(fixture.album.id, with: .init(title: fixture.album.title, hasCD: true, physicalLocationID: shelf.id))
+        try await store.moveAlbum(fixture.album.id, to: box.id)
+        #expect(try await store.boxPlacement(for: fixture.album.id) != nil)
+        #expect(store.boxAlbumIDs[box.id] == [fixture.album.id])
+        try await store.removeAlbum(fixture.album.id, from: box.id, assigning: created.id, locationUnknown: false)
+        #expect(try await store.boxMembers(of: box.id).isEmpty)
+        #expect(store.catalogueAlbums.first?.physicalLocationID == created.id)
+    }
+
     private func until(_ predicate: @MainActor () -> Bool) async throws {
         let deadline = ContinuousClock.now.advanced(by: .seconds(5))
         while !predicate() {

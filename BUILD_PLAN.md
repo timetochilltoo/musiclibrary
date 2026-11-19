@@ -261,6 +261,10 @@ contributor operations now bring scoped coverage to 25 LibraryStore entry points
 The next slice covers box sets, album placement and locations. Production recovery
 admission depends on completing the remaining catalogue and artwork migrations.
 
+RA2 placement checkpoint. Box-set lifecycle, album placement and location edits
+and reads bring scoped coverage to 38 LibraryStore declarations. Playlist edits
+and direct playlist readers are the next migration slice.
+
 Store more than an absolute path:
 
 - storage-root ID plus relative path;

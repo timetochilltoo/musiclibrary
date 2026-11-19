@@ -474,37 +474,39 @@ public final class LibraryStore: ObservableObject {
     }
 
     public func boxMembers(of boxSetID: BoxSetID) async throws -> [BoxSetMembership] {
-        guard let database else { throw DatabaseError.notFound("Catalogue database") }
-        return try await database.boxMembers(of: boxSetID)
+        try await withCatalogueUse { database, _ in
+            try await database.boxMembers(of: boxSetID)
+        }
     }
 
     public func boxPlacement(for albumID: AlbumID) async throws -> AlbumBoxPlacement? {
-        guard let database else { throw DatabaseError.notFound("Catalogue database") }
-        return try await database.boxPlacement(for: albumID)
+        try await withCatalogueUse { database, _ in
+            try await database.boxPlacement(for: albumID)
+        }
     }
 
     public func moveAlbum(_ albumID: AlbumID, to boxSetID: BoxSetID) async throws {
-        guard let database else { throw DatabaseError.notFound("Catalogue database") }
-        try await database.moveAlbum(albumID, to: boxSetID)
-        try await reload()
+        try await editCatalogue { database in
+            try await database.moveAlbum(albumID, to: boxSetID)
+        }
     }
 
     public func removeAlbum(_ albumID: AlbumID, from boxSetID: BoxSetID, assigning locationID: PhysicalLocationID?, locationUnknown: Bool) async throws {
-        guard let database else { throw DatabaseError.notFound("Catalogue database") }
-        try await database.removeAlbum(albumID, from: boxSetID, assigning: locationID, locationUnknown: locationUnknown)
-        try await reload()
+        try await editCatalogue { database in
+            try await database.removeAlbum(albumID, from: boxSetID, assigning: locationID, locationUnknown: locationUnknown)
+        }
     }
 
     public func reorderAlbum(_ albumID: AlbumID, in boxSetID: BoxSetID, to position: Int) async throws {
-        guard let database else { throw DatabaseError.notFound("Catalogue database") }
-        try await database.reorderAlbum(albumID, in: boxSetID, to: position)
-        try await reload()
+        try await editCatalogue { database in
+            try await database.reorderAlbum(albumID, in: boxSetID, to: position)
+        }
     }
 
     public func reorderAlbum(_ albumID: AlbumID, in boxSetID: BoxSetID, adjacentTo neighborID: AlbumID, expectedAlbumIDs: [AlbumID]) async throws {
-        guard let database else { throw DatabaseError.notFound("Catalogue database") }
-        try await database.reorderAlbum(albumID, in: boxSetID, adjacentTo: neighborID, expectedAlbumIDs: expectedAlbumIDs)
-        try await reload()
+        try await editCatalogue { database in
+            try await database.reorderAlbum(albumID, in: boxSetID, adjacentTo: neighborID, expectedAlbumIDs: expectedAlbumIDs)
+        }
     }
 
     public func discs(albumID: AlbumID) async throws -> [Disc] {
@@ -537,8 +539,16 @@ public final class LibraryStore: ObservableObject {
             _ = try await database.createDisc(albumID: albumID, title: title)
         }
     }
-    public func softDeleteEmptyBoxSet(_ id: BoxSetID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.softDeleteEmptyBoxSet(id); try await reload() }
-    public func restoreBoxSet(_ id: BoxSetID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.restoreBoxSet(id); try await reload() }
+    public func softDeleteEmptyBoxSet(_ id: BoxSetID) async throws {
+        try await editCatalogue { database in
+            try await database.softDeleteEmptyBoxSet(id)
+        }
+    }
+    public func restoreBoxSet(_ id: BoxSetID) async throws {
+        try await editCatalogue { database in
+            try await database.restoreBoxSet(id)
+        }
+    }
     public func reorderDisc(_ discID: DiscID, in albumID: AlbumID, to number: Int) async throws {
         try await editCatalogue { database in
             try await database.reorderDisc(discID, in: albumID, to: number)
@@ -1616,34 +1626,35 @@ public final class LibraryStore: ObservableObject {
     }
 
     public func addLocation(_ draft: NewPhysicalLocation) async throws -> PhysicalLocation {
-        guard let database else { throw DatabaseError.notFound("Catalogue database") }
-        let location = try await database.createLocation(draft)
-        try await reload()
-        return location
+        try await withCatalogueUse { database, context in
+            let location = try await database.createLocation(draft)
+            try await self.reload(using: context)
+            return location
+        }
     }
 
     public func renameLocation(_ id: PhysicalLocationID, to name: String) async throws {
-        guard let database else { throw DatabaseError.notFound("Catalogue database") }
-        try await database.renameLocation(id, to: name)
-        try await reload()
+        try await editCatalogue { database in
+            try await database.renameLocation(id, to: name)
+        }
     }
 
     public func moveLocation(_ id: PhysicalLocationID, under parentID: PhysicalLocationID?) async throws {
-        guard let database else { throw DatabaseError.notFound("Catalogue database") }
-        try await database.moveLocation(id, under: parentID)
-        try await reload()
+        try await editCatalogue { database in
+            try await database.moveLocation(id, under: parentID)
+        }
     }
 
     public func deleteLocation(_ id: PhysicalLocationID) async throws {
-        guard let database else { throw DatabaseError.notFound("Catalogue database") }
-        try await database.deleteLocation(id)
-        try await reload()
+        try await editCatalogue { database in
+            try await database.deleteLocation(id)
+        }
     }
 
     public func addBoxSet(_ draft: NewBoxSet) async throws {
-        guard let database else { throw DatabaseError.notFound("Catalogue database") }
-        _ = try await database.createBoxSet(draft)
-        try await reload()
+        try await editCatalogue { database in
+            _ = try await database.createBoxSet(draft)
+        }
     }
 
     public func dismissError() {
