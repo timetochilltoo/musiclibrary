@@ -14,6 +14,8 @@ Current baseline: inspect `main` with `git log --oneline -5`; [HANDOFF.md](HANDO
 
 Completed and verified:
 
+- RA2 playlist edits and direct item reads use scoped catalogue admission. Lifecycle edits, single and batch additions, item removal and all three reorder overloads retain admission through reload and active search. The existing database transactions, expected-order checks and item IDs remain the basis for retry and reorder behavior. See [the migration inventory](CATALOGUE_USE_MIGRATION.md) for the remaining holders.
+
 - RA2 box-set and location operations use scoped catalogue admission. Box lifecycle and album-placement edits retain the scope through reload and active search. Location creation returns its saved record from that scope. Box membership and album placement queries borrow the database after admission. Temporary SQLite tests cover drain, refusal and resumed placement. See [the migration inventory](CATALOGUE_USE_MIGRATION.md) for the remaining holders.
 
 - RA2 detail operations use scoped catalogue admission for disc, track, alternate-title and contributor mutations. The shared edit helper retains ownership through reload and search. Direct readers now cover credits, alternate titles, contributor albums and artwork records. See [the migration inventory](CATALOGUE_USE_MIGRATION.md) for coverage and remaining work.

@@ -226,6 +226,51 @@ struct LibraryStoreAdmissionTests {
         #expect(store.catalogueAlbums.first?.physicalLocationID == created.id)
     }
 
+    @Test("Playlist batch addition drains through refresh and remains safe to retry")
+    func playlistBatchDrain() async throws {
+        let fixture = try await Fixture.make()
+        defer { fixture.remove() }
+        let probe = Probe(), maintenance = Gate()
+        defer { probe.gate.open(); maintenance.open() }
+        let store = LibraryStore(database: fixture.database, albumSearch: { db, term in try await probe.load(db, term) })
+        try await store.addPlaylist(name: "Listening")
+        let playlist = try #require(store.playlists.first)
+        await store.search("album")
+        let additions = (0..<2).map { _ in PlaylistTrackAddition(trackID: fixture.track.id) }
+        let before = try await fixture.database.currentRevision()
+
+        probe.holdNext = true
+        let batch = Task { try await store.addTracks(additions, toPlaylist: playlist.id) }
+        try await until { probe.gate.started }
+        let barrier = Task { try await store.catalogueAdmission.withMaintenance { _ in await maintenance.hold() } }
+        try await until { store.catalogueAdmission.phase == .draining }
+        let expectedIDs = additions.map(\.id)
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            try await store.movePlaylistItem(expectedIDs[1], in: playlist.id, before: expectedIDs[0], expectedItemIDs: expectedIDs)
+        }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            try await store.renamePlaylist(playlist.id, to: "Refused rename")
+        }
+        #expect(try await fixture.database.playlistItems(playlistID: playlist.id).map(\.id) == expectedIDs)
+        #expect(try await fixture.database.currentRevision() == before + 1)
+        #expect(store.catalogueAdmission.activeOperationCount == 1 && !maintenance.started)
+        probe.gate.open()
+        try await batch.value
+        try await until { maintenance.started }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            _ = try await store.playlistItems(playlist.id)
+        }
+        #expect(store.playlistContents[playlist.id]?.map(\.id) == expectedIDs)
+        maintenance.open()
+        try await barrier.value
+
+        try await store.addTracks(additions, toPlaylist: playlist.id)
+        #expect(try await fixture.database.currentRevision() == before + 1)
+        #expect(try await store.playlistItems(playlist.id).map(\.id) == expectedIDs)
+        try await store.movePlaylistItem(expectedIDs[1], in: playlist.id, before: expectedIDs[0], expectedItemIDs: expectedIDs)
+        #expect(try await store.playlistItems(playlist.id).map(\.id) == Array(expectedIDs.reversed()))
+    }
+
     private func until(_ predicate: @MainActor () -> Bool) async throws {
         let deadline = ContinuousClock.now.advanced(by: .seconds(5))
         while !predicate() {

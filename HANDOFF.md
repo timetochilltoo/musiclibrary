@@ -4,7 +4,44 @@ Last updated: 20 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — RA2 box sets, album placement and locations
+## Current resume — RA2 playlist operations
+
+Twelve playlist declarations now use catalogue admission, bringing coverage to
+50 of 125 LibraryStore declarations. The shared edit scope includes playlist
+creation, rename, deletion, restoration, permanent deletion, single and batch
+track addition, item removal and all three move overloads. Each edit holds its
+scope through reload and active search. The direct playlist-item reader captures
+the database after admission. Playlist playback preparation has separate
+resource lifetimes and remains listed in the migration inventory.
+
+The temporary SQLite regression pauses batch addition during active search
+refresh and requests a synthetic maintenance reservation. It checks that
+maintenance waits for the admitted batch, that rename and reorder refuse
+during the drain, and that a direct item read refuses during exclusivity.
+Only the admitted batch increments the revision. Once maintenance releases,
+retrying the same item IDs preserves the ordered duplicate tracks and leaves
+the revision unchanged. Reordering then succeeds using the expected order.
+The existing playlist suites cover stale and foreign reorder requests, batch
+rollback and item identity.
+
+The 21 focused tests passed across seven suites. The full Debug and Release
+suites passed with 266 and 255 tests respectively. The Swift build, whitespace
+check, declaration inventory and audit link checks passed. Logs are at
+`/private/tmp/musiclibrary-ra2-playlist-{focused,debug,release,build}.log`.
+The existing AVMetadataItem deprecation remains.
+
+Next migrate **album deletion and restoration, lyrics reads and edits, and
+embedded metadata reads**. Use the existing scoped helpers and keep the
+operation inventory current. Playback URL resolution, root operations, managed
+artwork, provider work, scans, metadata analysis, fingerprints and queued
+recovery remain separate lifetimes. Production restore and reset continue to
+use the transfer queue. Recovery exclusion depends on migrating the remaining
+holders and testing their interaction before enabling production reservations.
+The latest runnable artifact is Music Library 0.72 build 73 with schema 17.
+Earlier native keyboard, VoiceOver, NAS remount and device checks remain open.
+See [the migration inventory](CATALOGUE_USE_MIGRATION.md) for current coverage.
+
+## Previous resume — RA2 box sets, album placement and locations
 
 Thirteen LibraryStore declarations now use catalogue admission, bringing the
 total to 38 of 125. Box creation, empty-box deletion and restoration hold

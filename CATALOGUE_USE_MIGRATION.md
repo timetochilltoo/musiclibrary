@@ -1,11 +1,11 @@
 # Catalogue-use migration inventory
 
-Snapshot: 20 November 2026, RA2 placement operations. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
+Snapshot: 20 November 2026, RA2 playlist operations. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
 Operational state: [HANDOFF.md](HANDOFF.md). Safety design: [recovery admission audit](RECOVERY_WRITER_ADMISSION_AUDIT.md).
 
 ## Coverage and lifetime contract
 
-The 38 public declarations below currently use catalogue admission. A call to
+The 50 public declarations below currently use catalogue admission. A call to
 public reload from an otherwise unscoped mutation does not cover the earlier
 mutation or its retained database. No production caller reserves maintenance;
 existing restore/reset/scan races remain open. Recovery must not be connected to
@@ -36,8 +36,11 @@ is a Debug temporary-data factory; its seeding is separate from production uses.
 - `addBoxSet`
 - `addDisc`
 - `addLocation`
+- `addPlaylist`
+- `addTrack(_:toPlaylist:itemID:)`
 - `addTrack(discID:draft:)`
 - `addTrackContributor`
+- `addTracks`
 - `albumAliases`
 - `albumArtwork`
 - `albumContributors`
@@ -48,17 +51,24 @@ is a Debug temporary-data factory; its seeding is separate from production uses.
 - `deleteAlbumContributor`
 - `deleteDisc`
 - `deleteLocation`
+- `deletePlaylist`
 - `deleteTrackContributor`
 - `deleteTrack`
 - `discs`
 - `moveAlbum`
 - `moveLocation`
+- `movePlaylistItem` (3 overloads)
+- `permanentlyDeletePlaylist`
+- `playlistItems`
 - `reload`
 - `removeAlbum`
+- `removePlaylistItem`
 - `renameLocation`
+- `renamePlaylist`
 - `reorderAlbum` (2 overloads)
 - `reorderDisc`
 - `restoreBoxSet`
+- `restorePlaylist`
 - `search`
 - `softDeleteEmptyBoxSet`
 - `trackContributors`
@@ -79,6 +89,10 @@ Box-set and location edits also retain admission through refresh. Location
 creation returns its saved record from within the same scope. Box membership
 and placement readers use the scoped helper.
 
+Playlist lifecycle and item edits hold admission through reload, including
+batch addition and all three reorder overloads. The direct item reader uses
+the same admission helper as the other direct readers.
+
 ## Remaining catalogue mutations and worker lifecycle entry points
 
 These remain unscoped for their full operation, even when their final reload now
@@ -86,10 +100,7 @@ uses admission. Some entries are worker lifecycle controls rather than SQL write
 
 - `addAlbum`
 - `addAlbumArtwork`
-- `addPlaylist`
 - `addStorageRoot`
-- `addTrack(_:toPlaylist:itemID:)`
-- `addTracks`
 - `analyzeImportBatch`
 - `applyExternalMetadataSelection`
 - `applyRelinkProposal`
@@ -98,23 +109,17 @@ uses admission. Some entries are worker lifecycle controls rather than SQL write
 - `confirmAssetMissing`
 - `confirmImportReleaseProposal`
 - `deleteLyrics`
-- `deletePlaylist`
 - `deleteStorageRoot`
 - `discardRelinkProposal`
 - `migrateArtworkToManagedStorage`
-- `movePlaylistItem` (3 overloads)
 - `permanentlyDeleteAlbum`
-- `permanentlyDeletePlaylist`
 - `proposeRelink`
 - `recheckLibraryHealth`
 - `refreshStorageRootAccess`
 - `removeMissingAssetReference`
-- `removePlaylistItem`
-- `renamePlaylist`
 - `renameStorageRoot`
 - `renewStorageRootAccess`
 - `restoreAlbum`
-- `restorePlaylist`
 - `retryImportScan`
 - `saveLyrics`
 - `saveMusicBrainzSelection`
@@ -146,7 +151,6 @@ replacement; being read-only does not make an outstanding use safe to ignore.
 - `playbackAlbumIDs`
 - `playbackURL`
 - `playbackURLs` (3 overloads)
-- `playlistItems`
 - `playlistPlaybackPlan`
 - `tagWritePreviews`
 - `unregisteredImportCandidates`
@@ -217,7 +221,8 @@ invalid-context failures release or refuse cleanly. Existing search overlap test
 continue to cover generation ordering. These are partial integration checks, not
 live recovery exclusion or reader migration completeness.
 
-Next migrate playlist edits and direct playlist readers. Playback URL
-resolution, provider and artwork work, scans, metadata, fingerprints and
-queued recovery have separate lifetimes. Production recovery reservation
-depends on complete holder coverage and interleaving tests.
+Next migrate album deletion and restoration, plus lyrics and embedded metadata
+reads and lyrics edits. Playback URL resolution, provider and artwork work,
+scans, metadata analysis, fingerprints and queued recovery have separate
+lifetimes. Production recovery reservation depends on complete holder coverage
+and interleaving tests.

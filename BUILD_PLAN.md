@@ -265,6 +265,10 @@ RA2 placement checkpoint. Box-set lifecycle, album placement and location edits
 and reads bring scoped coverage to 38 LibraryStore declarations. Playlist edits
 and direct playlist readers are the next migration slice.
 
+RA2 playlist checkpoint. Playlist edits and the direct item reader bring scoped
+coverage to 50 LibraryStore declarations. The next slice covers album lifecycle
+edits, lyrics and embedded metadata reads.
+
 Store more than an absolute path:
 
 - storage-root ID plus relative path;
