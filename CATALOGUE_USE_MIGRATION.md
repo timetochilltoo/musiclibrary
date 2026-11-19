@@ -1,11 +1,11 @@
 # Catalogue-use migration inventory
 
-Snapshot: 13 November 2026, RA2 first slice. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
+Snapshot: 20 November 2026, RA2 detail operations. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
 Operational state: [HANDOFF.md](HANDOFF.md). Safety design: [recovery admission audit](RECOVERY_WRITER_ADMISSION_AUDIT.md).
 
 ## Coverage and lifetime contract
 
-Only the five public methods below currently own catalogue admission. A call to
+The 25 public declarations below currently use catalogue admission. A call to
 public reload from an otherwise unscoped mutation does not cover the earlier
 mutation or its retained database. No production caller reserves maintenance;
 existing restore/reset/scan races remain open. Recovery must not be connected to
@@ -31,17 +31,37 @@ is a Debug temporary-data factory; its seeding is separate from production uses.
 
 ## Migrated public methods
 
+- `addAlbumAlias`
+- `addAlbumContributor`
+- `addDisc`
+- `addTrack(discID:draft:)`
+- `addTrackContributor`
+- `albumAliases`
+- `albumArtwork`
+- `albumContributors`
+- `albums`
+- `deleteAlbumAlias`
+- `deleteAlbumContributor`
+- `deleteDisc`
+- `deleteTrack`
+- `deleteTrackContributor`
 - `discs`
 - `reload`
+- `reorderDisc`
 - `search`
+- `trackContributors`
 - `tracks`
 - `updateAlbum`
+- `updateAlbumContributorCredit`
+- `updateContributor`
+- `updateTrack`
+- `updateTrackContributorCredit`
 
-`updateAlbum` owns commit, nested reload and search reapplication as one scope.
-The disc/track readers capture their database inside `withCatalogueUse`. Public
-reload/search create their own scope, including cache-only search so it cannot
-publish during a future maintenance reservation. No artwork/provider work or
-background worker has been migrated by these changes.
+`editCatalogue` keeps each detail edit, its reload and active search in one
+scope. This includes contributor creation and its credit insert. Detail readers
+use `withCatalogueUse`, including reads of artwork records and albums credited
+to a contributor. Managed artwork file operations have separate lifetimes.
+Public reload and search also own their complete scopes.
 
 ## Remaining catalogue mutations and worker lifecycle entry points
 
@@ -49,16 +69,12 @@ These remain unscoped for their full operation, even when their final reload now
 uses admission. Some entries are worker lifecycle controls rather than SQL writers.
 
 - `addAlbum`
-- `addAlbumAlias`
 - `addAlbumArtwork`
-- `addAlbumContributor`
 - `addBoxSet`
-- `addDisc`
 - `addLocation`
 - `addPlaylist`
 - `addStorageRoot`
-- `addTrack` (2 overloads)
-- `addTrackContributor`
+- `addTrack(_:toPlaylist:itemID:)`
 - `addTracks`
 - `analyzeImportBatch`
 - `applyExternalMetadataSelection`
@@ -67,15 +83,10 @@ uses admission. Some entries are worker lifecycle controls rather than SQL write
 - `cancelImportScan`
 - `confirmAssetMissing`
 - `confirmImportReleaseProposal`
-- `deleteAlbumAlias`
-- `deleteAlbumContributor`
-- `deleteDisc`
 - `deleteLocation`
 - `deleteLyrics`
 - `deletePlaylist`
 - `deleteStorageRoot`
-- `deleteTrack`
-- `deleteTrackContributor`
 - `discardRelinkProposal`
 - `migrateArtworkToManagedStorage`
 - `moveAlbum`
@@ -94,7 +105,6 @@ uses admission. Some entries are worker lifecycle controls rather than SQL write
 - `renameStorageRoot`
 - `renewStorageRootAccess`
 - `reorderAlbum` (2 overloads)
-- `reorderDisc`
 - `restoreAlbum`
 - `restoreBoxSet`
 - `restorePlaylist`
@@ -105,11 +115,7 @@ uses admission. Some entries are worker lifecycle controls rather than SQL write
 - `softDeleteAlbum`
 - `softDeleteEmptyBoxSet`
 - `startImportScan` (2 overloads)
-- `updateAlbumContributorCredit`
-- `updateContributor`
 - `updateStorageRootScope`
-- `updateTrack`
-- `updateTrackContributorCredit`
 - `verifyFingerprints`
 
 ## Remaining readers, previews and exports
@@ -117,10 +123,6 @@ uses admission. Some entries are worker lifecycle controls rather than SQL write
 Readers can retain an old database actor and must be accounted for before file
 replacement; being read-only does not make an outstanding use safe to ignore.
 
-- `albumAliases`
-- `albumArtwork`
-- `albumContributors`
-- `albums`
 - `availableTrackIDs`
 - `boxMembers`
 - `boxPlacement`
@@ -143,7 +145,6 @@ replacement; being read-only does not make an outstanding use safe to ignore.
 - `playlistItems`
 - `playlistPlaybackPlan`
 - `tagWritePreviews`
-- `trackContributors`
 - `unregisteredImportCandidates`
 
 ## Queued services, maintenance and source-writing policy
@@ -212,8 +213,7 @@ invalid-context failures release or refuse cleanly. Existing search overlap test
 continue to cover generation ordering. These are partial integration checks, not
 live recovery exclusion or reader migration completeness.
 
-Next migrate non-provider album/detail CRUD (disc/track/alias/credit operations) and associated direct readers
-under the same helper, passing explicit context through refresh calls. Keep
-provider/artwork, scans/metadata/fingerprints and queued recovery as separately
-accounted lifetimes. Enable exclusive production recovery only after the complete
-inventory and interleaving regressions are satisfied. No FR2 path writing is added.
+Next migrate box-set and location operations, including album placement and
+their direct readers. Keep provider and artwork work, scans, metadata,
+fingerprints and queued recovery as separately accounted lifetimes. Production
+recovery reservation depends on complete holder coverage and interleaving tests.

@@ -256,6 +256,11 @@ scoped methods. Next: ordinary album/detail CRUD and direct readers; background
 workers/artwork and queued maintenance remain later integration boundaries.
 No production maintenance reservation, global exclusion or FR2 write is enabled.
 
+RA2 detail checkpoint (20 November 2026). Disc, track, alternate-title and
+contributor operations now bring scoped coverage to 25 LibraryStore entry points.
+The next slice covers box sets, album placement and locations. Production recovery
+admission depends on completing the remaining catalogue and artwork migrations.
+
 Store more than an absolute path:
 
 - storage-root ID plus relative path;

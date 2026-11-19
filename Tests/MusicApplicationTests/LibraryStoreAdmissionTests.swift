@@ -120,6 +120,61 @@ struct LibraryStoreAdmissionTests {
         #expect(store.catalogueAdmission.activeOperationCount == 0)
     }
 
+    @Test("Detail edits drain through refresh and closed admission prevents catalogue changes")
+    func detailEditDrain() async throws {
+        let fixture = try await Fixture.make()
+        defer { fixture.remove() }
+        let probe = Probe(), maintenance = Gate()
+        defer { probe.gate.open(); maintenance.open() }
+        let store = LibraryStore(database: fixture.database, albumSearch: { db, term in try await probe.load(db, term) })
+        try await store.reload()
+        await store.search("album")
+        probe.holdNext = true
+        let edit = Task {
+            try await store.addTrackContributor(trackID: fixture.track.id, name: "Fixture conductor", role: .conductor, creditedName: nil)
+        }
+        try await until { probe.gate.started }
+        #expect(store.catalogueAdmission.activeOperationCount == 1)
+        let revision = try await fixture.database.currentRevision()
+        let barrier = Task { try await store.catalogueAdmission.withMaintenance { _ in await maintenance.hold() } }
+        try await until { store.catalogueAdmission.phase == .draining }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            try await store.addDisc(albumID: fixture.album.id, title: "Refused disc")
+        }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            try await store.updateTrack(fixture.track.id, draft: .init(title: "Refused track edit"))
+        }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            try await store.addAlbumAlias(albumID: fixture.album.id, name: "Refused alias", kind: .alternate, locale: nil)
+        }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            try await store.addAlbumContributor(albumID: fixture.album.id, name: "Refused contributor", role: .composer, creditedName: nil)
+        }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            _ = try await store.trackContributors(trackID: fixture.track.id)
+        }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            _ = try await store.albumAliases(albumID: fixture.album.id)
+        }
+        #expect(try await fixture.database.currentRevision() == revision)
+        #expect(try await fixture.database.contributors().map(\.name) == ["Fixture conductor"])
+        #expect(!maintenance.started)
+        probe.gate.open()
+        try await edit.value
+        try await until { maintenance.started }
+        maintenance.open()
+        try await barrier.value
+
+        let credits = try await store.trackContributors(trackID: fixture.track.id)
+        let credit = try #require(credits.first)
+        #expect(credits.count == 1 && credit.role == .conductor)
+        try await store.updateTrackContributorCredit(credit, in: fixture.track.id, creditedName: "Updated credit")
+        #expect(try await store.trackContributors(trackID: fixture.track.id).first?.creditedName == "Updated credit")
+        try await store.addAlbumAlias(albumID: fixture.album.id, name: "Alternate album", kind: .alternate, locale: nil)
+        #expect(try await store.albumAliases(albumID: fixture.album.id).count == 1)
+        #expect(store.catalogueAdmission.activeOperationCount == 0)
+    }
+
     private func until(_ predicate: @MainActor () -> Bool) async throws {
         let deadline = ContinuousClock.now.advanced(by: .seconds(5))
         while !predicate() {

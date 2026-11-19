@@ -460,10 +460,16 @@ public final class LibraryStore: ObservableObject {
         return album
     }
 
-    public func updateAlbum(_ id: AlbumID, with draft: NewAlbum) async throws {
+    private func editCatalogue(_ edit: @MainActor (MusicDatabase) async throws -> Void) async throws {
         try await withCatalogueUse { database, context in
-            _ = try await database.updateAlbum(id, with: draft)
+            try await edit(database)
             try await self.reload(using: context)
+        }
+    }
+
+    public func updateAlbum(_ id: AlbumID, with draft: NewAlbum) async throws {
+        try await editCatalogue { database in
+            _ = try await database.updateAlbum(id, with: draft)
         }
     }
 
@@ -511,29 +517,101 @@ public final class LibraryStore: ObservableObject {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
         return try await database.playbackAlbumIDs(trackIDs: trackIDs)
     }
-    public func albumContributors(albumID: AlbumID) async throws -> [ContributorCredit] { guard let database else { throw DatabaseError.notFound("Catalogue database") }; return try await database.albumContributors(albumID: albumID) }
-    public func albums(creditedTo contributorID: ContributorID) async throws -> [Album] { guard let database else { throw DatabaseError.notFound("Catalogue database") }; return try await database.albums(creditedTo: contributorID) }
-    public func trackContributors(trackID: TrackID) async throws -> [ContributorCredit] { guard let database else { throw DatabaseError.notFound("Catalogue database") }; return try await database.trackContributors(trackID: trackID) }
-    public func albumAliases(albumID: AlbumID) async throws -> [AlbumAlias] { guard let database else { throw DatabaseError.notFound("Catalogue database") }; return try await database.albumAliases(albumID: albumID) }
-    public func albumArtwork(albumID: AlbumID) async throws -> [Artwork] { guard let database else { throw DatabaseError.notFound("Catalogue database") }; return try await database.albumArtwork(albumID: albumID) }
-    public func addDisc(albumID: AlbumID, title: String?) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; _ = try await database.createDisc(albumID: albumID, title: title); try await reload() }
+    public func albumContributors(albumID: AlbumID) async throws -> [ContributorCredit] {
+        try await withCatalogueUse { database, _ in try await database.albumContributors(albumID: albumID) }
+    }
+    public func albums(creditedTo contributorID: ContributorID) async throws -> [Album] {
+        try await withCatalogueUse { database, _ in try await database.albums(creditedTo: contributorID) }
+    }
+    public func trackContributors(trackID: TrackID) async throws -> [ContributorCredit] {
+        try await withCatalogueUse { database, _ in try await database.trackContributors(trackID: trackID) }
+    }
+    public func albumAliases(albumID: AlbumID) async throws -> [AlbumAlias] {
+        try await withCatalogueUse { database, _ in try await database.albumAliases(albumID: albumID) }
+    }
+    public func albumArtwork(albumID: AlbumID) async throws -> [Artwork] {
+        try await withCatalogueUse { database, _ in try await database.albumArtwork(albumID: albumID) }
+    }
+    public func addDisc(albumID: AlbumID, title: String?) async throws {
+        try await editCatalogue { database in
+            _ = try await database.createDisc(albumID: albumID, title: title)
+        }
+    }
     public func softDeleteEmptyBoxSet(_ id: BoxSetID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.softDeleteEmptyBoxSet(id); try await reload() }
     public func restoreBoxSet(_ id: BoxSetID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.restoreBoxSet(id); try await reload() }
-    public func reorderDisc(_ discID: DiscID, in albumID: AlbumID, to number: Int) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.reorderDisc(discID, in: albumID, to: number); try await reload() }
-    public func deleteDisc(_ discID: DiscID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.deleteDisc(discID); try await reload() }
-    public func addTrack(discID: DiscID, draft: NewTrack) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; _ = try await database.createTrack(discID: discID, draft: draft); try await reload() }
-    public func updateTrack(_ trackID: TrackID, draft: NewTrack) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; _ = try await database.updateTrack(trackID, with: draft); try await reload() }
-    public func deleteTrack(_ trackID: TrackID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.deleteTrack(trackID); try await reload() }
-    public func addAlbumAlias(albumID: AlbumID, name: String, kind: AlbumAliasKind, locale: String?) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; _ = try await database.addAlbumAlias(albumID: albumID, name: name, kind: kind, locale: locale); try await reload() }
-    public func deleteAlbumAlias(_ aliasID: UUID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.deleteAlbumAlias(aliasID); try await reload() }
+    public func reorderDisc(_ discID: DiscID, in albumID: AlbumID, to number: Int) async throws {
+        try await editCatalogue { database in
+            try await database.reorderDisc(discID, in: albumID, to: number)
+        }
+    }
+    public func deleteDisc(_ discID: DiscID) async throws {
+        try await editCatalogue { database in
+            try await database.deleteDisc(discID)
+        }
+    }
+    public func addTrack(discID: DiscID, draft: NewTrack) async throws {
+        try await editCatalogue { database in
+            _ = try await database.createTrack(discID: discID, draft: draft)
+        }
+    }
+    public func updateTrack(_ trackID: TrackID, draft: NewTrack) async throws {
+        try await editCatalogue { database in
+            _ = try await database.updateTrack(trackID, with: draft)
+        }
+    }
+    public func deleteTrack(_ trackID: TrackID) async throws {
+        try await editCatalogue { database in
+            try await database.deleteTrack(trackID)
+        }
+    }
+    public func addAlbumAlias(albumID: AlbumID, name: String, kind: AlbumAliasKind, locale: String?) async throws {
+        try await editCatalogue { database in
+            _ = try await database.addAlbumAlias(albumID: albumID, name: name, kind: kind, locale: locale)
+        }
+    }
+    public func deleteAlbumAlias(_ aliasID: UUID) async throws {
+        try await editCatalogue { database in
+            try await database.deleteAlbumAlias(aliasID)
+        }
+    }
     public func restoreAlbum(_ id: AlbumID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.restoreAlbum(id); try await reload() }
-    public func addAlbumContributor(albumID: AlbumID, name: String, role: ContributorRole, creditedName: String?) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; let contributor = try await database.createContributor(.init(name: name)); try await database.addAlbumContributor(contributor.id, to: albumID, role: role, creditedName: creditedName); try await reload() }
-    public func addTrackContributor(trackID: TrackID, name: String, role: ContributorRole, creditedName: String?) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; let contributor = try await database.createContributor(.init(name: name)); try await database.addTrackContributor(contributor.id, to: trackID, role: role, creditedName: creditedName); try await reload() }
-    public func deleteAlbumContributor(_ credit: ContributorCredit, from albumID: AlbumID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.deleteAlbumContributor(credit.contributor.id, from: albumID, role: credit.role, position: credit.position); try await reload() }
-    public func deleteTrackContributor(_ credit: ContributorCredit, from trackID: TrackID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.deleteTrackContributor(credit.contributor.id, from: trackID, role: credit.role, position: credit.position); try await reload() }
-    public func updateAlbumContributorCredit(_ credit: ContributorCredit, in albumID: AlbumID, creditedName: String?, newRole: ContributorRole? = nil) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.updateAlbumContributorCredit(credit.contributor.id, in: albumID, role: credit.role, position: credit.position, creditedName: creditedName, newRole: newRole); try await reload() }
-    public func updateTrackContributorCredit(_ credit: ContributorCredit, in trackID: TrackID, creditedName: String?, newRole: ContributorRole? = nil) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.updateTrackContributorCredit(credit.contributor.id, in: trackID, role: credit.role, position: credit.position, creditedName: creditedName, newRole: newRole); try await reload() }
-    public func updateContributor(_ contributorID: ContributorID, draft: NewContributor) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; _ = try await database.updateContributor(contributorID, with: draft); try await reload() }
+    public func addAlbumContributor(albumID: AlbumID, name: String, role: ContributorRole, creditedName: String?) async throws {
+        try await editCatalogue { database in
+            let contributor = try await database.createContributor(.init(name: name))
+            try await database.addAlbumContributor(contributor.id, to: albumID, role: role, creditedName: creditedName)
+        }
+    }
+    public func addTrackContributor(trackID: TrackID, name: String, role: ContributorRole, creditedName: String?) async throws {
+        try await editCatalogue { database in
+            let contributor = try await database.createContributor(.init(name: name))
+            try await database.addTrackContributor(contributor.id, to: trackID, role: role, creditedName: creditedName)
+        }
+    }
+    public func deleteAlbumContributor(_ credit: ContributorCredit, from albumID: AlbumID) async throws {
+        try await editCatalogue { database in
+            try await database.deleteAlbumContributor(credit.contributor.id, from: albumID, role: credit.role, position: credit.position)
+        }
+    }
+    public func deleteTrackContributor(_ credit: ContributorCredit, from trackID: TrackID) async throws {
+        try await editCatalogue { database in
+            try await database.deleteTrackContributor(credit.contributor.id, from: trackID, role: credit.role, position: credit.position)
+        }
+    }
+    public func updateAlbumContributorCredit(_ credit: ContributorCredit, in albumID: AlbumID, creditedName: String?, newRole: ContributorRole? = nil) async throws {
+        try await editCatalogue { database in
+            try await database.updateAlbumContributorCredit(credit.contributor.id, in: albumID, role: credit.role, position: credit.position, creditedName: creditedName, newRole: newRole)
+        }
+    }
+    public func updateTrackContributorCredit(_ credit: ContributorCredit, in trackID: TrackID, creditedName: String?, newRole: ContributorRole? = nil) async throws {
+        try await editCatalogue { database in
+            try await database.updateTrackContributorCredit(credit.contributor.id, in: trackID, role: credit.role, position: credit.position, creditedName: creditedName, newRole: newRole)
+        }
+    }
+    public func updateContributor(_ contributorID: ContributorID, draft: NewContributor) async throws {
+        try await editCatalogue { database in
+            _ = try await database.updateContributor(contributorID, with: draft)
+        }
+    }
     public func addAlbumArtwork(albumID: AlbumID, from sourceURL: URL, role: ArtworkRole) async throws {
         guard let database, let managedArtworkStore else { throw DatabaseError.notFound("Catalogue database") }
         let accessed = sourceURL.startAccessingSecurityScopedResource()

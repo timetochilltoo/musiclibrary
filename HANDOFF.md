@@ -1,10 +1,51 @@
 # Music Library — Project Handoff
 
-Last updated: 13 November 2026
+Last updated: 20 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — RA2 scoped LibraryStore foundation and first read/edit slice
+## Current resume — RA2 disc, track, alternate-title and contributor operations
+
+This backend slice adds catalogue admission to 20 LibraryStore entry points,
+bringing the total to 25 of 125 declarations. The latest runnable app is
+Music Library 0.72, build 73, at `build/Music Library 0.72.app`, with schema 17.
+Validation used temporary SQLite catalogues. No app artifact was requested.
+
+The private `editCatalogue` helper holds the existing admission context from
+before database capture through the edit, reload and active-query refresh.
+Album update now uses that helper as well. Disc and track edits, alternate-title
+addition/deletion, credit addition/update/deletion and contributor edits use
+the same boundary. Creating a contributor and inserting its credit happen
+inside one admission scope and retain the existing database transaction
+boundaries. The direct readers for album/track credits, albums credited to a
+contributor, alternate titles and artwork records use `withCatalogueUse`.
+Artwork file writes, provider work and playlist track insertion are separate
+entries in [the migration inventory](CATALOGUE_USE_MIGRATION.md).
+
+The new temporary-database regression holds a track-credit edit during active
+search refresh and requests a synthetic maintenance reservation. It confirms
+the reservation waits for the edit, new representative detail reads and edits
+refuse while draining, and the refused work leaves the revision and contributor
+records unchanged. Credit updates and alternate-title writes succeed after
+release. The fixture uses a checked continuation and bounded state waits.
+
+Validation passed for the focused admission suite (5 tests), full Debug
+(264 tests), full Release (253 tests), `swift build` and `git diff --check`.
+The inventory matches all 125 declarations and the migration and audit links
+resolve. Logs are at `/private/tmp/musiclibrary-ra2-detail-{focused,debug,release,build}.log`.
+The existing AVMetadataItem deprecation remains.
+
+Next migrate **box-set and location operations**, including album placement and
+direct readers. Use the scoped helper for value-returning operations and preserve
+each operation’s existing refresh boundary. Track the remaining artwork,
+provider, metadata, scan, fingerprint, playback, playlist and transfer holders in
+the inventory. Production restore/reset still uses the existing transfer
+coordination, so the recovery exclusion gaps remain open. Enabling production
+reservation depends on accounting for those remaining lifetimes and testing the
+integration. Folder reassociation remains deferred. The keyboard, VoiceOver,
+NAS/remount and device acceptance items in earlier handoffs are still open.
+
+## Previous resume — RA2 scoped LibraryStore foundation and first read/edit slice
 
 This is a **partial backend integration checkpoint**. Latest runnable artifact remains **Music Library 0.72 (build 73)** at `build/Music Library 0.72.app`; schema **17**. No UI, packaging/version, SQL or recovery-installation change was needed. No native app, personal catalogue/preferences, source media or NAS destination was opened. New integration tests use unique temporary SQLite databases and seeded catalogue records only.
 
