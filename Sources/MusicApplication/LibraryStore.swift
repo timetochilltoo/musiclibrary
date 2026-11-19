@@ -516,8 +516,9 @@ public final class LibraryStore: ObservableObject {
         try await withCatalogueUse { database, _ in try await database.tracks(discID: discID) }
     }
     public func playbackAlbumIDs(trackIDs: [TrackID]) async throws -> [TrackID: AlbumID] {
-        guard let database else { throw DatabaseError.notFound("Catalogue database") }
-        return try await database.playbackAlbumIDs(trackIDs: trackIDs)
+        try await withCatalogueUse { database, _ in
+            try await database.playbackAlbumIDs(trackIDs: trackIDs)
+        }
     }
     public func albumContributors(albumID: AlbumID) async throws -> [ContributorCredit] {
         try await withCatalogueUse { database, _ in try await database.albumContributors(albumID: albumID) }
@@ -730,7 +731,12 @@ public final class LibraryStore: ObservableObject {
     }
 
     public func refreshStorageRootAccess() async throws {
-        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        try await withCatalogueUse { database, context in
+            try await self.refreshStorageRootAccess(using: database, context: context)
+        }
+    }
+
+    private func refreshStorageRootAccess(using database: MusicDatabase, context: CatalogueAdmission.Context) async throws {
         var didUpdateRoot = false
         var measuredLocalities: [StorageRootID: StorageRootLocality] = [:]
         for root in storageRoots {
@@ -741,7 +747,7 @@ public final class LibraryStore: ObservableObject {
                 didUpdateRoot = true
             }
         }
-        if didUpdateRoot { try await reload() }
+        if didUpdateRoot { try await reload(using: context) }
         storageRootLocalities = measuredLocalities
     }
 
@@ -1031,15 +1037,17 @@ public final class LibraryStore: ObservableObject {
     }
 
     public func availableTrackIDs(albumID: AlbumID) async throws -> Set<TrackID> {
-        guard let database else { throw DatabaseError.notFound("Catalogue database") }
-        return try await database.availableTrackIDs(albumID: albumID)
+        try await withCatalogueUse { database, _ in
+            try await database.availableTrackIDs(albumID: albumID)
+        }
     }
 
     public func playbackURL(for trackID: TrackID) async throws -> (url: URL, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?) {
-        guard let database else { throw DatabaseError.notFound("Catalogue database") }
-        try await refreshStorageRootAccess()
-        guard let asset = try await database.playbackAsset(trackID: trackID) else { throw DatabaseError.notFound("Playable asset") }
-        return try playbackURL(for: asset)
+        try await withCatalogueUse { database, context in
+            try await self.refreshStorageRootAccess(using: database, context: context)
+            guard let asset = try await database.playbackAsset(trackID: trackID) else { throw DatabaseError.notFound("Playable asset") }
+            return try self.playbackURL(for: asset)
+        }
     }
 
     private func playbackURL(for asset: PlaybackAssetReference) throws -> (url: URL, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?) {
@@ -1053,42 +1061,45 @@ public final class LibraryStore: ObservableObject {
     }
 
     public func playbackURLs(discID: DiscID) async throws -> [(url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?)] {
-        guard let database else { throw DatabaseError.notFound("Catalogue database") }
-        try await refreshStorageRootAccess()
-        let discTracks = try await tracks(discID: discID)
-        var results: [(url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?)] = []
-        for track in discTracks {
-            guard let asset = try await database.playbackAsset(trackID: track.id) else { throw DatabaseError.notFound("Playable asset") }
-            let resolved = try playbackURL(for: asset)
-            results.append((resolved.url, track.id, resolved.title, resolved.cueStartMilliseconds, resolved.cueEndMilliseconds))
+        try await withCatalogueUse { database, context in
+            try await self.refreshStorageRootAccess(using: database, context: context)
+            let discTracks = try await database.tracks(discID: discID)
+            var results: [(url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?)] = []
+            for track in discTracks {
+                guard let asset = try await database.playbackAsset(trackID: track.id) else { throw DatabaseError.notFound("Playable asset") }
+                let resolved = try self.playbackURL(for: asset)
+                results.append((resolved.url, track.id, resolved.title, resolved.cueStartMilliseconds, resolved.cueEndMilliseconds))
+            }
+            return results
         }
-        return results
     }
     public func playbackURLs(playlistID: PlaylistID) async throws -> [(url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?)] {
         try await playlistPlaybackPlan(playlistID: playlistID).items
     }
     public func playlistPlaybackPlan(playlistID: PlaylistID, selectedItemID: UUID? = nil) async throws -> PlaylistPlaybackPlan {
-        guard let database else { throw DatabaseError.notFound("Catalogue database") }
-        try await refreshStorageRootAccess()
-        guard try await database.playlists().contains(where: { $0.id == playlistID }) else { throw DatabaseError.notFound("Active playlist") }
-        var results: [PlaylistPlaybackPlan.Entry] = []
-        for item in try await playlistItems(playlistID) {
-            if let asset = try? await database.playbackAsset(trackID: item.trackID), let resolved = try? playbackURL(for: asset) {
-                results.append((item.id, (resolved.url, item.trackID, resolved.title, resolved.cueStartMilliseconds, resolved.cueEndMilliseconds)))
+        try await withCatalogueUse { database, context in
+            try await self.refreshStorageRootAccess(using: database, context: context)
+            guard try await database.playlists().contains(where: { $0.id == playlistID }) else { throw DatabaseError.notFound("Active playlist") }
+            var results: [PlaylistPlaybackPlan.Entry] = []
+            for item in try await database.playlistItems(playlistID: playlistID) {
+                if let asset = try? await database.playbackAsset(trackID: item.trackID), let resolved = try? self.playbackURL(for: asset) {
+                    results.append((item.id, (resolved.url, item.trackID, resolved.title, resolved.cueStartMilliseconds, resolved.cueEndMilliseconds)))
+                }
             }
+            return try .init(entries: results, selectedItemID: selectedItemID)
         }
-        return try .init(entries: results, selectedItemID: selectedItemID)
     }
     public func playbackURLs(trackIDs: [TrackID]) async -> [(url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?)] {
-        guard let database else { return [] }
-        try? await refreshStorageRootAccess()
-        var results: [(url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?)] = []
-        for trackID in trackIDs {
-            if let asset = try? await database.playbackAsset(trackID: trackID), let resolved = try? playbackURL(for: asset) {
-                results.append((resolved.url, trackID, resolved.title, resolved.cueStartMilliseconds, resolved.cueEndMilliseconds))
+        (try? await withCatalogueUse { database, context in
+            try? await self.refreshStorageRootAccess(using: database, context: context)
+            var results: [(url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?)] = []
+            for trackID in trackIDs {
+                if let asset = try? await database.playbackAsset(trackID: trackID), let resolved = try? self.playbackURL(for: asset) {
+                    results.append((resolved.url, trackID, resolved.title, resolved.cueStartMilliseconds, resolved.cueEndMilliseconds))
+                }
             }
-        }
-        return results
+            return results
+        }) ?? []
     }
     public func playlistItems(_ id: PlaylistID) async throws -> [PlaylistItem] {
         try await withCatalogueUse { database, _ in

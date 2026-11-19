@@ -14,6 +14,8 @@ Current baseline: inspect `main` with `git log --oneline -5`; [HANDOFF.md](HANDO
 
 Completed and verified:
 
+- RA2 playback queries and URL resolution use catalogue admission. Disc and playlist lookups reuse their admitted database for member and asset reads. Root access refresh takes the same context through status writes and reload or acquires its own scope for a direct call. Temporary SQLite regressions cover both disc and playlist lookups draining across a root status change and reload.
+
 - RA2 album lifecycle edits and lyrics mutations retain catalogue admission through reload and active search. Embedded metadata and direct lyrics readers acquire admission before database capture. Now Playing lyrics retains one scope through both track and lyrics reads. The temporary SQLite regression verifies that maintenance waits for album deletion to finish refreshing and that lyrics remain available after restoration.
 
 - RA2 playlist edits and direct item reads use scoped catalogue admission. Lifecycle edits, single and batch additions, item removal and all three reorder overloads retain admission through reload and active search. The existing database transactions, expected-order checks and item IDs remain the basis for retry and reorder behavior. See [the migration inventory](CATALOGUE_USE_MIGRATION.md) for the remaining holders.

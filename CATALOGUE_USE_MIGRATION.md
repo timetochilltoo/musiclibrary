@@ -1,11 +1,11 @@
 # Catalogue-use migration inventory
 
-Snapshot: 20 November 2026, RA2 album lifecycle and lyrics operations. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
+Snapshot: 20 November 2026, RA2 playback operations. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
 Operational state: [HANDOFF.md](HANDOFF.md). Safety design: [recovery admission audit](RECOVERY_WRITER_ADMISSION_AUDIT.md).
 
 ## Coverage and lifetime contract
 
-The 58 public declarations below currently use catalogue admission. A call to
+The 66 public declarations below currently use catalogue admission. A call to
 public reload from an otherwise unscoped mutation does not cover the earlier
 mutation or its retained database. No production caller reserves maintenance;
 existing restore/reset/scan races remain open. Recovery must not be connected to
@@ -45,6 +45,7 @@ is a Debug temporary-data factory; its seeding is separate from production uses.
 - `albumArtwork`
 - `albumContributors`
 - `albums`
+- `availableTrackIDs`
 - `boxMembers`
 - `boxPlacement`
 - `deleteAlbumAlias`
@@ -64,7 +65,12 @@ is a Debug temporary-data factory; its seeding is separate from production uses.
 - `nowPlayingLyrics`
 - `permanentlyDeleteAlbum`
 - `permanentlyDeletePlaylist`
+- `playbackAlbumIDs`
+- `playbackURL`
+- `playbackURLs` (3 overloads)
 - `playlistItems`
+- `playlistPlaybackPlan`
+- `refreshStorageRootAccess`
 - `reload`
 - `removeAlbum`
 - `removePlaylistItem`
@@ -106,6 +112,11 @@ refresh. Embedded metadata and lyrics readers borrow the database after
 admission. The Now Playing lyrics query uses a single scope for its track
 and lyrics reads.
 
+Playback identity, availability and URL resolution acquire admission before
+database use. Disc and playlist playback read members through their admitted
+database. Root access refresh and its reload reuse the playback context. Direct
+root access refresh has its own scope for callers outside playback.
+
 ## Remaining catalogue mutations and worker lifecycle entry points
 
 These remain unscoped for their full operation, even when their final reload now
@@ -126,7 +137,6 @@ uses admission. Some entries are worker lifecycle controls rather than SQL write
 - `migrateArtworkToManagedStorage`
 - `proposeRelink`
 - `recheckLibraryHealth`
-- `refreshStorageRootAccess`
 - `removeMissingAssetReference`
 - `renameStorageRoot`
 - `renewStorageRootAccess`
@@ -142,7 +152,6 @@ uses admission. Some entries are worker lifecycle controls rather than SQL write
 Readers can retain an old database actor and must be accounted for before file
 replacement; being read-only does not make an outstanding use safe to ignore.
 
-- `availableTrackIDs`
 - `catalogueCleanupPreview`
 - `exportCatalogue`
 - `exportCatalogueCSV`
@@ -153,10 +162,6 @@ replacement; being read-only does not make an outstanding use safe to ignore.
 - `importProposalPreview`
 - `importReleaseProposals`
 - `missingAssetReviews`
-- `playbackAlbumIDs`
-- `playbackURL`
-- `playbackURLs` (3 overloads)
-- `playlistPlaybackPlan`
 - `tagWritePreviews`
 - `unregisteredImportCandidates`
 
@@ -226,8 +231,7 @@ invalid-context failures release or refuse cleanly. Existing search overlap test
 continue to cover generation ordering. These are partial integration checks, not
 live recovery exclusion or reader migration completeness.
 
-Next migrate playback identity and availability reads and playback URL
-resolution. Review nested playback calls and keep their database and root
-resolution within the owning scope. Root edits, provider and artwork work,
-scans, fingerprints and queued recovery have separate lifetimes. Production
-recovery reservation depends on complete holder coverage and interleaving tests.
+Next migrate remaining storage root operations, the folder recovery manifest
+reader and library health refresh. Pass the owning context through root refresh,
+availability writes and reload. Fingerprinting, scans, metadata analysis, artwork
+and queued recovery have separate lifetimes and need their own migration.

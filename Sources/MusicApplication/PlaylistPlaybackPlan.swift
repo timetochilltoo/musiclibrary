@@ -3,7 +3,7 @@ import MusicDomain
 import MusicPersistence
 
 /// Resolved entries keep playlist identity until the controller's queue is built.
-public struct PlaylistPlaybackPlan {
+public struct PlaylistPlaybackPlan: Sendable {
     public typealias QueueItem = (url: URL, trackID: TrackID, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?)
     public typealias Entry = (itemID: UUID, audio: QueueItem)
     public let items: [QueueItem]

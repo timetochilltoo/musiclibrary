@@ -322,6 +322,65 @@ struct LibraryStoreAdmissionTests {
         #expect(try await store.lyrics(trackID: fixture.track.id).isEmpty)
     }
 
+    @Test("Playback retains admission across root refresh and nested reads", arguments: [false, true])
+    func playbackDrain(playlist: Bool) async throws {
+        let fixture = try await Fixture.make()
+        defer { fixture.remove() }
+        let probe = Probe(), maintenance = Gate()
+        defer { probe.gate.open(); maintenance.open() }
+        let root = try await fixture.database.createStorageRoot(.init(
+            displayName: "Synthetic root",
+            lastKnownPath: fixture.directory.path,
+            bookmarkData: nil,
+            status: .available
+        ))
+        let emptyDisc = try await fixture.database.createDisc(albumID: fixture.album.id)
+        let queue = try await fixture.database.createPlaylist(name: "Listening")
+        try await fixture.database.addTrack(fixture.track.id, to: queue.id)
+        let store = LibraryStore(database: fixture.database, albumSearch: { db, term in try await probe.load(db, term) })
+        try await store.reload()
+        await store.search("album")
+
+        probe.holdNext = true
+        let lookup = Task {
+            if playlist {
+                do {
+                    _ = try await store.playbackURLs(playlistID: queue.id)
+                    Issue.record("A playlist without audio should refuse playback")
+                } catch DatabaseError.invalidOperation(let message) {
+                    #expect(message == "This playlist has no currently playable tracks.")
+                }
+            } else {
+                #expect(try await store.playbackURLs(discID: emptyDisc.id).isEmpty)
+            }
+        }
+        try await until { probe.gate.started }
+        #expect(store.storageRoots.first { $0.id == root.id }?.status == .permissionRequired)
+        let barrier = Task { try await store.catalogueAdmission.withMaintenance { _ in await maintenance.hold() } }
+        try await until { store.catalogueAdmission.phase == .draining }
+
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            _ = try await store.playbackAlbumIDs(trackIDs: [fixture.track.id])
+        }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            _ = try await store.availableTrackIDs(albumID: fixture.album.id)
+        }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            _ = try await store.playbackURL(for: fixture.track.id)
+        }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            try await store.refreshStorageRootAccess()
+        }
+        #expect(await store.playbackURLs(trackIDs: [fixture.track.id]).isEmpty)
+        #expect(store.catalogueAdmission.activeOperationCount == 1 && !maintenance.started)
+        probe.gate.open()
+        try await lookup.value
+        try await until { maintenance.started }
+        maintenance.open()
+        try await barrier.value
+        #expect(try await store.playbackAlbumIDs(trackIDs: [fixture.track.id]) == [fixture.track.id: fixture.album.id])
+    }
+
     private func until(_ predicate: @MainActor () -> Bool) async throws {
         let deadline = ContinuousClock.now.advanced(by: .seconds(5))
         while !predicate() {

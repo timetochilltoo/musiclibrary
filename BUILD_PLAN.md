@@ -273,6 +273,10 @@ RA2 album lifecycle and lyrics checkpoint. Album deletion and restoration,
 lyrics reads and edits, and embedded metadata reads bring scoped coverage to
 58 LibraryStore declarations. Playback queries and resolution come next.
 
+RA2 playback checkpoint. Playback queries and URL resolution, including their
+root access refresh, bring scoped coverage to 66 LibraryStore declarations.
+Remaining root operations and library health refresh come next.
+
 Store more than an absolute path:
 
 - storage-root ID plus relative path;

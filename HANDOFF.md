@@ -4,7 +4,47 @@ Last updated: 20 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — RA2 album lifecycle, lyrics and embedded metadata
+## Current resume — RA2 playback queries and root access refresh
+
+Eight more declarations use catalogue admission, bringing coverage to 66 of
+125 LibraryStore declarations. Playback album identity and track availability
+acquire admission before capturing the database. Single-track, disc, playlist
+and track-list lookups retain one scope through root access refresh and asset
+resolution. Disc and playlist reads use their admitted database directly so
+they can complete during maintenance drain. The playlist URL wrapper delegates
+to the scoped playlist plan, whose value fields support checked Sendable
+conformance. The nonthrowing track-list lookup keeps its empty-result fallback.
+
+Root access refresh can update root status and reload the catalogue. Its
+context-taking helper reuses the playback scope through writes, reload and
+active search. Its public entry point acquires admission for other callers.
+This migration leaves actual audio preparation and playback outside the
+catalogue operation lifetime. The aggregate tag preview still calls the scoped
+single-track resolver per track and needs a separate lifetime review.
+
+The temporary SQLite regression covers disc and playlist calls. A synthetic
+root with no bookmark triggers a status update and reload. The fixture pauses
+the active search during reload and requests maintenance. New playback and root
+refresh requests refuse while the admitted request drains through its nested
+reads. The empty disc completes, and the playlist retains its usual error for
+unavailable audio. No real media or permission grant is needed.
+
+The focused checks passed with 32 tests across eight suites. The full Debug
+and Release suites passed with 268 and 257 tests respectively. The Swift
+build, whitespace, declaration inventory and audit link checks passed.
+Logs are at `/private/tmp/musiclibrary-ra2-playback-{focused,debug,release,build}.log`.
+The existing AVMetadataItem deprecation remains.
+
+Next migrate **remaining storage root operations, folder recovery manifest
+reads and library health refresh**. Reuse the root refresh context for nested
+reload and hold that scope through availability writes. Background scans,
+fingerprinting, metadata analysis, provider and artwork work, and queued
+recovery need their own migration. Production restore and reset still use the
+transfer queue. The latest runnable artifact is Music Library 0.72 build 73
+with schema 17. Native accessibility, NAS remount and device checks remain open.
+See [the migration inventory](CATALOGUE_USE_MIGRATION.md).
+
+## Previous resume — RA2 album lifecycle, lyrics and embedded metadata
 
 Eight more declarations use catalogue admission, bringing coverage to 58 of
 125 LibraryStore declarations. Album soft deletion, restoration and permanent
