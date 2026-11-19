@@ -4,7 +4,41 @@ Last updated: 20 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — RA2 playlist operations
+## Current resume — RA2 album lifecycle, lyrics and embedded metadata
+
+Eight more declarations use catalogue admission, bringing coverage to 58 of
+125 LibraryStore declarations. Album soft deletion, restoration and permanent
+deletion use the shared edit scope, as do lyrics save and delete. Each
+admitted edit holds the database through its reload and active search.
+Embedded metadata and lyrics queries acquire admission before borrowing
+the database. Now Playing reads the track and its lyrics under one scope
+and preserves the missing-track result.
+
+The temporary SQLite regression holds an album soft deletion at the active
+search refresh. A synthetic maintenance reservation waits for the edit. It
+refuses a restore, permanent deletion and lyrics deletion while draining.
+The catalogue advances only for the admitted deletion. The test checks the
+published deletion and refusal of direct lyrics, Now Playing lyrics and
+embedded metadata reads during exclusivity. After maintenance releases,
+the album returns to search with its stored lyrics, which can then be removed.
+
+The focused checks passed with 40 tests across seven suites. The full Debug
+and Release suites passed with 267 and 256 tests respectively. The Swift
+build, whitespace, declaration inventory and audit link checks passed.
+Logs are at `/private/tmp/musiclibrary-ra2-lyrics-{focused,debug,release,build}.log`.
+The existing AVMetadataItem deprecation remains.
+
+Next migrate **playback identity, availability and URL resolution**. Review
+the single-track, disc, track-list and playlist entry points together so
+nested calls share the owning scope while reading the database and resolving
+roots. Root updates, provider and managed artwork work, scans, fingerprinting
+and queued capture/installation still have separate lifetimes. Keep
+production recovery on its existing transfer coordination until every
+holder is accounted for and tested. The latest runnable artifact is Music
+Library 0.72 build 73 with schema 17. Earlier native accessibility, NAS
+remount and device acceptance remain open. See [the migration inventory](CATALOGUE_USE_MIGRATION.md).
+
+## Previous resume — RA2 playlist operations
 
 Twelve playlist declarations now use catalogue admission, bringing coverage to
 50 of 125 LibraryStore declarations. The shared edit scope includes playlist

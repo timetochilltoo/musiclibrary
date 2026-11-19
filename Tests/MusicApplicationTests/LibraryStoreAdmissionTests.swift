@@ -271,6 +271,57 @@ struct LibraryStoreAdmissionTests {
         #expect(try await store.playlistItems(playlist.id).map(\.id) == Array(expectedIDs.reversed()))
     }
 
+    @Test("Album deletion drains through refresh and preserves lyrics for restoration")
+    func albumDeletionDrain() async throws {
+        let fixture = try await Fixture.make()
+        defer { fixture.remove() }
+        let probe = Probe(), maintenance = Gate()
+        defer { probe.gate.open(); maintenance.open() }
+        let store = LibraryStore(database: fixture.database, albumSearch: { db, term in try await probe.load(db, term) })
+        let entry = LyricsEntry(trackID: fixture.track.id, text: "Fixture lyrics")
+        try await store.saveLyrics(entry)
+        await store.search("album")
+        let before = try await fixture.database.currentRevision()
+
+        probe.holdNext = true
+        let deletion = Task { try await store.softDeleteAlbum(fixture.album.id) }
+        try await until { probe.gate.started }
+        let barrier = Task { try await store.catalogueAdmission.withMaintenance { _ in await maintenance.hold() } }
+        try await until { store.catalogueAdmission.phase == .draining }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            try await store.restoreAlbum(fixture.album.id)
+        }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            try await store.permanentlyDeleteAlbum(fixture.album.id)
+        }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            try await store.deleteLyrics(entry.id)
+        }
+        #expect(try await fixture.database.currentRevision() == before + 1)
+        #expect(store.catalogueAdmission.activeOperationCount == 1 && !maintenance.started)
+        probe.gate.open()
+        try await deletion.value
+        try await until { maintenance.started }
+        #expect(store.albums.isEmpty && store.deletedAlbums.map(\.id) == [fixture.album.id])
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            _ = try await store.lyrics(trackID: fixture.track.id)
+        }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            _ = try await store.nowPlayingLyrics(trackID: fixture.track.id)
+        }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            _ = try await store.embeddedMetadata(trackID: fixture.track.id)
+        }
+        maintenance.open()
+        try await barrier.value
+
+        try await store.restoreAlbum(fixture.album.id)
+        #expect(store.albums.map(\.id) == [fixture.album.id])
+        #expect(try await store.nowPlayingLyrics(trackID: fixture.track.id)?.entries.map(\.id) == [entry.id])
+        try await store.deleteLyrics(entry.id)
+        #expect(try await store.lyrics(trackID: fixture.track.id).isEmpty)
+    }
+
     private func until(_ predicate: @MainActor () -> Bool) async throws {
         let deadline = ContinuousClock.now.advanced(by: .seconds(5))
         while !predicate() {

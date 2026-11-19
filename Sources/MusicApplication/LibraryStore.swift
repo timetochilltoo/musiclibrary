@@ -584,7 +584,11 @@ public final class LibraryStore: ObservableObject {
             try await database.deleteAlbumAlias(aliasID)
         }
     }
-    public func restoreAlbum(_ id: AlbumID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.restoreAlbum(id); try await reload() }
+    public func restoreAlbum(_ id: AlbumID) async throws {
+        try await editCatalogue { database in
+            try await database.restoreAlbum(id)
+        }
+    }
     public func addAlbumContributor(albumID: AlbumID, name: String, role: ContributorRole, creditedName: String?) async throws {
         try await editCatalogue { database in
             let contributor = try await database.createContributor(.init(name: name))
@@ -1116,15 +1120,32 @@ public final class LibraryStore: ObservableObject {
             try await database.permanentlyDeletePlaylist(id)
         }
     }
-    public func embeddedMetadata(trackID: TrackID) async throws -> EmbeddedMetadataPayload? { guard let database else { throw DatabaseError.notFound("Catalogue database") }; return try await database.embeddedMetadata(trackID: trackID) }
-    public func lyrics(trackID: TrackID) async throws -> [LyricsEntry] { guard let database else { throw DatabaseError.notFound("Catalogue database") }; return try await database.lyrics(trackID: trackID) }
-    public func nowPlayingLyrics(trackID: TrackID) async throws -> NowPlayingLyrics? {
-        guard let database else { throw DatabaseError.notFound("Catalogue database") }
-        guard let track = try await database.track(id: trackID) else { return nil }
-        return .init(track: track, entries: try await database.lyrics(trackID: trackID))
+    public func embeddedMetadata(trackID: TrackID) async throws -> EmbeddedMetadataPayload? {
+        try await withCatalogueUse { database, _ in
+            try await database.embeddedMetadata(trackID: trackID)
+        }
     }
-    public func saveLyrics(_ entry: LyricsEntry) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.saveLyrics(entry); try await reload() }
-    public func deleteLyrics(_ id: UUID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.deleteLyrics(id); try await reload() }
+    public func lyrics(trackID: TrackID) async throws -> [LyricsEntry] {
+        try await withCatalogueUse { database, _ in
+            try await database.lyrics(trackID: trackID)
+        }
+    }
+    public func nowPlayingLyrics(trackID: TrackID) async throws -> NowPlayingLyrics? {
+        try await withCatalogueUse { database, _ in
+            guard let track = try await database.track(id: trackID) else { return nil }
+            return .init(track: track, entries: try await database.lyrics(trackID: trackID))
+        }
+    }
+    public func saveLyrics(_ entry: LyricsEntry) async throws {
+        try await editCatalogue { database in
+            try await database.saveLyrics(entry)
+        }
+    }
+    public func deleteLyrics(_ id: UUID) async throws {
+        try await editCatalogue { database in
+            try await database.deleteLyrics(id)
+        }
+    }
 
     /// Builds a dry-run only. The caller must explicitly confirm before any source
     /// file is copied, backed up, or changed.
@@ -1191,8 +1212,16 @@ public final class LibraryStore: ObservableObject {
             try await database.movePlaylistItem(id, in: playlistID, adjacentTo: neighborID, expectedItemIDs: expectedItemIDs)
         }
     }
-    public func softDeleteAlbum(_ id: AlbumID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.softDeleteAlbum(id); try await reload() }
-    public func permanentlyDeleteAlbum(_ id: AlbumID) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; try await database.permanentlyDeleteAlbum(id); try await reload() }
+    public func softDeleteAlbum(_ id: AlbumID) async throws {
+        try await editCatalogue { database in
+            try await database.softDeleteAlbum(id)
+        }
+    }
+    public func permanentlyDeleteAlbum(_ id: AlbumID) async throws {
+        try await editCatalogue { database in
+            try await database.permanentlyDeleteAlbum(id)
+        }
+    }
     public func exportCatalogue(to url: URL) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; let json = try await database.catalogueExportJSON(); try json.write(to: url, atomically: true, encoding: .utf8) }
     public func exportCatalogueCSV(to url: URL) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; let csv = try await database.catalogueExportCSV(); try csv.write(to: url, atomically: true, encoding: .utf8) }
     public func catalogueCleanupPreview() async throws -> CatalogueCleanupPreview {
