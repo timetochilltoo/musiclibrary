@@ -4,7 +4,35 @@ Last updated: 21 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — RA2 storage roots and library health
+## Current resume — RA2 asset fingerprint verification
+
+Fingerprint verification now holds one catalogue admission scope through root
+refresh, candidate lookup, the awaited detached hash worker, fingerprint
+writes and reload. This brings coverage to 74 of 125 LibraryStore declarations.
+The worker receives value jobs and the store records its results within the
+scope. File permission and hashing behavior use the existing implementation.
+
+The new temporary SQLite regression supplies a gated detached worker to the
+same orchestration used by the public call. It confirms that maintenance waits
+during hashing and again during the final search refresh. A second fingerprint
+request refuses while admission is draining. The fixture uses an empty candidate
+set, while the hashing tests exercise the worker's file reads independently.
+
+The 14 focused tests, 270 Debug tests, 259 Release tests and Swift build passed.
+Whitespace, declaration inventory and audit link checks also passed. Logs are
+at `/private/tmp/musiclibrary-ra2-fingerprints-{focused,debug,release,build}.log`.
+The existing AVMetadataItem deprecation remains.
+
+Next migrate **import scan lifetime**, including start by root or subfolder and
+retry. Start returns before the scan worker finishes, so admission must carry
+through the detached scan, candidate writes, batch completion, reconciliation
+and final publication. Review cancellation and progress callbacks as part of
+that work. Metadata analysis, provider and artwork work and queued recovery
+have separate lifetimes. Production restore and reset still use the transfer
+queue. The latest runnable artifact is Music Library 0.72 build 73 with schema
+17. See [the migration inventory](CATALOGUE_USE_MIGRATION.md).
+
+## Previous resume — RA2 storage roots and library health
 
 Seven more declarations use catalogue admission, bringing coverage to 73 of
 125. Storage root registration, rename, permission renewal, scope changes and

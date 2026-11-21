@@ -433,6 +433,47 @@ struct LibraryStoreAdmissionTests {
         #expect(try await store.folderRecoveryManifest(rootID: root.id).root.displayName == "Renamed root")
     }
 
+    @Test("Fingerprint verification holds admission through the worker and final refresh")
+    func fingerprintDrain() async throws {
+        let fixture = try await Fixture.make()
+        defer { fixture.remove() }
+        let worker = Gate(), maintenance = Gate(), probe = Probe()
+        defer { worker.open(); probe.gate.open(); maintenance.open() }
+        let store = LibraryStore(database: fixture.database, albumSearch: { db, term in try await probe.load(db, term) })
+        try await store.reload()
+        await store.search("album")
+        let revision = try await fixture.database.currentRevision()
+
+        let verification = Task {
+            try await store.verifyFingerprints { jobs in
+                await Task.detached {
+                    #expect(jobs.isEmpty)
+                    await worker.hold()
+                    return []
+                }.value
+            }
+        }
+        try await until { worker.started }
+        let barrier = Task { try await store.catalogueAdmission.withMaintenance { _ in await maintenance.hold() } }
+        try await until { store.catalogueAdmission.phase == .draining }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            try await store.verifyFingerprints()
+        }
+        #expect(store.catalogueAdmission.activeOperationCount == 1 && !maintenance.started)
+
+        probe.holdNext = true
+        worker.open()
+        try await until { probe.gate.started }
+        #expect(store.catalogueAdmission.activeOperationCount == 1 && !maintenance.started)
+        probe.gate.open()
+        try await verification.value
+        try await until { maintenance.started }
+        #expect(try await fixture.database.currentRevision() == revision)
+        maintenance.open()
+        try await barrier.value
+        #expect(store.catalogueAdmission.phase == .open)
+    }
+
     private func until(_ predicate: @MainActor () -> Bool) async throws {
         let deadline = ContinuousClock.now.advanced(by: .seconds(5))
         while !predicate() {

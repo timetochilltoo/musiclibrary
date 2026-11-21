@@ -281,6 +281,10 @@ RA2 storage root checkpoint. Storage root edits, folder recovery manifest reads
 and library health refresh bring the total to 73 scoped LibraryStore declarations.
 Asset fingerprint verification comes next.
 
+RA2 fingerprint checkpoint. Verification holds catalogue admission through the
+hash worker, result writes and reload, bringing coverage to 74 declarations.
+Import scan lifetime comes next.
+
 Store more than an absolute path:
 
 - storage-root ID plus relative path;

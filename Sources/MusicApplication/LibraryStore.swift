@@ -1568,26 +1568,35 @@ public final class LibraryStore: ObservableObject {
         if !completed { snapshotPublishStatus = "Publish continues in the background." }
     }
     public func verifyFingerprints() async throws {
-        guard let database else { throw DatabaseError.notFound("Catalogue database") }
-        try await refreshStorageRootAccess()
-        let jobs = try await database.assetFingerprintCandidates().compactMap { candidate -> AssetFingerprinting.Job? in
-            guard let root = storageRoots.first(where: { $0.id == candidate.rootID }) else { return nil }
-            let state = resolveSecurityScopedBookmark(root)
-            guard state.status == .available, let rootURL = state.url else { return nil }
-            return .init(id: candidate.id, rootURL: rootURL, url: rootURL.appending(path: candidate.relativePath))
+        try await verifyFingerprints { jobs in
+            await Task.detached(priority: .utility) {
+                jobs.compactMap { job -> AssetFingerprinting.Result? in
+                    guard !Task.isCancelled else { return nil }
+                    let accessed = job.rootURL.startAccessingSecurityScopedResource()
+                    defer { if accessed { job.rootURL.stopAccessingSecurityScopedResource() } }
+                    return try? AssetFingerprinting.fingerprint(job)
+                }
+            }.value
         }
-        let fingerprints = await Task.detached(priority: .utility) {
-            jobs.compactMap { job -> AssetFingerprinting.Result? in
-                guard !Task.isCancelled else { return nil }
-                let accessed = job.rootURL.startAccessingSecurityScopedResource()
-                defer { if accessed { job.rootURL.stopAccessingSecurityScopedResource() } }
-                return try? AssetFingerprinting.fingerprint(job)
+    }
+
+    func verifyFingerprints(
+        using fingerprint: @Sendable ([AssetFingerprinting.Job]) async -> [AssetFingerprinting.Result]
+    ) async throws {
+        try await withCatalogueUse { database, context in
+            try await self.refreshStorageRootAccess(using: database, context: context)
+            let jobs = try await database.assetFingerprintCandidates().compactMap { candidate -> AssetFingerprinting.Job? in
+                guard let root = storageRoots.first(where: { $0.id == candidate.rootID }) else { return nil }
+                let state = resolveSecurityScopedBookmark(root)
+                guard state.status == .available, let rootURL = state.url else { return nil }
+                return .init(id: candidate.id, rootURL: rootURL, url: rootURL.appending(path: candidate.relativePath))
             }
-        }.value
-        for fingerprint in fingerprints {
-            try await database.recordAssetFingerprint(fingerprint.id, contentHash: fingerprint.contentHash, quickSignature: fingerprint.quickSignature)
+            let fingerprints = await fingerprint(jobs)
+            for fingerprint in fingerprints {
+                try await database.recordAssetFingerprint(fingerprint.id, contentHash: fingerprint.contentHash, quickSignature: fingerprint.quickSignature)
+            }
+            try await self.reload(using: context)
         }
-        try await reload()
     }
 
     private func refreshAvailableAssetStatuses(using database: MusicDatabase) async throws {

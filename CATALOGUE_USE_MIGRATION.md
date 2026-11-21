@@ -1,11 +1,11 @@
 # Catalogue-use migration inventory
 
-Snapshot: 21 November 2026, RA2 storage root operations. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
+Snapshot: 21 November 2026, RA2 fingerprint verification. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
 Operational state: [HANDOFF.md](HANDOFF.md). Safety design: [recovery admission audit](RECOVERY_WRITER_ADMISSION_AUDIT.md).
 
 ## Coverage and lifetime contract
 
-The 73 public declarations below currently use catalogue admission. A call to
+The 74 public declarations below currently use catalogue admission. A call to
 public reload from an otherwise unscoped mutation does not cover the earlier
 mutation or its retained database. No production caller reserves maintenance;
 existing restore/reset/scan races remain open. Recovery must not be connected to
@@ -99,6 +99,7 @@ is a Debug temporary-data factory; its seeding is separate from production uses.
 - `updateStorageRootScope`
 - `updateTrackContributorCredit`
 - `updateTrack`
+- `verifyFingerprints`
 
 `editCatalogue` keeps each detail edit, its reload and active search in one
 scope. This includes contributor creation and its credit insert. Detail readers
@@ -128,6 +129,9 @@ Storage root edits own admission through validation, writes and reload. Folder
 recovery manifest reads acquire scoped database access. Library health holds
 one scope for root refresh, asset availability checks and reload.
 
+Fingerprint verification holds one scope from root refresh and candidate reads
+through the awaited hash worker, result writes and reload.
+
 ## Remaining catalogue mutations and worker lifecycle entry points
 
 These remain unscoped for their full operation, even when their final reload now
@@ -150,7 +154,6 @@ uses admission. Some entries are worker lifecycle controls rather than SQL write
 - `saveMusicBrainzSelection`
 - `setImportReleaseProposal`
 - `startImportScan` (2 overloads)
-- `verifyFingerprints`
 
 ## Remaining readers, previews and exports
 
@@ -235,7 +238,8 @@ invalid-context failures release or refuse cleanly. Existing search overlap test
 continue to cover generation ordering. These are partial integration checks, not
 live recovery exclusion or reader migration completeness.
 
-Next migrate asset fingerprint verification. Track the lifetime from root
-refresh and candidate reads through detached hashing, result writes and
-reload. Scans, metadata analysis, artwork and queued recovery have separate
-lifetimes.
+Next migrate import scan start and retry, including database ownership after the
+start call returns. Keep the scan admitted through candidate writes, completion,
+reconciliation and final publication. Review cancellation and progress callbacks
+against that lifetime. Metadata analysis, artwork and queued recovery have
+separate lifetimes.

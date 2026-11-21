@@ -6,7 +6,7 @@ Operational next action belongs in [HANDOFF.md](HANDOFF.md).
 
 RA1 checkpoint: [CatalogueAdmission](Sources/MusicApplication/CatalogueAdmission.swift)
 and its [lifecycle tests](Tests/MusicApplicationTests/CatalogueAdmissionTests.swift)
-implement the admission primitive. RA2 now scopes 73 ordinary LibraryStore
+implement the admission primitive. RA2 now scopes 74 ordinary LibraryStore
 methods; [CATALOGUE_USE_MIGRATION.md](CATALOGUE_USE_MIGRATION.md) records current and
 remaining coverage. No production recovery reservation is enabled, so the broader
 audited call-site gaps below remain open.
@@ -37,9 +37,9 @@ Before integrating a gate, enumerate every public use case and private worker.
 | Managed artwork import/migration/selection | [addAlbumArtwork](Sources/MusicApplication/LibraryStore.swift#L630), [downloadManagedMusicBrainzArtwork](Sources/MusicApplication/LibraryStore.swift#L965) | Catalogue records and artwork files can change outside the transfer queue. Provider work retains the managed store across an await. |
 | Root renewal/scope/deletion and access refresh | [renewStorageRootAccess](Sources/MusicApplication/LibraryStore.swift#L704) and refreshStorageRootAccess | Root writes now use admission. Production recovery does not yet reserve admission. |
 | Metadata analysis, proposal confirmation/attachment and corrections | [analyzeImportBatch](Sources/MusicApplication/LibraryStore.swift#L854) and confirmImportReleaseProposal | Multiple await/write steps; metadata reads can return after a catalogue replacement. |
-| Scan startup and detached scan persistence | [startImportScan](Sources/MusicApplication/LibraryStore.swift#L1630) | Detached task explicitly captures `database`; persists candidates/errors/completion/reconciliation outside the queue. |
-| Scan cancellation | [cancelImportScan](Sources/MusicApplication/LibraryStore.swift#L1692) | Sets cancellation only; does not await worker completion. Recovery does not call a scan-drain barrier. |
-| Fingerprinting and availability health | [verifyFingerprints](Sources/MusicApplication/LibraryStore.swift#L1570) | Hash worker returns to a retained database and records results later. Availability checks also write. Hash recording need not increment revision. |
+| Scan startup and detached scan persistence | [startImportScan](Sources/MusicApplication/LibraryStore.swift#L1639) | Detached task explicitly captures `database`; persists candidates/errors/completion/reconciliation outside the queue. |
+| Scan cancellation | [cancelImportScan](Sources/MusicApplication/LibraryStore.swift#L1701) | Sets cancellation only; does not await worker completion. Recovery does not call a scan-drain barrier. |
+| Fingerprinting and availability health | [verifyFingerprints](Sources/MusicApplication/LibraryStore.swift#L1570) | Fingerprint verification and availability checks now hold admission through their result writes and reloads. Hash recording need not increment revision. |
 | Catalogue reads, reload, search, playback resolution, FR1 manifest reads | [reload](Sources/MusicApplication/LibraryStore.swift#L308), search and folderRecoveryManifest | RA2 scopes reload/search, but remaining readers retain actors directly and production recovery does not reserve admission. Request generations are not an installation epoch. |
 | Explicit FLAC tag execution | [executeTagWrite](Sources/MusicApplication/LibraryStore.swift#L1191) | Separate opt-in source writer; not a database lease or queued service. Its already-started work must never be automatically undone to facilitate recovery. |
 | Settings controls | [activity/disabled controls](Sources/MusicLibraryMac/MusicLibraryMacApp.swift#L1699) | Local submission and recovery-review flags cover selected controls, not all other workspaces, in-flight tasks or API callers. |
@@ -197,7 +197,8 @@ startup. Do not add passing tests that require unsafe admission to remain allowe
   implemented. Scoped calls now include album details, box sets, placement,
   locations, playlists, album lifecycle, lyrics, embedded metadata, playback,
   storage root operations, folder recovery manifest reads and library health.
-  Next migrate asset fingerprint verification. Production maintenance
+  Fingerprint verification now holds admission through the hash worker and result
+  writes. Next migrate import scan lifetime. Production maintenance
   reservation depends on accounting for all affected holders and nested helper
   paths. Calling maintenance while holding an ordinary lease can deadlock.
 - **RA3:** integrate queued recovery/capture boundaries and epoch invalidation;
