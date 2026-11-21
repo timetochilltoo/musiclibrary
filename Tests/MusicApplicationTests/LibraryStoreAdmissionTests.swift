@@ -474,6 +474,60 @@ struct LibraryStoreAdmissionTests {
         #expect(store.catalogueAdmission.phase == .open)
     }
 
+    @Test("Scan cancellation retains admission until worker exit and batch publication")
+    func scanWorkerDrain() async throws {
+        let fixture = try await Fixture.make()
+        defer { fixture.remove() }
+        let worker = Gate(), maintenance = Gate()
+        defer { worker.open(); maintenance.open() }
+        let root = try await fixture.database.createStorageRoot(.init(
+            displayName: "Fixture root", lastKnownPath: fixture.directory.path, bookmarkData: nil, status: .available
+        ))
+        let batch = try await fixture.database.createImportBatch(storageRootID: root.id, sourceDescription: fixture.directory.path)
+        let store = LibraryStore(database: fixture.database)
+        try await store.reload()
+        let context = try store.catalogueAdmission.beginOperation()
+        store.registerImportScan(batchID: batch.id, database: fixture.database, context: context) {
+            await worker.hold()
+            #expect(Task.isCancelled)
+            do {
+                try await fixture.database.finishImportBatch(batch.id, status: .cancelled)
+            } catch {
+                Issue.record("Could not finish fixture scan: \(error)")
+            }
+        }
+        try await until { worker.started }
+        let barrier = Task { try await store.catalogueAdmission.withMaintenance { _ in
+            #expect(store.importBatches.first { $0.id == batch.id }?.status == .cancelled)
+            #expect(store.importScanProgress[batch.id] == nil)
+            await maintenance.hold()
+        } }
+        try await until { store.catalogueAdmission.phase == .draining }
+
+        await store.cancelImportScan(batch.id)
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            _ = try await store.startImportScan(rootID: root.id)
+        }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            _ = try await store.startImportScan(containing: fixture.directory)
+        }
+        #expect(store.catalogueAdmission.activeOperationCount == 1 && !maintenance.started)
+        worker.open()
+        try await until { maintenance.started }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            _ = try await store.retryImportScan(batch.id)
+        }
+        maintenance.open()
+        try await barrier.value
+
+        // Setup cannot reach the scanner without a grant, and the failure must release the lease.
+        await #expect(throws: DatabaseError.self) {
+            _ = try await store.retryImportScan(batch.id)
+        }
+        #expect(store.catalogueAdmission.activeOperationCount == 0)
+        #expect(try await fixture.database.importBatches().map(\.id) == [batch.id])
+    }
+
     private func until(_ predicate: @MainActor () -> Bool) async throws {
         let deadline = ContinuousClock.now.advanced(by: .seconds(5))
         while !predicate() {

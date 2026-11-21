@@ -14,6 +14,8 @@ Current baseline: inspect `main` with `git log --oneline -5`; [HANDOFF.md](HANDO
 
 Completed and verified:
 
+- RA2 import scan startup holds admission through root refresh and batch creation, then transfers it to the completion task. The detached worker retains its database through writes and reconciliation. Admission releases after worker exit, final publication and progress cleanup. Cancellation can signal the worker during drain.
+
 - RA2 fingerprint verification holds catalogue admission across root refresh, job selection, detached hashing, result persistence and reload. A temporary SQLite regression gates the worker and final refresh to verify maintenance drain and refusal of a second request.
 
 - RA2 storage root registration, edits, permission renewal and removal use catalogue admission through reload. Folder recovery manifest reads borrow the database after admission. Library health reuses one context for root access refresh, asset availability checks and reload, with a temporary SQLite regression for maintenance drain and refusal.

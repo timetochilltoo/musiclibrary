@@ -1622,26 +1622,42 @@ public final class LibraryStore: ObservableObject {
     }
 
     public func startImportScan(containing folderURL: URL) async throws -> ImportBatchID {
-        guard database != nil else { throw DatabaseError.notFound("Catalogue database") }
-        try await refreshStorageRootAccess()
-        let matchingRoots = storageRoots.compactMap { root -> (StorageRoot, URL)? in
-            let resolved = resolveSecurityScopedBookmark(root)
-            guard resolved.status == .available, let rootURL = resolved.url else { return nil }
-            guard RegisteredPathSecurity.contains(folderURL, within: rootURL) else { return nil }
-            return (root, rootURL)
-        }
-        guard let match = matchingRoots.max(by: { $0.1.path.count < $1.1.path.count }) else {
-            throw DatabaseError.invalidOperation("Choose an album folder inside one of the registered music folders.")
-        }
-        return try await startImportScan(rootID: match.0.id, folderURL: folderURL)
+        try await startImportScan(rootID: nil, folderURL: folderURL)
     }
 
-    private func startImportScan(rootID: StorageRootID, folderURL: URL?) async throws -> ImportBatchID {
+    private func startImportScan(rootID: StorageRootID?, folderURL: URL?) async throws -> ImportBatchID {
+        let context = try catalogueAdmission.beginOperation()
+        do {
+            return try await prepareImportScan(rootID: rootID, folderURL: folderURL, context: context)
+        } catch {
+            catalogueAdmission.endOperation(context)
+            throw error
+        }
+    }
+
+    private func prepareImportScan(rootID: StorageRootID?, folderURL: URL?, context: CatalogueAdmission.Context) async throws -> ImportBatchID {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
-        try await refreshStorageRootAccess()
-        guard let root = storageRoots.first(where: { $0.id == rootID }) else { throw DatabaseError.notFound("Storage root") }
-        let resolved = resolveSecurityScopedBookmark(root)
-        guard resolved.status == .available, let rootURL = resolved.url else { throw DatabaseError.invalidOperation("The selected storage root is not available.") }
+        try await refreshStorageRootAccess(using: database, context: context)
+        let root: StorageRoot
+        let rootURL: URL
+        if let rootID {
+            guard let registeredRoot = storageRoots.first(where: { $0.id == rootID }) else { throw DatabaseError.notFound("Storage root") }
+            let resolved = resolveSecurityScopedBookmark(registeredRoot)
+            guard resolved.status == .available, let url = resolved.url else { throw DatabaseError.invalidOperation("The selected storage root is not available.") }
+            root = registeredRoot
+            rootURL = url
+        } else {
+            let matchingRoots = storageRoots.compactMap { root -> (StorageRoot, URL)? in
+                let resolved = resolveSecurityScopedBookmark(root)
+                guard let folderURL, resolved.status == .available, let rootURL = resolved.url else { return nil }
+                guard RegisteredPathSecurity.contains(folderURL, within: rootURL) else { return nil }
+                return (root, rootURL)
+            }
+            guard let match = matchingRoots.max(by: { $0.1.path.count < $1.1.path.count }) else {
+                throw DatabaseError.invalidOperation("Choose an album folder inside one of the registered music folders.")
+            }
+            (root, rootURL) = match
+        }
         let scanURL = (folderURL ?? rootURL).standardizedFileURL
         guard RegisteredPathSecurity.contains(scanURL, within: rootURL) else {
             throw DatabaseError.invalidOperation("The selected album folder must be inside its registered music folder.")
@@ -1650,14 +1666,14 @@ public final class LibraryStore: ObservableObject {
         guard let relativeDirectory = RegisteredPathSecurity.relativePath(of: scanURL, within: rootURL) else {
             throw DatabaseError.invalidOperation("Unable to derive a safe registered-root-relative folder path.")
         }
-        let batch = try await database.createImportBatch(storageRootID: rootID, sourceDescription: scanURL.path)
-        await refreshImportBatches()
-        let progressSink: @Sendable (ImportScanProgress) -> Void = { [store = self, batchID = batch.id] progress in
+        let batch = try await database.createImportBatch(storageRootID: root.id, sourceDescription: scanURL.path)
+        await refreshImportBatches(using: database)
+        let progressSink: @Sendable (ImportScanProgress) -> Void = { [weak self, batchID = batch.id] progress in
             Task { @MainActor in
-                store.recordImportScanProgress(progress, for: batchID)
+                self?.recordImportScanProgress(progress, for: batchID)
             }
         }
-        let task = Task.detached { [weak self, database] in
+        registerImportScan(batchID: batch.id, database: database, context: context) { [weak self, database] in
             let rootAccessed = rootURL.startAccessingSecurityScopedResource()
             let scanAccessed = scannedRoot ? false : scanURL.startAccessingSecurityScopedResource()
             defer {
@@ -1666,8 +1682,6 @@ public final class LibraryStore: ObservableObject {
             }
             guard rootAccessed, scannedRoot || scanAccessed else {
                 try? await database.finishImportBatch(batch.id, status: .failed, errorSummary: "Permission to access the selected folder was not available.")
-                await self?.refreshImportBatches()
-                await self?.clearImportScanProgress(for: batch.id)
                 return
             }
             let rawResult = ImportScanner().scan(
@@ -1680,22 +1694,34 @@ public final class LibraryStore: ObservableObject {
                 for (index, candidate) in candidates.enumerated() {
                     if Task.isCancelled { break }
                     try await database.recordImportCandidate(batchID: batch.id, payload: candidate)
-                    if index.isMultiple(of: 20) { await self?.refreshImportBatches() }
+                    if index.isMultiple(of: 20) { await self?.refreshImportBatches(using: database) }
                 }
                 for error in rawResult.errors { try await database.recordImportError(batchID: batch.id, message: error) }
                 let status: ImportBatchStatus = (rawResult.wasCancelled || Task.isCancelled) ? .cancelled : .completed
                 try await database.finishImportBatch(batch.id, status: status, errorSummary: rawResult.errors.first)
                 if status == .completed, scannedRoot {
-                    try await database.reconcileCompletedScan(batchID: batch.id, rootID: rootID, discoveredRelativePaths: candidates.map(\.relativePath))
+                    try await database.reconcileCompletedScan(batchID: batch.id, rootID: root.id, discoveredRelativePaths: candidates.map(\.relativePath))
                 }
             } catch {
                 try? await database.finishImportBatch(batch.id, status: .failed, errorSummary: error.localizedDescription)
             }
-            await self?.refreshImportBatches()
-            await self?.clearImportScanProgress(for: batch.id)
         }
-        scanTasks[batch.id] = task
         return batch.id
+    }
+
+    /// Takes ownership of the scan admission context, through worker exit
+    /// and final publication. The stored worker remains the cancellation target.
+    func registerImportScan(batchID: ImportBatchID, database: MusicDatabase, context: CatalogueAdmission.Context,
+                            operation: @escaping @Sendable () async -> Void) {
+        let worker = Task.detached(operation: operation)
+        scanTasks[batchID] = worker
+        let admission = catalogueAdmission
+        Task { [weak self] in
+            defer { admission.endOperation(context) }
+            await worker.value
+            await self?.refreshImportBatches(using: database)
+            self?.clearImportScanProgress(for: batchID)
+        }
     }
 
     public func cancelImportScan(_ batchID: ImportBatchID) async {
@@ -1703,7 +1729,7 @@ public final class LibraryStore: ObservableObject {
     }
 
     private func recordImportScanProgress(_ progress: ImportScanProgress, for batchID: ImportBatchID) {
-        guard importBatches.first(where: { $0.id == batchID })?.status == .scanning else { return }
+        guard scanTasks[batchID] != nil, importBatches.first(where: { $0.id == batchID })?.status == .scanning else { return }
         importScanProgress[batchID] = progress
     }
 
@@ -1864,8 +1890,7 @@ public final class LibraryStore: ObservableObject {
         }
     }
 
-    private func refreshImportBatches() async {
-        guard let database else { return }
+    private func refreshImportBatches(using database: MusicDatabase) async {
         importBatches = (try? await database.importBatches()) ?? importBatches
     }
 

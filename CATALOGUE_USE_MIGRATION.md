@@ -1,11 +1,11 @@
 # Catalogue-use migration inventory
 
-Snapshot: 21 November 2026, RA2 fingerprint verification. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
+Snapshot: 21 November 2026, RA2 import scan lifetime. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
 Operational state: [HANDOFF.md](HANDOFF.md). Safety design: [recovery admission audit](RECOVERY_WRITER_ADMISSION_AUDIT.md).
 
 ## Coverage and lifetime contract
 
-The 74 public declarations below currently use catalogue admission. A call to
+The 77 public declarations below currently use catalogue admission. A call to
 public reload from an otherwise unscoped mutation does not cover the earlier
 mutation or its retained database. No production caller reserves maintenance;
 existing restore/reset/scan races remain open. Recovery must not be connected to
@@ -100,6 +100,8 @@ is a Debug temporary-data factory; its seeding is separate from production uses.
 - `updateTrackContributorCredit`
 - `updateTrack`
 - `verifyFingerprints`
+- `retryImportScan`
+- `startImportScan` (2 overloads)
 
 `editCatalogue` keeps each detail edit, its reload and active search in one
 scope. This includes contributor creation and its credit insert. Detail readers
@@ -132,6 +134,11 @@ one scope for root refresh, asset availability checks and reload.
 Fingerprint verification holds one scope from root refresh and candidate reads
 through the awaited hash worker, result writes and reload.
 
+Scan startup owns admission from root refresh through batch creation. The
+completion task takes that ownership through worker exit, publication and
+progress cleanup. Cancel requests signal the existing worker during a drain
+and leave admission held until completion.
+
 ## Remaining catalogue mutations and worker lifecycle entry points
 
 These remain unscoped for their full operation, even when their final reload now
@@ -150,10 +157,8 @@ uses admission. Some entries are worker lifecycle controls rather than SQL write
 - `migrateArtworkToManagedStorage`
 - `proposeRelink`
 - `removeMissingAssetReference`
-- `retryImportScan`
 - `saveMusicBrainzSelection`
 - `setImportReleaseProposal`
-- `startImportScan` (2 overloads)
 
 ## Remaining readers, previews and exports
 
@@ -238,8 +243,7 @@ invalid-context failures release or refuse cleanly. Existing search overlap test
 continue to cover generation ordering. These are partial integration checks, not
 live recovery exclusion or reader migration completeness.
 
-Next migrate import scan start and retry, including database ownership after the
-start call returns. Keep the scan admitted through candidate writes, completion,
-reconciliation and final publication. Review cancellation and progress callbacks
-against that lifetime. Metadata analysis, artwork and queued recovery have
+Next migrate import metadata analysis and direct review readers. Track
+extraction, intermediate writes and proposal publication together. Proposal
+confirmation with artwork, provider operations and queued recovery have
 separate lifetimes.

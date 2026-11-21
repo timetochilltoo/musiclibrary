@@ -51,14 +51,26 @@ final class CatalogueAdmission {
             try validate(context)
             return try await operation(context)
         }
+        let context = try beginOperation()
+        defer { endOperation(context) }
+        return try await operation(context)
+    }
+
+    /// For operations that return a handle before their background work ends.
+    /// The caller must transfer the context to the worker's completion path.
+    func beginOperation() throws -> Context {
         try Task.checkCancellation()
         if needsReview { throw Failure.reviewRequired }
         guard exclusive == nil, waiters.isEmpty else { throw Failure.maintenancePending }
         let id = UUID()
         users.insert(id)
-        let context = Context(owner: owner, id: id, kind: .ordinary)
-        defer { users.remove(id); advance() }
-        return try await operation(context)
+        return Context(owner: owner, id: id, kind: .ordinary)
+    }
+
+    func endOperation(_ context: Context) {
+        guard context.owner == owner, context.kind == .ordinary,
+              users.remove(context.id) != nil else { return }
+        advance()
     }
 
     /// Cancellation requests never revoke resource ownership from a running

@@ -4,7 +4,41 @@ Last updated: 21 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — RA2 asset fingerprint verification
+## Current resume — RA2 import scan lifetime
+
+Import scan start by root or subfolder and retry now use catalogue admission,
+bringing coverage to 77 of 125 LibraryStore declarations. Startup acquires
+admission before borrowing the database, refreshes root access within that
+scope and releases it on setup failure. Subfolder selection uses the same
+refreshed roots for the longest matching root and containment checks.
+
+A completion task assumes responsibility for admission release once the batch
+exists. It waits for the detached worker to finish candidate and error writes,
+batch completion, full-root reconciliation and security-scope cleanup.
+Intermediate and final batch publication use the admitted database.
+The completion task publishes and clears progress before releasing admission.
+Cancel signals the worker during drain. Late progress callbacks check the
+active worker and are ignored after cleanup.
+
+A temporary SQLite regression uses a gated worker with the production
+completion path. It checks that cancellation retains admission until worker
+exit and publication, that both start methods and retry refuse during
+maintenance, and that a retry failing permission validation releases the
+startup lease. The fixture uses a synthetic root without a real picker grant.
+
+The 55 focused tests, 271 Debug tests, 260 Release tests and Swift build passed.
+Whitespace, declaration inventory and audit link checks passed. Logs are at
+`/private/tmp/musiclibrary-ra2-scan-{focused,debug,release,build}.log`.
+The existing AVMetadataItem deprecation remains.
+
+Next migrate **import metadata analysis and direct review readers**, including
+extraction, intermediate writes and proposal publication. Proposal confirmation
+involving artwork, provider operations and queued recovery need separate
+lifetime review. Production restore and reset still use the transfer queue.
+The latest runnable artifact is Music Library 0.72 build 73 with schema 17.
+See [the migration inventory](CATALOGUE_USE_MIGRATION.md).
+
+## Previous resume — RA2 asset fingerprint verification
 
 Fingerprint verification now holds one catalogue admission scope through root
 refresh, candidate lookup, the awaited detached hash worker, fingerprint

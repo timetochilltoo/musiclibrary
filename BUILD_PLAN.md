@@ -285,6 +285,10 @@ RA2 fingerprint checkpoint. Verification holds catalogue admission through the
 hash worker, result writes and reload, bringing coverage to 74 declarations.
 Import scan lifetime comes next.
 
+RA2 import scan checkpoint. Start and retry transfer admission to a completion
+task that waits for scan finalization and publication, bringing coverage to 77
+declarations. Import metadata analysis and direct review readers come next.
+
 Store more than an absolute path:
 
 - storage-root ID plus relative path;
