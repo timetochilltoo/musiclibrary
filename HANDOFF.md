@@ -1,10 +1,45 @@
 # Music Library — Project Handoff
 
-Last updated: 20 November 2026
+Last updated: 21 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — RA2 playback queries and root access refresh
+## Current resume — RA2 storage roots and library health
+
+Seven more declarations use catalogue admission, bringing coverage to 73 of
+125. Storage root registration, rename, permission renewal, scope changes and
+removal retain admission through their database work and any reload. Root
+registration shares its scope with the final access refresh. Folder recovery
+manifest reads acquire admission before capturing the database.
+
+Library health retains one scope across root status updates, asset availability
+checks and the final reload. The availability helper takes the caller's
+database explicitly. The relink path continues to obtain the current database
+for its availability refresh after applying a proposal. Relink admission
+requires its own review.
+
+The temporary SQLite regression pauses health recheck in the first reload after
+a synthetic permission status change. It checks that maintenance waits for both
+reloads, new root edits refuse while draining, and manifest reads refuse during
+exclusive maintenance. After release the manifest shows the expected status,
+unchanged references and a single revision increment, and root editing resumes.
+The fixture uses a root without a bookmark and exercises the unavailable-root path.
+
+The focused checks passed with 42 tests across ten suites. The full Debug
+and Release suites passed with 269 and 258 tests respectively. The Swift
+build, whitespace, declaration inventory and audit link checks passed.
+Logs are at `/private/tmp/musiclibrary-ra2-roots-{focused,debug,release,build}.log`.
+The existing AVMetadataItem deprecation remains.
+
+Next migrate **asset fingerprint verification**. Hold admission from root
+refresh and candidate selection through the detached hash worker, database
+writes and reload. Scans, metadata analysis, provider and artwork work and
+queued recovery need separate migration. Production restore and reset still use
+the transfer queue. The latest runnable artifact is Music Library 0.72 build 73
+with schema 17. Native accessibility, NAS remount and device checks remain open.
+See [the migration inventory](CATALOGUE_USE_MIGRATION.md).
+
+## Previous resume — RA2 playback queries and root access refresh
 
 Eight more declarations use catalogue admission, bringing coverage to 66 of
 125 LibraryStore declarations. Playback album identity and track availability

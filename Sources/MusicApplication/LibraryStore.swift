@@ -679,55 +679,58 @@ public final class LibraryStore: ObservableObject {
     }
 
     public func addStorageRoot(url: URL) async throws {
-        guard let database else { throw DatabaseError.notFound("Catalogue database") }
-        let bookmarkData = try makeSecurityScopedBookmark(for: url)
-        let values = try? url.resourceValues(forKeys: [.volumeUUIDStringKey])
-        let scope: StorageRootScope = url.path.hasPrefix("/Volumes/") ? .nasPublished : .localOnly
-        _ = try await database.createStorageRoot(.init(displayName: url.lastPathComponent, lastKnownPath: url.path, bookmarkData: bookmarkData, volumeIdentifier: values?.volumeUUIDString, status: .available, scope: scope))
-        try await reload()
-        try await refreshStorageRootAccess()
+        try await withCatalogueUse { database, context in
+            let bookmarkData = try makeSecurityScopedBookmark(for: url)
+            let values = try? url.resourceValues(forKeys: [.volumeUUIDStringKey])
+            let scope: StorageRootScope = url.path.hasPrefix("/Volumes/") ? .nasPublished : .localOnly
+            _ = try await database.createStorageRoot(.init(displayName: url.lastPathComponent, lastKnownPath: url.path, bookmarkData: bookmarkData, volumeIdentifier: values?.volumeUUIDString, status: .available, scope: scope))
+            try await self.reload(using: context)
+            try await self.refreshStorageRootAccess(using: database, context: context)
+        }
     }
 
     public func renameStorageRoot(_ id: StorageRootID, to displayName: String) async throws {
-        guard let database else { throw DatabaseError.notFound("Catalogue database") }
-        try await database.renameStorageRoot(id, to: displayName)
-        try await reload()
+        try await editCatalogue { database in
+            try await database.renameStorageRoot(id, to: displayName)
+        }
     }
 
     public func folderRecoveryManifest(rootID: StorageRootID) async throws -> FolderRecoveryManifest {
-        guard let database else { throw DatabaseError.notFound("Catalogue database") }
-        return try await database.folderRecoveryManifest(rootID: rootID)
+        try await withCatalogueUse { database, _ in
+            try await database.folderRecoveryManifest(rootID: rootID)
+        }
     }
 
     public func renewStorageRootAccess(_ id: StorageRootID, selecting url: URL) async throws {
-        guard let database else { throw DatabaseError.notFound("Catalogue database") }
-        guard let root = try await database.storageRoots().first(where: { $0.id == id }) else {
-            throw DatabaseError.notFound("Storage root")
+        try await withCatalogueUse { database, context in
+            guard let root = try await database.storageRoots().first(where: { $0.id == id }) else {
+                throw DatabaseError.notFound("Storage root")
+            }
+            try StorageRootAccessRenewal.validatePath(url, for: root)
+            let accessed = url.startAccessingSecurityScopedResource()
+            defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+            guard accessed else { throw DatabaseError.invalidOperation("Permission to access the selected folder was not available.") }
+            let values = try url.resourceValues(forKeys: [.isDirectoryKey, .volumeUUIDStringKey])
+            guard values.isDirectory == true else { throw DatabaseError.invalidOperation("Choose the registered music folder, not a file.") }
+            try StorageRootAccessRenewal.validateVolume(values.volumeUUIDString, for: root)
+            let bookmark = try url.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil)
+            try await database.renewStorageRootBookmark(id, expectedPath: root.lastKnownPath, bookmarkData: bookmark)
+            storageRootLocalities.removeValue(forKey: id)
+            try await self.reload(using: context)
         }
-        try StorageRootAccessRenewal.validatePath(url, for: root)
-        let accessed = url.startAccessingSecurityScopedResource()
-        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
-        guard accessed else { throw DatabaseError.invalidOperation("Permission to access the selected folder was not available.") }
-        let values = try url.resourceValues(forKeys: [.isDirectoryKey, .volumeUUIDStringKey])
-        guard values.isDirectory == true else { throw DatabaseError.invalidOperation("Choose the registered music folder, not a file.") }
-        try StorageRootAccessRenewal.validateVolume(values.volumeUUIDString, for: root)
-        let bookmark = try url.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil)
-        try await database.renewStorageRootBookmark(id, expectedPath: root.lastKnownPath, bookmarkData: bookmark)
-        storageRootLocalities.removeValue(forKey: id)
-        try await reload()
     }
 
     public func updateStorageRootScope(_ id: StorageRootID, to scope: StorageRootScope) async throws {
-        guard let database else { throw DatabaseError.notFound("Catalogue database") }
-        try await database.updateStorageRootScope(id, to: scope)
-        try await reload()
+        try await editCatalogue { database in
+            try await database.updateStorageRootScope(id, to: scope)
+        }
     }
 
     public func deleteStorageRoot(_ id: StorageRootID) async throws {
-        guard let database else { throw DatabaseError.notFound("Catalogue database") }
-        try await database.deleteStorageRoot(id)
-        storageRootLocalities.removeValue(forKey: id)
-        try await reload()
+        try await editCatalogue { database in
+            try await database.deleteStorageRoot(id)
+            storageRootLocalities.removeValue(forKey: id)
+        }
     }
 
     public func refreshStorageRootAccess() async throws {
@@ -752,9 +755,11 @@ public final class LibraryStore: ObservableObject {
     }
 
     public func recheckLibraryHealth() async throws {
-        try await refreshStorageRootAccess()
-        try await refreshAvailableAssetStatuses()
-        try await reload()
+        try await withCatalogueUse { database, context in
+            try await self.refreshStorageRootAccess(using: database, context: context)
+            try await self.refreshAvailableAssetStatuses(using: database)
+            try await self.reload(using: context)
+        }
     }
     public func applyRelinkProposal(_ id: UUID) async throws {
         guard let database else { throw DatabaseError.notFound("Catalogue database") }
@@ -774,7 +779,8 @@ public final class LibraryStore: ObservableObject {
             throw DatabaseError.invalidOperation("The proposed replacement file is no longer an available audio file. Its catalogue path was left unchanged.")
         }
         try await database.applyRelinkProposal(id)
-        try await refreshAvailableAssetStatuses()
+        guard let currentDatabase = self.database else { throw DatabaseError.notFound("Catalogue database") }
+        try await refreshAvailableAssetStatuses(using: currentDatabase)
         try await reload()
     }
     public func discardRelinkProposal(_ id: UUID) async throws {
@@ -1584,8 +1590,7 @@ public final class LibraryStore: ObservableObject {
         try await reload()
     }
 
-    private func refreshAvailableAssetStatuses() async throws {
-        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+    private func refreshAvailableAssetStatuses(using database: MusicDatabase) async throws {
         let candidates = try await database.assetFingerprintCandidates()
         let candidatesByRoot = Dictionary(grouping: candidates, by: \.rootID)
         for root in storageRoots {

@@ -1,11 +1,11 @@
 # Catalogue-use migration inventory
 
-Snapshot: 20 November 2026, RA2 playback operations. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
+Snapshot: 21 November 2026, RA2 storage root operations. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
 Operational state: [HANDOFF.md](HANDOFF.md). Safety design: [recovery admission audit](RECOVERY_WRITER_ADMISSION_AUDIT.md).
 
 ## Coverage and lifetime contract
 
-The 66 public declarations below currently use catalogue admission. A call to
+The 73 public declarations below currently use catalogue admission. A call to
 public reload from an otherwise unscoped mutation does not cover the earlier
 mutation or its retained database. No production caller reserves maintenance;
 existing restore/reset/scan races remain open. Recovery must not be connected to
@@ -37,6 +37,7 @@ is a Debug temporary-data factory; its seeding is separate from production uses.
 - `addDisc`
 - `addLocation`
 - `addPlaylist`
+- `addStorageRoot`
 - `addTrack(_:toPlaylist:itemID:)`
 - `addTrack(discID:draft:)`
 - `addTrackContributor`
@@ -54,10 +55,12 @@ is a Debug temporary-data factory; its seeding is separate from production uses.
 - `deleteLocation`
 - `deleteLyrics`
 - `deletePlaylist`
+- `deleteStorageRoot`
 - `deleteTrackContributor`
 - `deleteTrack`
 - `discs`
 - `embeddedMetadata`
+- `folderRecoveryManifest`
 - `lyrics`
 - `moveAlbum`
 - `moveLocation`
@@ -70,12 +73,15 @@ is a Debug temporary-data factory; its seeding is separate from production uses.
 - `playbackURLs` (3 overloads)
 - `playlistItems`
 - `playlistPlaybackPlan`
+- `recheckLibraryHealth`
 - `refreshStorageRootAccess`
 - `reload`
 - `removeAlbum`
 - `removePlaylistItem`
 - `renameLocation`
 - `renamePlaylist`
+- `renameStorageRoot`
+- `renewStorageRootAccess`
 - `reorderAlbum` (2 overloads)
 - `reorderDisc`
 - `restoreAlbum`
@@ -90,6 +96,7 @@ is a Debug temporary-data factory; its seeding is separate from production uses.
 - `updateAlbumContributorCredit`
 - `updateAlbum`
 - `updateContributor`
+- `updateStorageRootScope`
 - `updateTrackContributorCredit`
 - `updateTrack`
 
@@ -117,6 +124,10 @@ database use. Disc and playlist playback read members through their admitted
 database. Root access refresh and its reload reuse the playback context. Direct
 root access refresh has its own scope for callers outside playback.
 
+Storage root edits own admission through validation, writes and reload. Folder
+recovery manifest reads acquire scoped database access. Library health holds
+one scope for root refresh, asset availability checks and reload.
+
 ## Remaining catalogue mutations and worker lifecycle entry points
 
 These remain unscoped for their full operation, even when their final reload now
@@ -124,7 +135,6 @@ uses admission. Some entries are worker lifecycle controls rather than SQL write
 
 - `addAlbum`
 - `addAlbumArtwork`
-- `addStorageRoot`
 - `analyzeImportBatch`
 - `applyExternalMetadataSelection`
 - `applyRelinkProposal`
@@ -132,19 +142,14 @@ uses admission. Some entries are worker lifecycle controls rather than SQL write
 - `cancelImportScan`
 - `confirmAssetMissing`
 - `confirmImportReleaseProposal`
-- `deleteStorageRoot`
 - `discardRelinkProposal`
 - `migrateArtworkToManagedStorage`
 - `proposeRelink`
-- `recheckLibraryHealth`
 - `removeMissingAssetReference`
-- `renameStorageRoot`
-- `renewStorageRootAccess`
 - `retryImportScan`
 - `saveMusicBrainzSelection`
 - `setImportReleaseProposal`
 - `startImportScan` (2 overloads)
-- `updateStorageRootScope`
 - `verifyFingerprints`
 
 ## Remaining readers, previews and exports
@@ -156,7 +161,6 @@ replacement; being read-only does not make an outstanding use safe to ignore.
 - `exportCatalogue`
 - `exportCatalogueCSV`
 - `externalMetadataSelection`
-- `folderRecoveryManifest`
 - `importAttachmentPreview`
 - `importCandidates`
 - `importProposalPreview`
@@ -231,7 +235,7 @@ invalid-context failures release or refuse cleanly. Existing search overlap test
 continue to cover generation ordering. These are partial integration checks, not
 live recovery exclusion or reader migration completeness.
 
-Next migrate remaining storage root operations, the folder recovery manifest
-reader and library health refresh. Pass the owning context through root refresh,
-availability writes and reload. Fingerprinting, scans, metadata analysis, artwork
-and queued recovery have separate lifetimes and need their own migration.
+Next migrate asset fingerprint verification. Track the lifetime from root
+refresh and candidate reads through detached hashing, result writes and
+reload. Scans, metadata analysis, artwork and queued recovery have separate
+lifetimes.

@@ -381,6 +381,58 @@ struct LibraryStoreAdmissionTests {
         #expect(try await store.playbackAlbumIDs(trackIDs: [fixture.track.id]) == [fixture.track.id: fixture.album.id])
     }
 
+    @Test("Library health drains through root and availability refresh before maintenance")
+    func libraryHealthDrain() async throws {
+        let fixture = try await Fixture.make()
+        defer { fixture.remove() }
+        let probe = Probe(), maintenance = Gate()
+        defer { probe.gate.open(); maintenance.open() }
+        let root = try await fixture.database.createStorageRoot(.init(
+            displayName: "Synthetic root",
+            lastKnownPath: fixture.directory.path,
+            bookmarkData: nil,
+            status: .available
+        ))
+        let store = LibraryStore(database: fixture.database, albumSearch: { db, term in try await probe.load(db, term) })
+        try await store.reload()
+        await store.search("album")
+        let before = try await store.folderRecoveryManifest(rootID: root.id)
+        let requestsBeforeRefresh = probe.requests
+
+        probe.holdNext = true
+        let health = Task { try await store.recheckLibraryHealth() }
+        try await until { probe.gate.started }
+        let barrier = Task { try await store.catalogueAdmission.withMaintenance { _ in await maintenance.hold() } }
+        try await until { store.catalogueAdmission.phase == .draining }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            try await store.renameStorageRoot(root.id, to: "Refused rename")
+        }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            try await store.updateStorageRootScope(root.id, to: .nasPublished)
+        }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            try await store.deleteStorageRoot(root.id)
+        }
+        #expect(store.catalogueAdmission.activeOperationCount == 1 && !maintenance.started)
+        probe.gate.open()
+        try await health.value
+        try await until { maintenance.started }
+        #expect(probe.requests == requestsBeforeRefresh + 2)
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            _ = try await store.folderRecoveryManifest(rootID: root.id)
+        }
+        maintenance.open()
+        try await barrier.value
+
+        let refreshed = try await store.folderRecoveryManifest(rootID: root.id)
+        #expect(refreshed.catalogueRevision == before.catalogueRevision + 1)
+        #expect(refreshed.root.status == .permissionRequired)
+        #expect(refreshed.root.displayName == before.root.displayName && refreshed.root.scope == before.root.scope)
+        #expect(refreshed.references == before.references)
+        try await store.renameStorageRoot(root.id, to: "Renamed root")
+        #expect(try await store.folderRecoveryManifest(rootID: root.id).root.displayName == "Renamed root")
+    }
+
     private func until(_ predicate: @MainActor () -> Bool) async throws {
         let deadline = ContinuousClock.now.advanced(by: .seconds(5))
         while !predicate() {

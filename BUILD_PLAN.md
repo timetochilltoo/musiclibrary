@@ -277,6 +277,10 @@ RA2 playback checkpoint. Playback queries and URL resolution, including their
 root access refresh, bring scoped coverage to 66 LibraryStore declarations.
 Remaining root operations and library health refresh come next.
 
+RA2 storage root checkpoint. Storage root edits, folder recovery manifest reads
+and library health refresh bring the total to 73 scoped LibraryStore declarations.
+Asset fingerprint verification comes next.
+
 Store more than an absolute path:
 
 - storage-root ID plus relative path;
