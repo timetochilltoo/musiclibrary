@@ -1,10 +1,38 @@
 # Music Library — Project Handoff
 
-Last updated: 21 November 2026
+Last updated: 22 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — RA2 import scan lifetime
+## Current resume — RA2 import metadata analysis and review reads
+
+Import metadata analysis and six direct review reads now use catalogue
+admission, bringing coverage to 84 of 125 LibraryStore declarations. Analysis
+acquires admission before capturing the database and reuses its context for
+root refresh and any nested reload. It retains admission through source
+access, extraction, CUE metadata application, candidate writes and the
+proposal rebuild. Direct candidate, proposal, missing-asset, attachment and
+external selection readers each acquire admission before borrowing the database.
+
+The temporary SQLite regression pauses analysis in a root status reload and
+checks that maintenance waits, that new analysis and review reads refuse,
+and that an unavailable root releases admission. It uses a root without a
+bookmark and exercises the access failure path. The analysis continues to
+require the existing scoped folder access for media extraction.
+
+The 47 focused tests, 272 Debug tests, 261 Release tests and Swift build passed.
+Whitespace, declaration inventory and audit link checks passed. Logs are at
+`/private/tmp/musiclibrary-ra2-import-review-{focused,debug,release,build}.log`.
+The existing AVMetadataItem deprecation remains.
+
+Next migrate **import proposal decisions and composite preview**. In
+particular, carry the same admitted database into the folder artwork lookup
+used by proposal preview and confirmation. Provider operations, other artwork
+work and queued recovery have separate lifetimes. Production restore and reset
+still use the transfer queue. The latest runnable artifact is Music Library
+0.72 build 73 with schema 17. See [the migration inventory](CATALOGUE_USE_MIGRATION.md).
+
+## Previous resume — RA2 import scan lifetime
 
 Import scan start by root or subfolder and retry now use catalogue admission,
 bringing coverage to 77 of 125 LibraryStore declarations. Startup acquires

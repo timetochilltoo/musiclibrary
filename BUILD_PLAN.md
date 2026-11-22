@@ -289,6 +289,10 @@ RA2 import scan checkpoint. Start and retry transfer admission to a completion
 task that waits for scan finalization and publication, bringing coverage to 77
 declarations. Import metadata analysis and direct review readers come next.
 
+RA2 import review checkpoint. Import metadata analysis and direct review reads
+bring coverage to 84 scoped LibraryStore declarations. Proposal decisions and
+composite preview come next.
+
 Store more than an absolute path:
 
 - storage-root ID plus relative path;

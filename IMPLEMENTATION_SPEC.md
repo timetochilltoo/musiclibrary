@@ -14,6 +14,8 @@ Current baseline: inspect `main` with `git log --oneline -5`; [HANDOFF.md](HANDO
 
 Completed and verified:
 
+- RA2 import metadata analysis uses one catalogue admission scope through root refresh, extraction, candidate writes and proposal rebuild. Direct review readers acquire admission before database capture. Temporary SQLite coverage checks drain and refusal around an unavailable source root.
+
 - RA2 import scan startup holds admission through root refresh and batch creation, then transfers it to the completion task. The detached worker retains its database through writes and reconciliation. Admission releases after worker exit, final publication and progress cleanup. Cancellation can signal the worker during drain.
 
 - RA2 fingerprint verification holds catalogue admission across root refresh, job selection, detached hashing, result persistence and reload. A temporary SQLite regression gates the worker and final refresh to verify maintenance drain and refusal of a second request.

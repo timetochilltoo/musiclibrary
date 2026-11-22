@@ -528,6 +528,52 @@ struct LibraryStoreAdmissionTests {
         #expect(try await fixture.database.importBatches().map(\.id) == [batch.id])
     }
 
+    @Test("Import analysis retains admission through root refresh and releases it on access failure")
+    func importAnalysisDrain() async throws {
+        let fixture = try await Fixture.make()
+        defer { fixture.remove() }
+        let probe = Probe(), maintenance = Gate()
+        defer { probe.gate.open(); maintenance.open() }
+        let root = try await fixture.database.createStorageRoot(.init(
+            displayName: "Fixture root", lastKnownPath: fixture.directory.path, bookmarkData: nil, status: .available
+        ))
+        let batch = try await fixture.database.createImportBatch(storageRootID: root.id, sourceDescription: fixture.directory.path)
+        let store = LibraryStore(database: fixture.database, albumSearch: { db, term in try await probe.load(db, term) })
+        try await store.reload()
+        await store.search("album")
+
+        probe.holdNext = true
+        let analysis = Task { try await store.analyzeImportBatch(batch.id) }
+        try await until { probe.gate.started }
+        let barrier = Task { try await store.catalogueAdmission.withMaintenance { _ in await maintenance.hold() } }
+        try await until { store.catalogueAdmission.phase == .draining }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            try await store.analyzeImportBatch(batch.id)
+        }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            _ = try await store.importCandidates(batchID: batch.id)
+        }
+        #expect(store.catalogueAdmission.activeOperationCount == 1 && !maintenance.started)
+
+        probe.gate.open()
+        do {
+            try await analysis.value
+            Issue.record("Analysis unexpectedly succeeded without root access")
+        } catch DatabaseError.invalidOperation(let message) {
+            #expect(message == "The source storage root is not available.")
+        }
+        try await until { maintenance.started }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            _ = try await store.importReleaseProposals(batchID: batch.id)
+        }
+        maintenance.open()
+        try await barrier.value
+
+        #expect(store.catalogueAdmission.activeOperationCount == 0)
+        #expect(try await store.unregisteredImportCandidates(batchID: batch.id).isEmpty)
+        #expect(try await store.importReleaseProposals(batchID: batch.id).isEmpty)
+    }
+
     private func until(_ predicate: @MainActor () -> Bool) async throws {
         let deadline = ContinuousClock.now.advanced(by: .seconds(5))
         while !predicate() {

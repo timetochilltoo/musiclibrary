@@ -1,11 +1,11 @@
 # Catalogue-use migration inventory
 
-Snapshot: 21 November 2026, RA2 import scan lifetime. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
+Snapshot: 22 November 2026, RA2 import analysis and review reads. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
 Operational state: [HANDOFF.md](HANDOFF.md). Safety design: [recovery admission audit](RECOVERY_WRITER_ADMISSION_AUDIT.md).
 
 ## Coverage and lifetime contract
 
-The 77 public declarations below currently use catalogue admission. A call to
+The 84 public declarations below currently use catalogue admission. A call to
 public reload from an otherwise unscoped mutation does not cover the earlier
 mutation or its retained database. No production caller reserves maintenance;
 existing restore/reset/scan races remain open. Recovery must not be connected to
@@ -102,6 +102,13 @@ is a Debug temporary-data factory; its seeding is separate from production uses.
 - `verifyFingerprints`
 - `retryImportScan`
 - `startImportScan` (2 overloads)
+- `importCandidates`
+- `unregisteredImportCandidates`
+- `importReleaseProposals`
+- `missingAssetReviews`
+- `importAttachmentPreview`
+- `externalMetadataSelection`
+- `analyzeImportBatch`
 
 `editCatalogue` keeps each detail edit, its reload and active search in one
 scope. This includes contributor creation and its credit insert. Detail readers
@@ -139,6 +146,10 @@ completion task takes that ownership through worker exit, publication and
 progress cleanup. Cancel requests signal the existing worker during a drain
 and leave admission held until completion.
 
+Import metadata analysis holds admission across root refresh, extraction and
+proposal writes. The direct candidate, proposal, missing-asset, attachment and
+external selection readers each acquire admission before capturing the database.
+
 ## Remaining catalogue mutations and worker lifecycle entry points
 
 These remain unscoped for their full operation, even when their final reload now
@@ -146,7 +157,6 @@ uses admission. Some entries are worker lifecycle controls rather than SQL write
 
 - `addAlbum`
 - `addAlbumArtwork`
-- `analyzeImportBatch`
 - `applyExternalMetadataSelection`
 - `applyRelinkProposal`
 - `attachImportReleaseProposal`
@@ -168,14 +178,8 @@ replacement; being read-only does not make an outstanding use safe to ignore.
 - `catalogueCleanupPreview`
 - `exportCatalogue`
 - `exportCatalogueCSV`
-- `externalMetadataSelection`
-- `importAttachmentPreview`
-- `importCandidates`
 - `importProposalPreview`
-- `importReleaseProposals`
-- `missingAssetReviews`
 - `tagWritePreviews`
-- `unregisteredImportCandidates`
 
 ## Queued services, maintenance and source-writing policy
 
@@ -243,7 +247,7 @@ invalid-context failures release or refuse cleanly. Existing search overlap test
 continue to cover generation ordering. These are partial integration checks, not
 live recovery exclusion or reader migration completeness.
 
-Next migrate import metadata analysis and direct review readers. Track
-extraction, intermediate writes and proposal publication together. Proposal
-confirmation with artwork, provider operations and queued recovery have
-separate lifetimes.
+Next migrate import proposal decisions and the composite proposal preview.
+Review the shared folder artwork helper with preview and confirmation so each
+uses the database already held by its caller. Provider operations and queued
+recovery have separate lifetimes.
