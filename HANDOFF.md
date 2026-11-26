@@ -4,7 +4,33 @@ Last updated: 26 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — RA2 complete archive capture
+## Current resume — RA2 exclusive catalogue cleanup
+
+Cleanup now acquires its transfer queue turn before reserving exclusive
+catalogue admission. One context covers recovery archive capture and
+verification, the cleanup transaction, refresh and status publication.
+Cancellation is checked before the transaction. After commit, the refresh
+is awaited under the same context even if the caller cancels. Coverage is
+108 of 125 LibraryStore declarations.
+
+The temporary fixtures verify that cleanup waits for admitted writes and
+includes those writes in the recovery archive. New edits and previews refuse
+during the reservation. Cancelling during the committed refresh still
+publishes the catalogue before reopening. A missing managed artwork fixture
+checks that archive failure leaves eligible records intact and releases both
+admission and the queue.
+
+The 43 focused tests, 282 Debug tests, 271 Release tests and Swift build passed.
+Whitespace, declaration inventory and audit link checks passed. Logs are at
+`/private/tmp/musiclibrary-ra2-cleanup-{focused,debug,release,build}.log`.
+
+Next extend **exclusive admission through catalogue reset** and reuse the
+archive context. Preserve exact typed confirmation, existing rollback and
+registered roots. Reset and restore still release archive admission before
+their installation work. The latest runnable artifact is Music Library 0.72
+build 73 with schema 17. See [the migration inventory](CATALOGUE_USE_MIGRATION.md).
+
+## Previous resume — RA2 complete archive capture
 
 Complete catalogue export and local recovery archive creation now drain
 ordinary catalogue users inside their transfer queue turn. Exclusive admission

@@ -14,6 +14,7 @@ Current baseline: inspect `main` with `git log --oneline -5`; [HANDOFF.md](HANDO
 
 Completed and verified:
 
+- RA2 catalogue cleanup reserves exclusive admission after its transfer queue turn. It captures and verifies its recovery archive, checks cancellation before the transaction, and awaits refresh under the same context after commit.
 - RA2 complete archive export and local recovery archive creation reserve exclusive admission after their transfer queue turn. The staged SQLite payload supplies the archive revision and artwork paths via a read-only immutable connection. The scope currently ends at archive publication, before surrounding destructive operations continue.
 - RA2 queued snapshot and master-backup capture acquire the transfer queue before ordinary catalogue admission. Snapshot capture releases admission after producing the revision and JSON values. Master backup holds admission through the awaited detached worker. The queue remains held through publication, retention and status updates.
 - RA2 cleanup preview, FLAC tag-write preview, and JSON and CSV exports use catalogue admission. Tag preview reuses its context for per-track playback resolution and root refresh. Exports hold admission through the atomic destination write. Explicit FLAC execution has its separate backup and journal policy.

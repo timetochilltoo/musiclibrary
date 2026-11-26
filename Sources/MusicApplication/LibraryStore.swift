@@ -161,7 +161,7 @@ public final class LibraryStore: ObservableObject {
     }
 
     /// Internal integration composition, confined to a disposable temporary child.
-    convenience init(recoveryFixtureDirectory directory: URL, failRecoveryInstallation: Bool = false, failRecoveryRollback: Bool = false, failRecoveryDatabaseCopy: Bool = false, failRecoveryArtworkCopy: Bool = false, failRecoveryMove: RecoveryFixtureMoveFailure? = nil, failRecoveryRollbackAt: RecoveryFixtureRollbackFailure? = nil) async throws {
+    convenience init(recoveryFixtureDirectory directory: URL, failRecoveryInstallation: Bool = false, failRecoveryRollback: Bool = false, failRecoveryDatabaseCopy: Bool = false, failRecoveryArtworkCopy: Bool = false, failRecoveryMove: RecoveryFixtureMoveFailure? = nil, failRecoveryRollbackAt: RecoveryFixtureRollbackFailure? = nil, albumSearch: (@Sendable (MusicDatabase, String) async throws -> [Album])? = nil) async throws {
         guard RegisteredPathSecurity.relativePath(of: directory, within: FileManager.default.temporaryDirectory)?.isEmpty == false else {
             throw DatabaseError.invalidOperation("Recovery fixtures require a temporary child directory.")
         }
@@ -169,7 +169,7 @@ public final class LibraryStore: ObservableObject {
         let url = directory.appending(path: "MusicLibrary.sqlite")
         let database = try MusicDatabase(url: url)
         try await database.migrate()
-        self.init(database: database)
+        self.init(database: database, albumSearch: albumSearch)
         self.recoveryFixtureDirectory = directory
         self.failRecoveryFixtureInstallation = failRecoveryInstallation
         self.failRecoveryFixtureRollback = failRecoveryRollback
@@ -1287,14 +1287,20 @@ public final class LibraryStore: ObservableObject {
     }
 
     private func performCatalogueCleanupUncoordinated(_ options: CatalogueCleanupOptions) async throws -> CatalogueCleanupResult {
-        guard let database else { throw DatabaseError.notFound("Catalogue database") }
-        let recoveryArchive = try await createLocalRecoveryArchive(reason: "before-cleanup")
-        let result = try await database.performCatalogueCleanup(options)
-        try await reload()
-        catalogueMaintenanceStatus = result.totalCount == 0
-            ? "Cleanup found nothing to remove; recovery archive kept at \(recoveryArchive.lastPathComponent)"
-            : "Removed \(result.totalCount) unused record(s); recovery archive kept at \(recoveryArchive.lastPathComponent)"
-        return result
+        guard isReady else { throw DatabaseError.notFound("Ready catalogue") }
+        return try await catalogueAdmission.withMaintenance { context in
+            let recoveryArchive = try await createLocalRecoveryArchive(reason: "before-cleanup", using: context)
+            try CompleteCatalogueArchive.verify(at: recoveryArchive)
+            try Task.checkCancellation()
+            guard let database else { throw DatabaseError.notFound("Catalogue database") }
+            let result = try await database.performCatalogueCleanup(options)
+            // Wait for committed changes to publish even if the caller cancels.
+            try await Task { try await self.reload(using: context) }.value
+            catalogueMaintenanceStatus = result.totalCount == 0
+                ? "Cleanup found nothing to remove; recovery archive kept at \(recoveryArchive.lastPathComponent)"
+                : "Removed \(result.totalCount) unused record(s); recovery archive kept at \(recoveryArchive.lastPathComponent)"
+            return result
+        }
     }
 
     public func exportCompleteCatalogueArchive(to destinationDirectory: URL) async throws -> URL {
@@ -1917,22 +1923,33 @@ public final class LibraryStore: ObservableObject {
         return directory
     }
 
-    private func createLocalRecoveryArchive(reason: String) async throws -> URL {
+    private func createLocalRecoveryArchive(reason: String, using context: CatalogueAdmission.Context? = nil) async throws -> URL {
         let directory = try applicationSupportDirectory()
             .appending(path: "Recovery", directoryHint: .isDirectory)
             .appending(path: "CatalogueArchives", directoryHint: .isDirectory)
             .appending(path: reason, directoryHint: .isDirectory)
-        return try await captureCompleteCatalogueArchive(to: directory)
+        return try await captureCompleteCatalogueArchive(to: directory, using: context)
     }
 
     /// Called only inside a transfer queue turn. Destructive recovery still
     /// needs to extend this boundary through replacement and publication.
     private func captureCompleteCatalogueArchive(
-        to directory: URL, beforeCapture: @MainActor () async -> Void = {}
+        to directory: URL, using context: CatalogueAdmission.Context? = nil, beforeCapture: @MainActor () async -> Void = {}
     ) async throws -> URL {
         guard isReady else { throw DatabaseError.notFound("Ready catalogue") }
-        return try await catalogueAdmission.withMaintenance { _ in
-            guard let database, let managedArtworkStore else { throw DatabaseError.notFound("Catalogue database") }
+        if let context {
+            return try await writeCompleteCatalogueArchive(to: directory, using: context, beforeCapture: beforeCapture)
+        }
+        return try await catalogueAdmission.withMaintenance { context in
+            try await self.writeCompleteCatalogueArchive(to: directory, using: context, beforeCapture: beforeCapture)
+        }
+    }
+
+    private func writeCompleteCatalogueArchive(
+        to directory: URL, using context: CatalogueAdmission.Context, beforeCapture: @MainActor () async -> Void
+    ) async throws -> URL {
+        try await withCatalogueUse(using: context) { database, _ in
+            guard let managedArtworkStore else { throw DatabaseError.notFound("Managed artwork storage") }
             await beforeCapture()
             return try await CompleteCatalogueArchive.create(
                 database: database,

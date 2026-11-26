@@ -320,7 +320,11 @@ backup use catalogue admission after their transfer queue turn. Coverage is
 RA2 complete archive checkpoint. Complete exports and local recovery archive
 capture drain ordinary users inside their transfer queue turn. The copied
 database supplies the manifest revision and artwork path mappings. Coverage is
-107 scoped LibraryStore declarations. Extend the boundary through cleanup next.
+107 scoped LibraryStore declarations.
+
+RA2 cleanup checkpoint. Cleanup holds exclusive admission from recovery
+archive capture and verification through the removal transaction and catalogue
+refresh. Coverage is 108 scoped LibraryStore declarations. Reset comes next.
 
 Store more than an absolute path:
 

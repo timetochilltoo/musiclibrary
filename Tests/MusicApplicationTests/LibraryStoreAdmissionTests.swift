@@ -1052,6 +1052,87 @@ struct LibraryStoreAdmissionTests {
         #expect(store.catalogueRevision == manifest.revision + 1)
     }
 
+    @Test("Cleanup archives admitted writes and publishes before reopening after cancellation")
+    func cleanupDrain() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "CleanupDrain-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let writer = Gate(), probe = Probe()
+        defer { writer.open(); probe.gate.open() }
+        let store = try await LibraryStore(recoveryFixtureDirectory: root, albumSearch: { db, term in
+            try await probe.load(db, term)
+        })
+        let original = try await store.addAlbum(.init(title: "Original album"))
+        await store.search("album")
+        let priorRevision = store.catalogueRevision
+        let edit = Task {
+            try await store.withCatalogueUse { database, _ in
+                await writer.hold()
+                _ = try await database.createContributor(.init(name: "Unused credit"))
+                return try await database.createAlbum(.init(title: "Late album"))
+            }
+        }
+        try await until { writer.started }
+        let archiveParent = root.appending(path: "Recovery/CatalogueArchives/before-cleanup")
+        probe.holdNext = true
+        let cleanup = Task { try await store.performCatalogueCleanup(.init()) }
+        try await until { store.catalogueAdmission.phase == .draining }
+        #expect(store.transferActivity.active == .cleanup)
+        #expect(!FileManager.default.fileExists(atPath: archiveParent.path))
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            try await store.updateAlbum(original.id, with: .init(title: "Refused during drain"))
+        }
+
+        writer.open()
+        let lateAlbum = try await edit.value
+        try await until { probe.gate.started }
+        #expect(store.catalogueAdmission.phase == .exclusive)
+        #expect(store.contributors.isEmpty)
+        #expect(!store.albums.contains { $0.id == lateAlbum.id })
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            _ = try await store.catalogueCleanupPreview()
+        }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            try await store.updateAlbum(original.id, with: .init(title: "Refused during refresh"))
+        }
+
+        cleanup.cancel()
+        probe.gate.open()
+        let result = try await cleanup.value
+        #expect(result.removedContributorCount == 1)
+        #expect(store.albums.contains { $0.id == lateAlbum.id })
+        #expect(store.catalogueMaintenanceStatus.contains("Removed 1 unused record"))
+        #expect(store.catalogueAdmission.phase == .open && !store.transferActivity.isBusy)
+        #expect(try await store.catalogueCleanupPreview().totalCount == 0)
+
+        let archive = try #require(FileManager.default.contentsOfDirectory(at: archiveParent, includingPropertiesForKeys: nil).first)
+        let manifest = try CompleteCatalogueArchive.verify(at: archive)
+        #expect(manifest.revision > priorRevision && store.catalogueRevision == manifest.revision + 1)
+        let inspection = root.appending(path: "Cleanup inspection.sqlite")
+        try FileManager.default.copyItem(at: archive.appending(path: CompleteCatalogueArchive.databaseFileName), to: inspection)
+        let archivedDatabase = try MusicDatabase(url: inspection)
+        #expect(try await archivedDatabase.album(id: lateAlbum.id)?.title == lateAlbum.title)
+        #expect(try await archivedDatabase.contributors().map(\.name) == ["Unused credit"])
+    }
+
+    @Test("Cleanup leaves eligible records alone when the recovery archive fails")
+    func cleanupArchiveFailure() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "CleanupArchiveFailure-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try await LibraryStore(recoveryFixtureDirectory: root)
+        let album = try await store.addAlbum(.init(title: "Missing cover"))
+        do {
+            let database = try MusicDatabase(url: root.appending(path: "MusicLibrary.sqlite"))
+            _ = try await database.createContributor(.init(name: "Unused credit"))
+            _ = try await database.addAlbumArtwork(albumID: album.id, localPath: root.appending(path: "Artwork/missing.jpg").path)
+        }
+        try await store.reload()
+        let revision = store.catalogueRevision
+        await #expect(throws: DatabaseError.self) { _ = try await store.performCatalogueCleanup(.init()) }
+        #expect(store.catalogueAdmission.phase == .open && !store.transferActivity.isBusy)
+        #expect(store.catalogueRevision == revision)
+        #expect(try await store.catalogueCleanupPreview().orphanContributorCount == 1)
+    }
+
     private func until(_ predicate: @MainActor () -> Bool) async throws {
         let deadline = ContinuousClock.now.advanced(by: .seconds(5))
         while !predicate() {

@@ -1,15 +1,16 @@
 # Catalogue-use migration inventory
 
-Snapshot: 26 November 2026, RA2 complete archive capture. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
+Snapshot: 26 November 2026, RA2 exclusive catalogue cleanup. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
 Operational state: [HANDOFF.md](HANDOFF.md). Safety design: [recovery admission audit](RECOVERY_WRITER_ADMISSION_AUDIT.md).
 
 ## Coverage and lifetime contract
 
-The 107 public declarations below currently use catalogue admission. A call to
+The 108 public declarations below currently use catalogue admission. A call to
 public reload from an otherwise unscoped mutation does not cover the earlier
 mutation or its retained database. Complete archive capture reserves maintenance
-inside a transfer queue turn. Destructive recovery still runs outside that
-reservation after capture, so restore/reset installation races remain open.
+inside a transfer queue turn. Cleanup holds the reservation through
+verification, commit and refresh. Reset and restore still run outside it
+after capture.
 
 `withCatalogueUse` acquires/validates context before capturing the store database,
 then awaits the caller's resource work. Never return the database actor or launch
@@ -203,13 +204,15 @@ holds admission through its awaited detached backup and retention work.
 
 Complete archive export and pre-recovery archive creation drain ordinary users
 and hold exclusive admission until the archive is published. The SQLite copy
-supplies the revision and artwork paths through an immutable read. The local
-archive helper releases admission before the surrounding cleanup, reset or
-restore continues.
+supplies the revision and artwork paths through an immutable read. Cleanup
+reuses its existing exclusive context for capture. It verifies the recovery
+archive before committing and awaits publication under the same context.
+Reset and restore still release the archive reservation before continuing.
 
 - `exportCompleteCatalogueArchive`
 - `createMasterBackupNow`
 - `flushPendingSnapshotPublication`
+- `performCatalogueCleanup`
 - `publishSnapshot`
 - `publishSnapshotNow`
 
@@ -228,7 +231,6 @@ these services while holding an ordinary scope they need to drain. Explicit FLAC
 execution keeps its independent opt-in backup/journal and safe-finish policy.
 
 - `executeTagWrite`
-- `performCatalogueCleanup`
 - `resetCatalogue`
 - `restoreCompleteCatalogueArchive`
 - `restoreMasterBackup`
@@ -281,6 +283,7 @@ invalid-context failures release or refuse cleanly. Existing search overlap test
 continue to cover generation ordering. These are partial integration checks, not
 live recovery exclusion or reader migration completeness.
 
-Next extend exclusive admission across the whole cleanup operation, reusing its
-context for the recovery archive and reload. Reset, restore, installation
-epochs and explicit FLAC execution still need separate boundary reviews.
+Next extend exclusive admission across catalogue reset, reusing its context
+for the recovery archive and reload. Preserve exact confirmation, rollback
+behavior and registered roots. Restore, installation epochs and explicit FLAC
+execution remain separate boundaries.
