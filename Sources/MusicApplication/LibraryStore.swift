@@ -76,8 +76,8 @@ public final class LibraryStore: ObservableObject {
     private let lastMasterBackupAtKey = "MusicLibrary.lastMasterBackupAt"
     private var publicationSchedule = SnapshotPublicationSchedule()
     let transferQueue = LibraryTransferQueue()
-    // Complete archive capture reserves maintenance. Destructive recovery
-    // still needs an exclusive scope through installation and publication.
+    // Archive capture, cleanup and reset reserve maintenance. Restore still
+    // needs an exclusive scope through installation and publication.
     let catalogueAdmission = CatalogueAdmission()
     #if DEBUG
     @Published public private(set) var syntheticRecoveryFailure: RestoreRecoveryError?
@@ -1294,8 +1294,7 @@ public final class LibraryStore: ObservableObject {
             try Task.checkCancellation()
             guard let database else { throw DatabaseError.notFound("Catalogue database") }
             let result = try await database.performCatalogueCleanup(options)
-            // Wait for committed changes to publish even if the caller cancels.
-            try await Task { try await self.reload(using: context) }.value
+            try await reloadAfterMaintenanceCommit(using: context)
             catalogueMaintenanceStatus = result.totalCount == 0
                 ? "Cleanup found nothing to remove; recovery archive kept at \(recoveryArchive.lastPathComponent)"
                 : "Removed \(result.totalCount) unused record(s); recovery archive kept at \(recoveryArchive.lastPathComponent)"
@@ -1437,28 +1436,57 @@ public final class LibraryStore: ObservableObject {
     }
 
     private func resetCatalogueUncoordinated(confirmation: String) async throws -> URL {
-        guard let database, let managedArtworkStore else { throw DatabaseError.notFound("Catalogue database") }
-        let recoveryArchive = try await createLocalRecoveryArchive(reason: "before-reset")
-        let manager = FileManager.default
-        let supportDirectory = try applicationSupportDirectory()
-        let displacedArtwork = supportDirectory.appending(path: "ResetArtwork-\(UUID().uuidString)", directoryHint: .isDirectory)
-        if manager.fileExists(atPath: managedArtworkStore.directory.path) {
-            try manager.moveItem(at: managedArtworkStore.directory, to: displacedArtwork)
-        }
-        do {
-            try await database.resetCataloguePreservingStorageRoots(confirmation: confirmation)
-            try? manager.removeItem(at: displacedArtwork)
-            try manager.createDirectory(at: managedArtworkStore.directory, withIntermediateDirectories: true)
-            try await reload()
-            catalogueMaintenanceStatus = "Catalogue reset; music folders preserved and recovery archive kept at \(recoveryArchive.lastPathComponent)"
-            return recoveryArchive
-        } catch {
-            if manager.fileExists(atPath: displacedArtwork.path), !manager.fileExists(atPath: managedArtworkStore.directory.path) {
-                try? manager.moveItem(at: displacedArtwork, to: managedArtworkStore.directory)
-            }
-            throw error
+        guard isReady else { throw DatabaseError.notFound("Ready catalogue") }
+        return try await catalogueAdmission.withMaintenance { context in
+            try await resetCatalogue(confirmation: confirmation, using: context)
         }
     }
+
+    private func resetCatalogue(confirmation: String, using context: CatalogueAdmission.Context) async throws -> URL {
+        guard let database, let managedArtworkStore else { throw DatabaseError.notFound("Catalogue database") }
+        let recoveryArchive = try await createLocalRecoveryArchive(reason: "before-reset", using: context)
+        try CompleteCatalogueArchive.verify(at: recoveryArchive)
+        try Task.checkCancellation()
+        let manager = FileManager.default
+        let supportDirectory = try applicationSupportDirectory()
+        let artworkDirectory = managedArtworkStore.directory
+        let displacedArtwork = supportDirectory.appending(path: "ResetArtwork-\(UUID().uuidString)", directoryHint: .isDirectory)
+        let hadArtwork = manager.fileExists(atPath: artworkDirectory.path)
+        if hadArtwork {
+            try manager.moveItem(at: artworkDirectory, to: displacedArtwork)
+        }
+        var createdArtworkDirectory = false
+        do {
+            try manager.createDirectory(at: artworkDirectory, withIntermediateDirectories: false)
+            createdArtworkDirectory = true
+            try checkRecoveryFixtureInstallation()
+            try await database.resetCataloguePreservingStorageRoots(confirmation: confirmation)
+        } catch {
+            let resetError = error
+            do {
+                try checkRecoveryFixtureRollback()
+                if createdArtworkDirectory { try manager.removeItem(at: artworkDirectory) }
+                if hadArtwork { try manager.moveItem(at: displacedArtwork, to: artworkDirectory) }
+            } catch {
+                let message = "Reset failed: \(resetError.localizedDescription) Artwork rollback failed: \(error.localizedDescription) Verified recovery archive: \(recoveryArchive.path)"
+                try catalogueAdmission.requireReview(using: context)
+                recoveryReviewMessage = message
+                catalogueMaintenanceStatus = message
+                throw DatabaseError.invalidOperation(message)
+            }
+            throw resetError
+        }
+        if hadArtwork { try? manager.removeItem(at: displacedArtwork) }
+        try await reloadAfterMaintenanceCommit(using: context)
+        catalogueMaintenanceStatus = "Catalogue reset; music folders preserved and recovery archive kept at \(recoveryArchive.lastPathComponent)"
+        return recoveryArchive
+    }
+
+    private func reloadAfterMaintenanceCommit(using context: CatalogueAdmission.Context) async throws {
+        // Wait for committed changes to publish even if the caller cancels.
+        try await Task { try await self.reload(using: context) }.value
+    }
+
     public func publishSnapshot(to directory: URL) async throws -> SnapshotManifest {
         try await transferQueue.run(.sharing) { try await self.publishSnapshotUncoordinated(to: directory) }
     }
@@ -1931,8 +1959,8 @@ public final class LibraryStore: ObservableObject {
         return try await captureCompleteCatalogueArchive(to: directory, using: context)
     }
 
-    /// Called only inside a transfer queue turn. Destructive recovery still
-    /// needs to extend this boundary through replacement and publication.
+    /// Called only inside a transfer queue turn. Restore still needs to hold
+    /// this boundary through replacement and publication.
     private func captureCompleteCatalogueArchive(
         to directory: URL, using context: CatalogueAdmission.Context? = nil, beforeCapture: @MainActor () async -> Void = {}
     ) async throws -> URL {

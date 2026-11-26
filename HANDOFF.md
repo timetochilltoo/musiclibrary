@@ -4,7 +4,34 @@ Last updated: 26 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — RA2 exclusive catalogue cleanup
+## Current resume — RA2 exclusive catalogue reset
+
+Reset keeps one exclusive catalogue context after its transfer queue turn.
+The exact RESET confirmation still happens before queueing. The context
+covers recovery archive verification, managed artwork displacement,
+root-preserving SQL reset, rollback if needed and final publication.
+After commit, refresh is awaited even if the caller cancels. Coverage is
+109 of 125 LibraryStore declarations.
+
+Reset prepares an empty managed artwork directory before committing. If the
+reset fails, the original directory is restored. If that rollback also fails,
+admission enters review-required state and the verified archive and displaced
+artwork are kept. Disposable tests exercise drain, cancellation during final
+refresh, artwork rollback and failure requiring review. The existing reset
+fixture checks exact confirmation, registered roots and source audio bytes.
+
+The 50 focused tests, 284 Debug tests, 273 Release tests and Swift build passed.
+Whitespace, declaration inventory and audit link checks passed. Logs are at
+`/private/tmp/musiclibrary-ra2-reset-{focused,debug,release,build}.log`.
+
+Next extend **exclusive admission through complete archive restore**, including
+installation, rollback and reload. Restore still releases the capture
+reservation before installation. Database-only restore and explicit FLAC
+execution have separate boundaries. The latest runnable artifact is Music
+Library 0.72 build 73 with schema 17.
+See [the migration inventory](CATALOGUE_USE_MIGRATION.md).
+
+## Previous resume — RA2 exclusive catalogue cleanup
 
 Cleanup now acquires its transfer queue turn before reserving exclusive
 catalogue admission. One context covers recovery archive capture and

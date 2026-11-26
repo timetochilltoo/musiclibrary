@@ -324,7 +324,11 @@ database supplies the manifest revision and artwork path mappings. Coverage is
 
 RA2 cleanup checkpoint. Cleanup holds exclusive admission from recovery
 archive capture and verification through the removal transaction and catalogue
-refresh. Coverage is 108 scoped LibraryStore declarations. Reset comes next.
+refresh. Coverage is 108 scoped LibraryStore declarations.
+
+RA2 reset checkpoint. Exact-confirmation reset retains exclusive admission
+through archive verification, artwork handling, commit or rollback, and
+refresh. Coverage is 109 scoped declarations. Complete archive restore is next.
 
 Store more than an absolute path:
 

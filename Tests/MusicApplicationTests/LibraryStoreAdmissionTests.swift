@@ -1133,6 +1133,92 @@ struct LibraryStoreAdmissionTests {
         #expect(try await store.catalogueCleanupPreview().orphanContributorCount == 1)
     }
 
+    @Test("Reset archives admitted edits and publishes before reopening after cancellation")
+    func resetDrain() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "ResetDrain-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let writer = Gate(), probe = Probe()
+        defer { writer.open(); probe.gate.open() }
+        let store = try await LibraryStore(recoveryFixtureDirectory: root, albumSearch: { db, term in
+            try await probe.load(db, term)
+        })
+        let album = try await store.addAlbum(.init(title: "Original album"))
+        await store.search("album")
+        let edit = Task {
+            try await store.withCatalogueUse { database, _ in
+                await writer.hold()
+                return try await database.updateAlbum(album.id, with: .init(title: "Edited album"))
+            }
+        }
+        try await until { writer.started }
+        probe.holdNext = true
+        let reset = Task { try await store.resetCatalogue(confirmation: "RESET") }
+        try await until { store.catalogueAdmission.phase == .draining }
+        #expect(store.transferActivity.active == .reset)
+        #expect(!FileManager.default.fileExists(atPath: root.appending(path: "Recovery").path))
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            _ = try await store.addAlbum(.init(title: "Refused during drain"))
+        }
+
+        writer.open()
+        let edited = try await edit.value
+        try await until { probe.gate.started }
+        #expect(store.catalogueAdmission.phase == .exclusive)
+        #expect(store.catalogueAlbums.isEmpty && store.albums.count == 1)
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            _ = try await store.addAlbum(.init(title: "Refused during refresh"))
+        }
+
+        reset.cancel()
+        probe.gate.open()
+        let archive = try await reset.value
+        let manifest = try CompleteCatalogueArchive.verify(at: archive)
+        #expect(store.albums.isEmpty && store.catalogueRevision == manifest.revision + 1)
+        #expect(store.catalogueMaintenanceStatus.contains("Catalogue reset"))
+        #expect(store.catalogueAdmission.phase == .open && !store.transferActivity.isBusy)
+
+        let inspection = root.appending(path: "Reset inspection.sqlite")
+        try FileManager.default.copyItem(at: archive.appending(path: CompleteCatalogueArchive.databaseFileName), to: inspection)
+        let archivedDatabase = try MusicDatabase(url: inspection)
+        #expect(try await archivedDatabase.album(id: album.id)?.title == edited.title)
+    }
+
+    @Test("Reset restores displaced artwork on failure or retains it for recovery review", arguments: [false, true])
+    func resetArtworkRollback(failRollback: Bool) async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "ResetRollback-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try await LibraryStore(recoveryFixtureDirectory: root, failRecoveryInstallation: true, failRecoveryRollback: failRollback)
+        let album = try await store.addAlbum(.init(title: "Original album"))
+        let revision = store.catalogueRevision
+        let cover = root.appending(path: "Artwork/cover.jpg")
+        let coverBytes = Data([1, 2, 3])
+        try FileManager.default.createDirectory(at: cover.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try coverBytes.write(to: cover)
+
+        await #expect(throws: DatabaseError.self) { _ = try await store.resetCatalogue(confirmation: "RESET") }
+        #expect(store.catalogueRevision == revision && store.catalogueAlbums.map(\.id) == [album.id])
+        #expect(!store.transferActivity.isBusy)
+        let archiveParent = root.appending(path: "Recovery/CatalogueArchives/before-reset")
+        let archive = try #require(FileManager.default.contentsOfDirectory(at: archiveParent, includingPropertiesForKeys: nil).first)
+        #expect(try CompleteCatalogueArchive.verify(at: archive).revision == revision)
+        #expect(try Data(contentsOf: archive.appending(path: "Artwork/cover.jpg")) == coverBytes)
+
+        if failRollback {
+            #expect(store.catalogueAdmission.phase == .reviewRequired)
+            #expect(store.recoveryReviewMessage?.contains(archive.lastPathComponent) == true)
+            let displaced = try #require(FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
+                .first { $0.lastPathComponent.hasPrefix("ResetArtwork-") })
+            #expect(try Data(contentsOf: displaced.appending(path: "cover.jpg")) == coverBytes)
+            await #expect(throws: CatalogueAdmission.Failure.reviewRequired) {
+                try await store.updateAlbum(album.id, with: .init(title: "Refused until review"))
+            }
+        } else {
+            #expect(store.catalogueAdmission.phase == .open && store.recoveryReviewMessage == nil)
+            #expect(try Data(contentsOf: cover) == coverBytes)
+            try await store.updateAlbum(album.id, with: .init(title: "Still editable"))
+        }
+    }
+
     private func until(_ predicate: @MainActor () -> Bool) async throws {
         let deadline = ContinuousClock.now.advanced(by: .seconds(5))
         while !predicate() {

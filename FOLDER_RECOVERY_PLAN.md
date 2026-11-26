@@ -204,10 +204,10 @@ all those operations; merely adding one queued task cannot establish exclusion.
 The [R8 writer-admission audit](RECOVERY_WRITER_ADMISSION_AUDIT.md) now maps these
 gaps and proposes staged coordinator/integration coverage. It is a source audit,
 not an implemented application lock or evidence that live corruption occurred.
-RA1's coordinator is implemented/tested and RA2 now scopes 108
+RA1's coordinator is implemented/tested and RA2 now scopes 109
 LibraryStore declarations; the [remaining-use inventory](CATALOGUE_USE_MIGRATION.md)
-tracks incomplete coverage. Archive capture and cleanup are exclusive. Reset
-and restore still need to extend the reservation through installation and
+tracks incomplete coverage. Archive capture, cleanup and reset are exclusive.
+Restore still needs to extend the reservation through installation and
 publication.
 Further scoped-use migration and recovery integration are necessary; FR2 stays deferred.
 
