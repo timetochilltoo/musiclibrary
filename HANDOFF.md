@@ -1,10 +1,38 @@
 # Music Library — Project Handoff
 
-Last updated: 22 November 2026
+Last updated: 26 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — RA2 import metadata analysis and review reads
+## Current resume — RA2 import proposal decisions and preview
+
+Proposal status changes, confirmation, attachment and composite preview
+now use catalogue admission, bringing coverage to 88 of 125 LibraryStore
+declarations. Confirmation and attachment hold their scope through reload
+and active search. The folder artwork lookup used by preview and confirmation
+receives the caller's admitted database. Confirmation keeps admission through
+the optional managed artwork copy and catalogue registration.
+
+The temporary SQLite regression checks preview track titles with unavailable
+folder artwork, pauses confirmation during the final reload, and verifies
+that maintenance waits. Status changes, attachment and preview refuse during
+drain. The confirmed album publishes before maintenance starts, and a repeat
+confirmation returns the same album without another revision. The fixture
+uses synthetic metadata and requires no media or permission grant.
+
+The 55 focused tests, 273 Debug tests, 262 Release tests and Swift build passed.
+Whitespace, declaration inventory and audit link checks passed. Logs are at
+`/private/tmp/musiclibrary-ra2-proposals-{focused,debug,release,build}.log`.
+The existing AVMetadataItem deprecation remains.
+
+Next migrate **external metadata selection saves and application**, including
+the optional provider artwork download, managed copy and database writes.
+Other managed artwork operations and queued recovery have separate lifetimes.
+Production restore and reset still use the transfer queue. The latest runnable
+artifact is Music Library 0.72 build 73 with schema 17.
+See [the migration inventory](CATALOGUE_USE_MIGRATION.md).
+
+## Previous resume — RA2 import metadata analysis and review reads
 
 Import metadata analysis and six direct review reads now use catalogue
 admission, bringing coverage to 84 of 125 LibraryStore declarations. Analysis

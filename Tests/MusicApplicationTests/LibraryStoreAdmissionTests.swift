@@ -574,6 +574,63 @@ struct LibraryStoreAdmissionTests {
         #expect(try await store.importReleaseProposals(batchID: batch.id).isEmpty)
     }
 
+    @Test("Proposal confirmation keeps admission through artwork lookup and publication")
+    func proposalConfirmationDrain() async throws {
+        let fixture = try await Fixture.make()
+        defer { fixture.remove() }
+        let probe = Probe(), maintenance = Gate()
+        defer { probe.gate.open(); maintenance.open() }
+        let database = fixture.database
+        let root = try await database.createStorageRoot(.init(
+            displayName: "Fixture root", lastKnownPath: fixture.directory.path, bookmarkData: nil, status: .available
+        ))
+        let batch = try await database.createImportBatch(storageRootID: root.id, sourceDescription: fixture.directory.path)
+        try await database.recordImportCandidate(batchID: batch.id, payload: .init(
+            relativePath: "fixture.flac", fileName: "fixture.flac", contentTypeIdentifier: "org.xiph.flac", fileSize: 1, modifiedAt: nil
+        ))
+        let candidate = try #require(await database.importCandidates(batchID: batch.id).first)
+        try await database.saveEmbeddedMetadata(.init(
+            title: "Fixture track", albumTitle: "Imported album", artist: nil, albumArtist: nil,
+            discNumber: 1, trackNumber: 1, durationMilliseconds: 1000, rawTags: [:]
+        ), for: candidate.id)
+        try await database.rebuildImportReleaseProposals(batchID: batch.id, drafts: [
+            .init(title: "Imported album", artist: nil, discCount: 1, confidence: 1, candidateIDs: [candidate.id])
+        ])
+        let proposal = try #require(await database.importReleaseProposals(batchID: batch.id).first)
+        let store = LibraryStore(database: database, albumSearch: { db, term in try await probe.load(db, term) })
+        try await store.reload()
+        await store.search("album")
+        let preview = try await store.importProposalPreview(proposal)
+        #expect(preview.trackTitles == ["Fixture track"] && preview.artworkURL == nil)
+
+        probe.holdNext = true
+        let confirmation = Task { try await store.confirmImportReleaseProposal(proposal.id) }
+        try await until { probe.gate.started }
+        let committedRevision = try await database.currentRevision()
+        let barrier = Task { try await store.catalogueAdmission.withMaintenance { _ in await maintenance.hold() } }
+        try await until { store.catalogueAdmission.phase == .draining }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            try await store.setImportReleaseProposal(proposal.id, status: .dismissed)
+        }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            _ = try await store.attachImportReleaseProposal(proposal.id, to: fixture.album.id)
+        }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            _ = try await store.importProposalPreview(proposal)
+        }
+        #expect(store.catalogueAdmission.activeOperationCount == 1 && !maintenance.started)
+        #expect(try await database.currentRevision() == committedRevision)
+
+        probe.gate.open()
+        let albumID = try await confirmation.value
+        try await until { maintenance.started }
+        #expect(store.albums.contains { $0.id == albumID && $0.title == "Imported album" })
+        maintenance.open()
+        try await barrier.value
+        #expect(try await store.confirmImportReleaseProposal(proposal.id) == albumID)
+        #expect(try await database.currentRevision() == committedRevision)
+    }
+
     private func until(_ predicate: @MainActor () -> Bool) async throws {
         let deadline = ContinuousClock.now.advanced(by: .seconds(5))
         while !predicate() {

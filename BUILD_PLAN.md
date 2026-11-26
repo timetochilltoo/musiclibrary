@@ -293,6 +293,10 @@ RA2 import review checkpoint. Import metadata analysis and direct review reads
 bring coverage to 84 scoped LibraryStore declarations. Proposal decisions and
 composite preview come next.
 
+RA2 proposal checkpoint. Proposal decisions and composite preview bring
+coverage to 88 scoped LibraryStore declarations. External metadata selection
+writes and their managed artwork work come next.
+
 Store more than an absolute path:
 
 - storage-root ID plus relative path;

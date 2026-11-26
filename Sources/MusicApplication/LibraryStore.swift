@@ -882,27 +882,29 @@ public final class LibraryStore: ObservableObject {
     }
 
     public func setImportReleaseProposal(_ id: UUID, status: ImportProposalStatus) async throws {
-        guard let database else { throw DatabaseError.notFound("Catalogue database") }
-        try await database.updateImportReleaseProposal(id, status: status)
+        try await withCatalogueUse { database, _ in
+            try await database.updateImportReleaseProposal(id, status: status)
+        }
     }
 
     public func confirmImportReleaseProposal(_ id: UUID) async throws -> AlbumID {
-        guard let database else { throw DatabaseError.notFound("Catalogue database") }
-        let albumID = try await database.confirmImportReleaseProposal(id)
-        if try await database.albumArtwork(albumID: albumID).isEmpty,
-           let selectedArtwork = try await database.externalMetadataSelection(importProposalID: id)?.artworkLocalPath,
-           FileManager.default.fileExists(atPath: selectedArtwork) {
-            _ = try? await database.addAlbumArtwork(albumID: albumID, localPath: selectedArtwork, role: .front, source: "managed-musicbrainz-artwork")
-        } else if try await database.albumArtwork(albumID: albumID).isEmpty,
-                  let artworkURL = try await importedFolderArtwork(for: id),
-                  let managedArtworkStore {
-            // Artwork is copied into managed storage; the NAS source stays untouched.
-            if let managedURL = try? managedArtworkStore.importArtwork(from: artworkURL) {
-                _ = try? await database.addAlbumArtwork(albumID: albumID, localPath: managedURL.path, role: .front, source: "managed-imported-folder-artwork")
+        try await withCatalogueUse { database, context in
+            let albumID = try await database.confirmImportReleaseProposal(id)
+            if try await database.albumArtwork(albumID: albumID).isEmpty,
+               let selectedArtwork = try await database.externalMetadataSelection(importProposalID: id)?.artworkLocalPath,
+               FileManager.default.fileExists(atPath: selectedArtwork) {
+                _ = try? await database.addAlbumArtwork(albumID: albumID, localPath: selectedArtwork, role: .front, source: "managed-musicbrainz-artwork")
+            } else if try await database.albumArtwork(albumID: albumID).isEmpty,
+                      let artworkURL = try await importedFolderArtwork(for: id, using: database),
+                      let managedArtworkStore {
+                // Artwork is copied into managed storage; the NAS source stays untouched.
+                if let managedURL = try? managedArtworkStore.importArtwork(from: artworkURL) {
+                    _ = try? await database.addAlbumArtwork(albumID: albumID, localPath: managedURL.path, role: .front, source: "managed-imported-folder-artwork")
+                }
             }
+            try await self.reload(using: context)
+            return albumID
         }
-        try await reload()
-        return albumID
     }
 
     public func importAttachmentPreview(proposalID: UUID, albumID: AlbumID) async throws -> ImportAttachmentPreview {
@@ -912,14 +914,14 @@ public final class LibraryStore: ObservableObject {
     }
 
     public func attachImportReleaseProposal(_ proposalID: UUID, to albumID: AlbumID) async throws -> AlbumID {
-        guard let database else { throw DatabaseError.notFound("Catalogue database") }
-        let attachedAlbumID = try await database.attachImportReleaseProposal(proposalID, to: albumID)
-        try await reload()
-        return attachedAlbumID
+        try await withCatalogueUse { database, context in
+            let attachedAlbumID = try await database.attachImportReleaseProposal(proposalID, to: albumID)
+            try await self.reload(using: context)
+            return attachedAlbumID
+        }
     }
 
-    private func importedFolderArtwork(for proposalID: UUID) async throws -> URL? {
-        guard let database else { return nil }
+    private func importedFolderArtwork(for proposalID: UUID, using database: MusicDatabase) async throws -> URL? {
         for batch in importBatches {
             let proposals = try await database.importReleaseProposals(batchID: batch.id)
             guard proposals.contains(where: { $0.id == proposalID }),
@@ -985,21 +987,22 @@ public final class LibraryStore: ObservableObject {
     }
 
     public func importProposalPreview(_ proposal: ImportReleaseProposal) async throws -> ImportProposalPreview {
-        guard let database else { throw DatabaseError.notFound("Catalogue database") }
-        let candidates = try await database.importCandidates(batchID: proposal.batchID)
-            .filter { $0.proposalID == proposal.id }
-            .sorted {
-                let lhs = $0.metadata?.discNumber ?? 1; let rhs = $1.metadata?.discNumber ?? 1
-                if lhs != rhs { return lhs < rhs }
-                let left = $0.metadata?.trackNumber ?? Int.max; let right = $1.metadata?.trackNumber ?? Int.max
-                if left != right { return left < right }
-                return ($0.payload?.fileName ?? "").localizedStandardCompare($1.payload?.fileName ?? "") == .orderedAscending
+        try await withCatalogueUse { database, _ in
+            let candidates = try await database.importCandidates(batchID: proposal.batchID)
+                .filter { $0.proposalID == proposal.id }
+                .sorted {
+                    let lhs = $0.metadata?.discNumber ?? 1; let rhs = $1.metadata?.discNumber ?? 1
+                    if lhs != rhs { return lhs < rhs }
+                    let left = $0.metadata?.trackNumber ?? Int.max; let right = $1.metadata?.trackNumber ?? Int.max
+                    if left != right { return left < right }
+                    return ($0.payload?.fileName ?? "").localizedStandardCompare($1.payload?.fileName ?? "") == .orderedAscending
+                }
+            let titles = candidates.compactMap { candidate -> String? in
+                if let title = candidate.metadata?.title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty { return title }
+                return candidate.payload?.fileName
             }
-        let titles = candidates.compactMap { candidate -> String? in
-            if let title = candidate.metadata?.title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty { return title }
-            return candidate.payload?.fileName
+            return .init(trackTitles: titles, artworkURL: try await importedFolderArtwork(for: proposal.id, using: database))
         }
-        return .init(trackTitles: titles, artworkURL: try await importedFolderArtwork(for: proposal.id))
     }
 
     public func musicBrainzReleaseDetails(id: String) async throws -> ExternalReleasePreview {
