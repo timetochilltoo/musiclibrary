@@ -1,15 +1,14 @@
 # Recovery writer-admission audit
 
 Date: 13 November 2026. Scope: R8 source audit and regression design.
-Status: **complete archive restore is exclusive; database-only restore integration is pending**. The latest packaged app remains 0.72/build 73, schema 17.
+Status: **both restore paths are exclusive; installation identity and stale intent handling are pending**. The latest packaged app remains 0.72/build 73, schema 17.
 Operational next action belongs in [HANDOFF.md](HANDOFF.md).
 
 RA1 checkpoint: [CatalogueAdmission](Sources/MusicApplication/CatalogueAdmission.swift)
 and its [lifecycle tests](Tests/MusicApplicationTests/CatalogueAdmissionTests.swift)
 implement the admission primitive. [CATALOGUE_USE_MIGRATION.md](CATALOGUE_USE_MIGRATION.md)
-records current and remaining coverage. Cleanup, reset and complete archive
-restore each hold one reservation from recovery capture through publication.
-Database-only restore remains queued without an exclusive reservation.
+records current and remaining coverage. Cleanup, reset and both restore paths
+hold one reservation from recovery capture through publication.
 
 ## Finding
 
@@ -31,19 +30,19 @@ Before integrating a gate, enumerate every public use case and private worker.
 
 | Operation | Present protection | Gap relevant to recovery |
 |---|---|---|
-| Sharing, database backup, archive export/restore, reset, cleanup | [Transfer queue](Sources/MusicApplication/LibraryTransferQueue.swift#L15); service entry points call `run` | Snapshot capture and master backup now acquire ordinary admission after their queue turn. Complete archive capture drains ordinary users. Cleanup, reset and complete archive restore hold exclusive admission through verification, commit or rollback, and refresh. Database-only restore still needs that scope. |
-| Album create/update and other catalogue edits | [addAlbum/updateAlbum](Sources/MusicApplication/LibraryStore.swift#L434), actor SQL/transactions | Album creation and updates are scoped through refresh. Complete archive restore drains admitted edits before recovery capture. Database-only restore still needs that scope. |
+| Sharing, database backup, archive export/restore, reset, cleanup | [Transfer queue](Sources/MusicApplication/LibraryTransferQueue.swift#L15); service entry points call `run` | Snapshot capture and master backup now acquire ordinary admission after their queue turn. Complete archive capture drains ordinary users. Cleanup, reset and both restore paths hold exclusive admission through recovery verification, commit or rollback, and refresh. |
+| Album create/update and other catalogue edits | [addAlbum/updateAlbum](Sources/MusicApplication/LibraryStore.swift#L433), actor SQL/transactions | Album creation and updates are scoped through refresh. Both restore paths drain admitted edits before recovery capture. |
 | Disc/track/credit/alias, box/location, playlist and lyrics edits | LibraryStore catalogue mutation methods; see the migration inventory | Same direct database access pattern. UI-local disabling is not service admission. |
-| Managed artwork import/migration/selection | [addAlbumArtwork](Sources/MusicApplication/LibraryStore.swift#L641), [downloadManagedMusicBrainzArtwork](Sources/MusicApplication/LibraryStore.swift#L989) | Provider covers, explicit artwork import and migration hold admission through their file work, catalogue writes and refresh. |
-| Root renewal/scope/deletion and access refresh | [renewStorageRootAccess](Sources/MusicApplication/LibraryStore.swift#L719) and refreshStorageRootAccess | Root writes now use admission. Destructive recovery still needs admission through installation. |
-| Metadata analysis, proposal confirmation/attachment and corrections | [analyzeImportBatch](Sources/MusicApplication/LibraryStore.swift#L874) and confirmImportReleaseProposal | Metadata analysis now holds admission through extraction and proposal writes. Proposal confirmation and attachment also hold admission through reload. |
-| Missing-asset and relink decisions | [applyRelinkProposal](Sources/MusicApplication/LibraryStore.swift#L779) and related decision methods | Scoped through root refresh, verification, catalogue writes and publication. Destructive recovery still needs admission through replacement and publication. |
-| Scan startup and detached scan persistence | [startImportScan](Sources/MusicApplication/LibraryStore.swift#L1727) | Scan admission now covers candidate and error writes, completion, reconciliation and final publication after the detached task exits. |
-| Scan cancellation | [cancelImportScan](Sources/MusicApplication/LibraryStore.swift#L1826) | Signals the worker during drain. The completion task releases admission after worker exit and publication. Archive capture drains the scan worker. |
-| Fingerprinting and availability health | [verifyFingerprints](Sources/MusicApplication/LibraryStore.swift#L1669) | Fingerprint verification and availability checks now hold admission through their result writes and reloads. Hash recording need not increment revision. |
-| Catalogue reads, reload, search, playback resolution, FR1 manifest reads | [reload](Sources/MusicApplication/LibraryStore.swift#L315), search and folderRecoveryManifest | RA2 scopes reload/search, but destructive recovery does not hold one scope through replacement and publication. Request generations are not an installation epoch. |
-| Cleanup and tag previews, JSON/CSV exports | [catalogueCleanupPreview](Sources/MusicApplication/LibraryStore.swift#L1279) and related reader entry points | Scoped through catalogue or dry-run reads and export destination writes. Production recovery still uses the transfer queue. |
-| Explicit FLAC tag execution | [executeTagWrite](Sources/MusicApplication/LibraryStore.swift#L1214) | Separate opt-in source writer; not a database lease or queued service. Its already-started work must never be automatically undone to facilitate recovery. |
+| Managed artwork import/migration/selection | [addAlbumArtwork](Sources/MusicApplication/LibraryStore.swift#L640), [downloadManagedMusicBrainzArtwork](Sources/MusicApplication/LibraryStore.swift#L988) | Provider covers, explicit artwork import and migration hold admission through their file work, catalogue writes and refresh. |
+| Root renewal/scope/deletion and access refresh | [renewStorageRootAccess](Sources/MusicApplication/LibraryStore.swift#L718) and refreshStorageRootAccess | Root writes now use admission. Restore holds admission through installation and publication. |
+| Metadata analysis, proposal confirmation/attachment and corrections | [analyzeImportBatch](Sources/MusicApplication/LibraryStore.swift#L873) and confirmImportReleaseProposal | Metadata analysis now holds admission through extraction and proposal writes. Proposal confirmation and attachment also hold admission through reload. |
+| Missing-asset and relink decisions | [applyRelinkProposal](Sources/MusicApplication/LibraryStore.swift#L778) and related decision methods | Scoped through root refresh, verification, catalogue writes and publication. Restore holds admission through replacement and publication. |
+| Scan startup and detached scan persistence | [startImportScan](Sources/MusicApplication/LibraryStore.swift#L1746) | Scan admission now covers candidate and error writes, completion, reconciliation and final publication after the detached task exits. |
+| Scan cancellation | [cancelImportScan](Sources/MusicApplication/LibraryStore.swift#L1845) | Signals the worker during drain. The completion task releases admission after worker exit and publication. Archive capture drains the scan worker. |
+| Fingerprinting and availability health | [verifyFingerprints](Sources/MusicApplication/LibraryStore.swift#L1688) | Fingerprint verification and availability checks now hold admission through their result writes and reloads. Hash recording need not increment revision. |
+| Catalogue reads, reload, search, playback resolution, FR1 manifest reads | [reload](Sources/MusicApplication/LibraryStore.swift#L314), search and folderRecoveryManifest | RA2 scopes reload/search, but UI state retained outside those scopes still needs installation identity. |
+| Cleanup and tag previews, JSON/CSV exports | [catalogueCleanupPreview](Sources/MusicApplication/LibraryStore.swift#L1278) and related reader entry points | Scoped through catalogue or dry-run reads and export destination writes. Production recovery still uses the transfer queue. |
+| Explicit FLAC tag execution | [executeTagWrite](Sources/MusicApplication/LibraryStore.swift#L1213) | Separate opt-in source writer; not a database lease or queued service. Its already-started work must never be automatically undone to facilitate recovery. |
 | Settings controls | [activity/disabled controls](Sources/MusicLibraryMac/MusicLibraryMacApp.swift#L1699) | Local submission and recovery-review flags cover selected controls, not all other workspaces, in-flight tasks or API callers. |
 
 ### A. Recovery boundary versus ordinary writes — high priority
@@ -52,12 +51,14 @@ Complete restore stages the chosen archive under the transfer queue. It then
 drains ordinary catalogue users and holds an exclusive scope while it captures
 and verifies the recovery archive, checkpoints, releases the old database,
 replaces the database and artwork, and publishes either the restored or rolled
-back catalogue. See [restore](Sources/MusicApplication/LibraryStore.swift#L1327).
+back catalogue. See [restore](Sources/MusicApplication/LibraryStore.swift#L1326).
 The disposable regression confirms the recovery archive includes an admitted
-edit that finishes during drain. Database-only restore still needs to prevent
-overlap with admitted work.
+edit that finishes during drain. [Database-only restore](Sources/MusicApplication/LibraryStore.swift#L1588)
+verifies a staged SQLite copy before draining ordinary users. The corresponding
+regression verifies the last admitted edit in the retained previous database
+and publication after cancellation during final refresh.
 
-[Reset](Sources/MusicApplication/LibraryStore.swift#L1451) and cleanup now keep
+[Reset](Sources/MusicApplication/LibraryStore.swift#L1450) and cleanup now keep
 a single reservation from recovery capture through final publication. Reset
 retains exact RESET confirmation and registered roots. A failed artwork
 rollback keeps the verified archive and requires review before further edits.
@@ -199,7 +200,8 @@ startup. Do not add passing tests that require unsafe admission to remain allowe
   verification, commit and final refresh. Reset holds the same boundary through
   its artwork handling and rollback. Complete archive restore keeps the scope
   through installation or rollback and final publication. Database-only restore
-  comes next.
+  now holds the same boundary. Next review installation identity and stale
+  intents retained outside those scopes.
   Production maintenance reservation depends on accounting for all holders and nested helper
   paths. Calling maintenance while holding an ordinary lease can deadlock.
 - **RA3:** integrate queued recovery/capture boundaries and epoch invalidation;

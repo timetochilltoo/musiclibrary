@@ -1,18 +1,17 @@
 # Catalogue-use migration inventory
 
-Snapshot: 27 November 2026, RA2 exclusive complete archive restore. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
+Snapshot: 27 November 2026, RA2 exclusive database-only restore. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
 Operational state: [HANDOFF.md](HANDOFF.md). Safety design: [recovery admission audit](RECOVERY_WRITER_ADMISSION_AUDIT.md).
 
 ## Coverage and lifetime contract
 
-The 110 public declarations below currently use catalogue admission. A call to
+The 111 public declarations below currently use catalogue admission. A call to
 public reload from an otherwise unscoped mutation does not cover the earlier
 mutation or its retained database. Complete archive capture reserves maintenance
 inside a transfer queue turn. Cleanup holds the reservation through
 verification, commit and refresh. Reset holds the same boundary through managed
-artwork displacement or rollback. Complete archive restore reserves admission
-from recovery capture through installation, rollback and refresh. Database-only
-restore still needs an end-to-end reservation.
+artwork displacement or rollback. Both restore paths reserve admission
+from recovery capture through installation, rollback and refresh.
 
 `withCatalogueUse` acquires/validates context before capturing the store database,
 then awaits the caller's resource work. Never return the database actor or launch
@@ -214,7 +213,10 @@ displacing artwork, restores the original artwork on pre-commit failure and
 requires review if rollback fails. Complete archive restore stages and verifies
 the source archive before reserving admission. It then drains existing users and
 holds one exclusive context from recovery archive verification through
-installation or rollback and final publication.
+installation or rollback and final publication. Database-only restore stages
+a copy and verifies it against the selected manifest before reserving admission.
+It then drains existing users, checkpoints and verifies the retained previous
+database, and holds admission through replacement or rollback and publication.
 
 - `exportCompleteCatalogueArchive`
 - `createMasterBackupNow`
@@ -224,6 +226,7 @@ installation or rollback and final publication.
 - `publishSnapshotNow`
 - `resetCatalogue`
 - `restoreCompleteCatalogueArchive`
+- `restoreMasterBackup`
 
 ## Worker lifecycle control
 
@@ -240,7 +243,6 @@ these services while holding an ordinary scope they need to drain. Explicit FLAC
 execution keeps its independent opt-in backup/journal and safe-finish policy.
 
 - `executeTagWrite`
-- `restoreMasterBackup`
 - `setSnapshotDestination`
 - `tagWriteBackupDirectory`
 
@@ -290,6 +292,6 @@ invalid-context failures release or refuse cleanly. Existing search overlap test
 continue to cover generation ordering. These are partial integration checks, not
 live recovery exclusion or reader migration completeness.
 
-Next extend exclusive admission through database-only restore, retaining the
-pre-restore database and preserving current artwork and audio. Installation
-epochs and explicit FLAC execution have separate boundaries.
+Next review installation identity and stale intents retained outside a
+catalogue scope. Restore can publish a revision already used by the previous
+catalogue. Explicit FLAC execution has a separate boundary.

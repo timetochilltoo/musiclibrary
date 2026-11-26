@@ -76,8 +76,7 @@ public final class LibraryStore: ObservableObject {
     private let lastMasterBackupAtKey = "MusicLibrary.lastMasterBackupAt"
     private var publicationSchedule = SnapshotPublicationSchedule()
     let transferQueue = LibraryTransferQueue()
-    // Complete archive restore, cleanup and reset reserve maintenance through
-    // publication. Database-only restore still needs that boundary.
+    // Restore, cleanup and reset reserve maintenance through publication.
     let catalogueAdmission = CatalogueAdmission()
     #if DEBUG
     @Published public private(set) var syntheticRecoveryFailure: RestoreRecoveryError?
@@ -1588,18 +1587,36 @@ public final class LibraryStore: ObservableObject {
 
     private func restoreMasterBackupUncoordinated(from manifestURL: URL) async throws {
         try validateRecoveryFixtureURL(manifestURL)
-        guard let catalogueURL, database != nil else { throw DatabaseError.notFound("Catalogue database") }
+        guard catalogueAdmission.phase != .reviewRequired else { throw CatalogueAdmission.Failure.reviewRequired }
+        guard isReady, catalogueURL != nil, database != nil else { throw DatabaseError.notFound("Catalogue database") }
         let accessed = manifestURL.startAccessingSecurityScopedResource()
         defer { if accessed { manifestURL.stopAccessingSecurityScopedResource() } }
         guard accessed || hasRecoveryFixtureAccess(to: manifestURL) else { throw DatabaseError.invalidOperation("Permission to access the selected master backup was not available.") }
         let archive = manifestURL.deletingLastPathComponent()
         let manifest = try JSONDecoder().decode(MasterBackupManifest.self, from: Data(contentsOf: manifestURL))
-        try await MasterBackupArchive.verify(manifest, in: archive)
         let backupURL = try MasterBackupArchive.validatedBackupURL(for: manifest, in: archive)
+        let staging = try applicationSupportDirectory().appending(path: "RestoreStaging/DatabaseRestore-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: staging) }
+        let stagedURL = staging.appending(path: manifest.fileName)
+        try await Task.detached(priority: .userInitiated) {
+            try FileManager.default.copyItem(at: backupURL, to: stagedURL)
+            try await MasterBackupArchive.verify(manifest, in: staging)
+        }.value
+        try await catalogueAdmission.withMaintenance { context in
+            try await installMasterBackup(from: stagedURL, revision: manifest.revision, using: context)
+        }
+    }
+
+    private func installMasterBackup(
+        from backupURL: URL, revision: Int64, using context: CatalogueAdmission.Context
+    ) async throws {
+        guard let catalogueURL, database != nil else { throw DatabaseError.notFound("Catalogue database") }
         let recoveryDirectory = catalogueURL.deletingLastPathComponent().appending(path: "Recovery", directoryHint: .isDirectory)
+        try await database?.checkpointWAL()
+        try Task.checkCancellation()
         try FileManager.default.createDirectory(at: recoveryDirectory, withIntermediateDirectories: true)
         let recoveryURL = recoveryDirectory.appending(path: "MusicLibrary-before-restore-\(Int64(Date.now.timeIntervalSince1970))-\(UUID().uuidString).sqlite")
-        try await database?.checkpointWAL()
         database = nil
         try? FileManager.default.removeItem(at: URL(fileURLWithPath: catalogueURL.path + "-wal"))
         try? FileManager.default.removeItem(at: URL(fileURLWithPath: catalogueURL.path + "-shm"))
@@ -1609,13 +1626,14 @@ public final class LibraryStore: ObservableObject {
         do {
             try Self.moveRecoveryOriginal(from: catalogueURL, to: recoveryURL, failureFixtureRoot: moveFailure == .database ? recoveryFixtureDirectory : nil)
             databaseMoved = true
+            try MusicDatabase.verifyStandaloneBackupFile(at: recoveryURL)
             try Self.copyRecoveryDatabase(from: backupURL, to: catalogueURL, partialCopyFixtureRoot: partialCopyFixtureRoot)
             try checkRecoveryFixtureInstallation()
             let restored = try MusicDatabase(url: catalogueURL)
             try await restored.migrate()
             database = restored
-            try await reload()
-            masterBackupStatus = "Restored revision \(manifest.revision); previous master kept in Recovery"
+            try await reloadAfterMaintenanceCommit(using: context)
+            masterBackupStatus = "Restored revision \(revision); previous master kept in Recovery"
         } catch {
             let restoreFailure = error.localizedDescription
             database = nil
@@ -1636,11 +1654,12 @@ public final class LibraryStore: ObservableObject {
                 let recovered = try MusicDatabase(url: catalogueURL)
                 try await recovered.migrate()
                 database = recovered
-                try await reload()
+                try await reloadAfterMaintenanceCommit(using: context)
             } catch {
                 database = nil
                 let recoveryLocation = FileManager.default.fileExists(atPath: recoveryURL.path) ? recoveryURL : catalogueURL
                 let report = RestoreRecoveryError(outcome: .recoveryIncomplete, restoreFailure: restoreFailure, recoveryFailure: error.localizedDescription, recoveryURL: recoveryLocation)
+                try catalogueAdmission.requireReview(using: context)
                 recoveryReviewMessage = report.localizedDescription
                 masterBackupStatus = report.localizedDescription
                 throw report

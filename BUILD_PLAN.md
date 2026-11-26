@@ -333,7 +333,12 @@ refresh. Coverage is 109 scoped declarations.
 RA2 complete restore checkpoint. Complete archive restore drains ordinary users
 after staging and retains admission through verified recovery capture,
 installation or rollback, and final refresh. Coverage is 110 scoped declarations.
-Database-only restore is next.
+Database-only restore follows the same scope in the next checkpoint.
+
+RA2 database-only restore checkpoint. Restore verifies a staged backup, then
+drains ordinary users and holds admission through previous database retention,
+installation or rollback, and final refresh. Coverage is 111 scoped declarations.
+Catalogue installation identity and stale intent handling come next.
 
 Store more than an absolute path:
 

@@ -14,6 +14,7 @@ Current baseline: inspect `main` with `git log --oneline -5`; [HANDOFF.md](HANDO
 
 Completed and verified:
 
+- RA2 database-only restore verifies an independent staging copy against the backup manifest, then drains ordinary operations. It checkpoints and verifies the retained previous database and holds exclusive admission through installation or rollback and publication. Current artwork and audio remain in place. Incomplete rollback closes ordinary admission for review.
 - RA2 complete archive restore validates and stages the selected archive under the transfer queue, then reserves exclusive admission through verified recovery capture, database and artwork replacement or rollback, and publication. A failed rollback retains the verified recovery archive and enters review-required state.
 - RA2 catalogue reset reserves exclusive admission across verified recovery capture, managed artwork displacement, the root-preserving reset transaction, rollback if needed and final publication. A rollback failure retains the verified archive and closes ordinary admission for review.
 - RA2 catalogue cleanup reserves exclusive admission after its transfer queue turn. It captures and verifies its recovery archive, checks cancellation before the transaction, and awaits refresh under the same context after commit.

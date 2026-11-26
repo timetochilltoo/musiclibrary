@@ -377,11 +377,9 @@ struct RecoveryTransferIntegrationTests {
         }
         #expect(!store.transferActivity.isBusy)
         do { _ = try await store.addAlbum(.init(title: "Must refuse while recovery unresolved")); Issue.record("Unresolved catalogue accepted edits") } catch {}
-        if archive {
-            #expect(store.catalogueAdmission.phase == .reviewRequired)
-            await #expect(throws: CatalogueAdmission.Failure.reviewRequired) {
-                _ = try await store.catalogueCleanupPreview()
-            }
+        #expect(store.catalogueAdmission.phase == .reviewRequired)
+        await #expect(throws: CatalogueAdmission.Failure.reviewRequired) {
+            _ = try await store.catalogueCleanupPreview()
         }
         let review = store.recoveryReviewMessage
         let replacementURL = root.appending(path: "MusicLibrary.sqlite")

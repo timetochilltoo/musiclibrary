@@ -4,7 +4,35 @@ Last updated: 27 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — RA2 exclusive complete archive restore
+## Current resume — RA2 exclusive database-only restore
+
+Database-only restore copies the selected SQLite payload into disposable staging
+and verifies it against its manifest under the transfer queue. It then drains
+ordinary catalogue users and holds exclusive admission through checkpoint,
+verification of the retained previous database, installation or rollback, and
+final catalogue and search publication. Cancellation is honoured before
+replacement. Once replacement begins, the final refresh is awaited even if
+the caller cancels. Incomplete rollback closes admission for review. Coverage
+is 111 of 125 LibraryStore declarations.
+
+The disposable regression verifies that the retained previous database
+contains the last admitted edit, later edits refuse during the reservation,
+and publication completes after cancellation during refresh. It verifies the
+original backup and checks that current artwork and source audio bytes are
+unchanged. Existing tests cover malformed backups, installation faults,
+rollback, and review-required refusal.
+
+The 55 focused tests, 286 Debug tests, 275 Release tests and Swift build passed.
+Whitespace, declaration inventory and audit link checks passed. Logs are at
+`/private/tmp/musiclibrary-ra2-master-restore-{focused,debug,release,build}.log`.
+
+Next review **catalogue installation identity and stale UI intents** that
+outlive a catalogue scope. Restoring a backup can repeat an earlier revision.
+Explicit FLAC execution still has a separate boundary. The latest runnable
+artifact is Music Library 0.72 build 73 with schema 17.
+See [the migration inventory](CATALOGUE_USE_MIGRATION.md).
+
+## Previous resume — RA2 exclusive complete archive restore
 
 Complete archive restore validates and stages the selected archive after its
 transfer queue turn. It then drains catalogue users before capturing and

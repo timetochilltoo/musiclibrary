@@ -1279,6 +1279,74 @@ struct LibraryStoreAdmissionTests {
         #expect(try await archivedDatabase.album(id: album.id)?.title == edited.title)
     }
 
+    @Test("Database-only restore keeps the last admitted edit in recovery and publishes after cancellation")
+    func masterRestoreDrain() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "MasterRestoreDrain-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let writer = Gate(), probe = Probe()
+        defer { writer.open(); probe.gate.open() }
+        let store = try await LibraryStore(recoveryFixtureDirectory: root, albumSearch: { db, term in
+            try await probe.load(db, term)
+        })
+        let album = try await store.addAlbum(.init(title: "Backed up album"))
+        try await store.createMasterBackupNow()
+        let backups = root.appending(path: "MasterBackups")
+        let manifestURL = try #require(FileManager.default.contentsOfDirectory(at: backups, includingPropertiesForKeys: nil)
+            .first { $0.lastPathComponent.hasSuffix(".manifest.json") })
+        let manifest = try JSONDecoder().decode(MasterBackupManifest.self, from: Data(contentsOf: manifestURL))
+        try await store.updateAlbum(album.id, with: .init(title: "Live album"))
+        let artwork = root.appending(path: "Artwork/current.jpg")
+        try FileManager.default.createDirectory(at: artwork.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data([1, 2]).write(to: artwork)
+        let audio = root.appending(path: "source.flac")
+        try Data([3, 4]).write(to: audio)
+        await store.search("album")
+
+        let edit = Task {
+            try await store.withCatalogueUse { database, _ in
+                await writer.hold()
+                return try await database.updateAlbum(album.id, with: .init(title: "Last admitted album"))
+            }
+        }
+        try await until { writer.started }
+        probe.holdNext = true
+        let restore = Task { try await store.restoreMasterBackup(from: manifestURL) }
+        try await until { store.catalogueAdmission.phase == .draining }
+        #expect(store.transferActivity.active == .databaseRestore)
+        #expect(!FileManager.default.fileExists(atPath: root.appending(path: "Recovery").path))
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            try await store.updateAlbum(album.id, with: .init(title: "Refused during drain"))
+        }
+
+        writer.open()
+        let edited = try await edit.value
+        try await until { probe.gate.started }
+        #expect(store.catalogueAdmission.phase == .exclusive)
+        #expect(store.catalogueAlbums.first?.title == "Backed up album" && store.albums.first?.title == "Live album")
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            try await store.updateAlbum(album.id, with: .init(title: "Refused during refresh"))
+        }
+        restore.cancel()
+        probe.gate.open()
+        try await restore.value
+        #expect(store.albums.first?.title == "Backed up album")
+        #expect(store.catalogueRevision == manifest.revision)
+        #expect(store.catalogueAdmission.phase == .open && !store.transferActivity.isBusy)
+        #expect(try Data(contentsOf: artwork) == Data([1, 2]))
+        #expect(try Data(contentsOf: audio) == Data([3, 4]))
+        try await MasterBackupArchive.verify(manifest, in: backups)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: root.appending(path: "RestoreStaging").path).isEmpty)
+
+        let recovery = root.appending(path: "Recovery")
+        let previous = try #require(FileManager.default.contentsOfDirectory(at: recovery, includingPropertiesForKeys: nil)
+            .first { $0.pathExtension == "sqlite" })
+        try MusicDatabase.verifyStandaloneBackupFile(at: previous)
+        let inspection = root.appending(path: "Database recovery inspection.sqlite")
+        try FileManager.default.copyItem(at: previous, to: inspection)
+        let recovered = try MusicDatabase(url: inspection)
+        #expect(try await recovered.album(id: album.id)?.title == edited.title)
+    }
+
     private func until(_ predicate: @MainActor () -> Bool) async throws {
         let deadline = ContinuousClock.now.advanced(by: .seconds(5))
         while !predicate() {
