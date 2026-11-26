@@ -4,7 +4,34 @@ Last updated: 26 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — RA2 album creation and artwork
+## Current resume — RA2 missing assets and relink decisions
+
+Missing-asset confirmation and reference removal and relink proposal creation,
+application and dismissal now use catalogue admission, bringing coverage to
+98 of 125 LibraryStore declarations. Relink creation and application reuse
+one scope through root refresh and security-scoped replacement verification.
+Application continues with its admitted database through availability refresh
+and catalogue publication.
+
+The temporary SQLite regressions hold missing-asset decisions in their final
+refresh and relink requests in root refresh. They verify that maintenance
+drains and rejects new decisions. Both missing-asset actions preserve the
+track and resolve the review. Relink requests without a usable root grant
+preserve the stored asset path and proposal, and explicit dismissal works
+once admission reopens. Successful replacement with a live picker grant was
+outside these fixtures.
+
+The 21 focused tests, 277 Debug tests, 266 Release tests and Swift build passed.
+Whitespace, declaration inventory and audit link checks passed. Logs are at
+`/private/tmp/musiclibrary-ra2-relink-{focused,debug,release,build}.log`.
+The existing AVMetadataItem deprecation remains.
+
+Next migrate **cleanup and FLAC tag-write previews and JSON and CSV exports**.
+Production restore and reset still use the transfer queue. The latest runnable
+artifact is Music Library 0.72 build 73 with schema 17.
+See [the migration inventory](CATALOGUE_USE_MIGRATION.md).
+
+## Previous resume — RA2 album creation and artwork
 
 Album creation, explicit artwork import and artwork migration now use catalogue
 admission, bringing coverage to 93 of 125 LibraryStore declarations. The scope

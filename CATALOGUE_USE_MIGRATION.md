@@ -1,11 +1,11 @@
 # Catalogue-use migration inventory
 
-Snapshot: 26 November 2026, RA2 album creation and artwork. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
+Snapshot: 26 November 2026, RA2 missing assets and relink decisions. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
 Operational state: [HANDOFF.md](HANDOFF.md). Safety design: [recovery admission audit](RECOVERY_WRITER_ADMISSION_AUDIT.md).
 
 ## Coverage and lifetime contract
 
-The 93 public declarations below currently use catalogue admission. A call to
+The 98 public declarations below currently use catalogue admission. A call to
 public reload from an otherwise unscoped mutation does not cover the earlier
 mutation or its retained database. No production caller reserves maintenance;
 existing restore/reset/scan races remain open. Recovery must not be connected to
@@ -49,6 +49,7 @@ is a Debug temporary-data factory; its seeding is separate from production uses.
 - `albumContributors`
 - `albums`
 - `applyExternalMetadataSelection`
+- `applyRelinkProposal`
 - `availableTrackIDs`
 - `boxMembers`
 - `boxPlacement`
@@ -62,6 +63,7 @@ is a Debug temporary-data factory; its seeding is separate from production uses.
 - `deleteTrackContributor`
 - `deleteTrack`
 - `discs`
+- `discardRelinkProposal`
 - `embeddedMetadata`
 - `folderRecoveryManifest`
 - `lyrics`
@@ -78,10 +80,12 @@ is a Debug temporary-data factory; its seeding is separate from production uses.
 - `playlistItems`
 - `playlistPlaybackPlan`
 - `recheckLibraryHealth`
+- `proposeRelink`
 - `refreshStorageRootAccess`
 - `reload`
 - `removeAlbum`
 - `removePlaylistItem`
+- `removeMissingAssetReference`
 - `renameLocation`
 - `renamePlaylist`
 - `renameStorageRoot`
@@ -116,6 +120,7 @@ is a Debug temporary-data factory; its seeding is separate from production uses.
 - `analyzeImportBatch`
 - `setImportReleaseProposal`
 - `confirmImportReleaseProposal`
+- `confirmAssetMissing`
 - `attachImportReleaseProposal`
 - `importProposalPreview`
 
@@ -174,17 +179,18 @@ and managed copy, the creation transaction, rollback file cleanup, and
 refresh. Artwork import and migration hold admission through security-scoped
 access, managed copy, catalogue update, cleanup and refresh.
 
-## Remaining catalogue mutations and worker lifecycle entry points
+Missing-asset confirmation and reference removal and relink dismissal use the
+shared edit scope through publication. Relink proposal creation and application
+also reuse their scope through root refresh, replacement verification and
+catalogue publication. Application uses its admitted database for availability
+refresh.
 
-These remain unscoped for their full operation, even when their final reload now
-uses admission. Some entries are worker lifecycle controls rather than SQL writers.
+## Worker lifecycle control
 
-- `applyRelinkProposal`
+Scan cancellation signals an admitted worker during drain. The completion task
+owns the worker's catalogue scope until it exits and publishes.
+
 - `cancelImportScan`
-- `confirmAssetMissing`
-- `discardRelinkProposal`
-- `proposeRelink`
-- `removeMissingAssetReference`
 
 ## Remaining readers, previews and exports
 
@@ -262,6 +268,5 @@ invalid-context failures release or refuse cleanly. Existing search overlap test
 continue to cover generation ordering. These are partial integration checks, not
 live recovery exclusion or reader migration completeness.
 
-Next migrate missing-asset decisions and relink proposal creation, application
-and dismissal. Keep one scope through root access refresh, verification and
-final catalogue publication. Queued recovery has a separate lifetime.
+Next migrate cleanup and FLAC tag-write previews and the JSON and CSV exports.
+Queued recovery and explicit FLAC execution have separate lifetimes.

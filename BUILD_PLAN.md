@@ -304,8 +304,11 @@ Album creation and explicit artwork import and migration follow that checkpoint.
 
 RA2 album artwork checkpoint. Album creation and explicit artwork import and
 migration bring coverage to 93 scoped LibraryStore declarations. They hold
-admission through managed file work and refresh. Missing-asset and relink
-decisions come next.
+admission through managed file work and refresh.
+
+RA2 missing-asset and relink checkpoint. Explicit decisions and relink review
+bring coverage to 98 scoped LibraryStore declarations. Root and availability
+refresh reuse the relink context. Catalogue previews and exports come next.
 
 Store more than an absolute path:
 

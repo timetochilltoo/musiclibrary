@@ -777,31 +777,31 @@ public final class LibraryStore: ObservableObject {
         }
     }
     public func applyRelinkProposal(_ id: UUID) async throws {
-        guard let database else { throw DatabaseError.notFound("Catalogue database") }
-        guard let proposal = relinkProposals.first(where: { $0.id == id }) else { throw DatabaseError.notFound("Relink proposal") }
-        try await refreshStorageRootAccess()
-        let rootID = try await database.storageRootID(for: proposal.assetID)
-        guard let root = storageRoots.first(where: { $0.id == rootID }) else { throw DatabaseError.notFound("Storage root for digital asset") }
-        let resolved = resolveSecurityScopedBookmark(root)
-        guard resolved.status == .available, let rootURL = resolved.url else { throw DatabaseError.invalidOperation("The replacement file cannot be verified because its music folder is unavailable.") }
-        let accessed = rootURL.startAccessingSecurityScopedResource()
-        defer { if accessed { rootURL.stopAccessingSecurityScopedResource() } }
-        guard accessed else { throw DatabaseError.invalidOperation("Permission to verify the replacement file was not available.") }
-        let replacementURL = rootURL.appending(path: proposal.proposedPath)
-        let values = try replacementURL.resourceValues(forKeys: [.isDirectoryKey, .contentTypeKey, .isRegularFileKey])
-        let isDSF = replacementURL.pathExtension.caseInsensitiveCompare("dsf") == .orderedSame
-        guard values.isRegularFile == true, values.isDirectory != true, isDSF || values.contentType?.conforms(to: .audio) == true else {
-            throw DatabaseError.invalidOperation("The proposed replacement file is no longer an available audio file. Its catalogue path was left unchanged.")
+        try await withCatalogueUse { database, context in
+            guard let proposal = relinkProposals.first(where: { $0.id == id }) else { throw DatabaseError.notFound("Relink proposal") }
+            try await self.refreshStorageRootAccess(using: database, context: context)
+            let rootID = try await database.storageRootID(for: proposal.assetID)
+            guard let root = storageRoots.first(where: { $0.id == rootID }) else { throw DatabaseError.notFound("Storage root for digital asset") }
+            let resolved = resolveSecurityScopedBookmark(root)
+            guard resolved.status == .available, let rootURL = resolved.url else { throw DatabaseError.invalidOperation("The replacement file cannot be verified because its music folder is unavailable.") }
+            let accessed = rootURL.startAccessingSecurityScopedResource()
+            defer { if accessed { rootURL.stopAccessingSecurityScopedResource() } }
+            guard accessed else { throw DatabaseError.invalidOperation("Permission to verify the replacement file was not available.") }
+            let replacementURL = rootURL.appending(path: proposal.proposedPath)
+            let values = try replacementURL.resourceValues(forKeys: [.isDirectoryKey, .contentTypeKey, .isRegularFileKey])
+            let isDSF = replacementURL.pathExtension.caseInsensitiveCompare("dsf") == .orderedSame
+            guard values.isRegularFile == true, values.isDirectory != true, isDSF || values.contentType?.conforms(to: .audio) == true else {
+                throw DatabaseError.invalidOperation("The proposed replacement file is no longer an available audio file. Its catalogue path was left unchanged.")
+            }
+            try await database.applyRelinkProposal(id)
+            try await self.refreshAvailableAssetStatuses(using: database)
+            try await self.reload(using: context)
         }
-        try await database.applyRelinkProposal(id)
-        guard let currentDatabase = self.database else { throw DatabaseError.notFound("Catalogue database") }
-        try await refreshAvailableAssetStatuses(using: currentDatabase)
-        try await reload()
     }
     public func discardRelinkProposal(_ id: UUID) async throws {
-        guard let database else { throw DatabaseError.notFound("Catalogue database") }
-        try await database.discardRelinkProposal(id)
-        try await reload()
+        try await editCatalogue { database in
+            try await database.discardRelinkProposal(id)
+        }
     }
 
     public func importCandidates(batchID: ImportBatchID) async throws -> [ImportCandidate] {
@@ -829,45 +829,46 @@ public final class LibraryStore: ObservableObject {
     }
 
     public func confirmAssetMissing(_ assetID: DigitalAssetID, in batchID: ImportBatchID) async throws {
-        guard let database else { throw DatabaseError.notFound("Catalogue database") }
-        try await database.confirmAssetMissing(assetID, in: batchID)
-        try await reload()
+        try await editCatalogue { database in
+            try await database.confirmAssetMissing(assetID, in: batchID)
+        }
     }
 
     public func removeMissingAssetReference(_ assetID: DigitalAssetID, in batchID: ImportBatchID) async throws {
-        guard let database else { throw DatabaseError.notFound("Catalogue database") }
-        try await database.removeMissingAssetReference(assetID, in: batchID)
-        try await reload()
+        try await editCatalogue { database in
+            try await database.removeMissingAssetReference(assetID, in: batchID)
+        }
     }
 
     /// Records a user-selected replacement under the asset's existing music root.
     /// The catalogue path remains unchanged until the stored proposal is explicitly
     /// applied from Settings.
     public func proposeRelink(assetID: DigitalAssetID, replacementURL: URL) async throws {
-        guard let database else { throw DatabaseError.notFound("Catalogue database") }
-        try await refreshStorageRootAccess()
-        let rootID = try await database.storageRootID(for: assetID)
-        guard let root = storageRoots.first(where: { $0.id == rootID }) else { throw DatabaseError.notFound("Storage root for digital asset") }
-        let resolved = resolveSecurityScopedBookmark(root)
-        guard resolved.status == .available, let rootURL = resolved.url else { throw DatabaseError.invalidOperation("The registered music folder is not currently available.") }
+        try await withCatalogueUse { database, context in
+            try await self.refreshStorageRootAccess(using: database, context: context)
+            let rootID = try await database.storageRootID(for: assetID)
+            guard let root = storageRoots.first(where: { $0.id == rootID }) else { throw DatabaseError.notFound("Storage root for digital asset") }
+            let resolved = resolveSecurityScopedBookmark(root)
+            guard resolved.status == .available, let rootURL = resolved.url else { throw DatabaseError.invalidOperation("The registered music folder is not currently available.") }
 
-        let selectedURL = replacementURL.standardizedFileURL
-        let rootAccessed = rootURL.startAccessingSecurityScopedResource()
-        let selectionAccessed = selectedURL.startAccessingSecurityScopedResource()
-        defer {
-            if selectionAccessed { selectedURL.stopAccessingSecurityScopedResource() }
-            if rootAccessed { rootURL.stopAccessingSecurityScopedResource() }
+            let selectedURL = replacementURL.standardizedFileURL
+            let rootAccessed = rootURL.startAccessingSecurityScopedResource()
+            let selectionAccessed = selectedURL.startAccessingSecurityScopedResource()
+            defer {
+                if selectionAccessed { selectedURL.stopAccessingSecurityScopedResource() }
+                if rootAccessed { rootURL.stopAccessingSecurityScopedResource() }
+            }
+            guard rootAccessed || selectionAccessed else { throw DatabaseError.invalidOperation("Permission to access the selected replacement file was not available.") }
+
+            guard let relativePath = RegisteredPathSecurity.relativePath(of: selectedURL, within: rootURL), !relativePath.isEmpty else { throw DatabaseError.invalidOperation("Choose a replacement file inside the same registered music folder.") }
+            let values = try selectedURL.resourceValues(forKeys: [.isDirectoryKey, .contentTypeKey, .isRegularFileKey])
+            guard values.isRegularFile == true, values.isDirectory != true else { throw DatabaseError.invalidOperation("Choose an audio file, not a folder.") }
+            let isDSF = selectedURL.pathExtension.caseInsensitiveCompare("dsf") == .orderedSame
+            guard isDSF || values.contentType?.conforms(to: .audio) == true else { throw DatabaseError.invalidOperation("Choose a supported audio file.") }
+
+            _ = try await database.proposeRelink(assetID: assetID, proposedRelativePath: relativePath)
+            try await self.reload(using: context)
         }
-        guard rootAccessed || selectionAccessed else { throw DatabaseError.invalidOperation("Permission to access the selected replacement file was not available.") }
-
-        guard let relativePath = RegisteredPathSecurity.relativePath(of: selectedURL, within: rootURL), !relativePath.isEmpty else { throw DatabaseError.invalidOperation("Choose a replacement file inside the same registered music folder.") }
-        let values = try selectedURL.resourceValues(forKeys: [.isDirectoryKey, .contentTypeKey, .isRegularFileKey])
-        guard values.isRegularFile == true, values.isDirectory != true else { throw DatabaseError.invalidOperation("Choose an audio file, not a folder.") }
-        let isDSF = selectedURL.pathExtension.caseInsensitiveCompare("dsf") == .orderedSame
-        guard isDSF || values.contentType?.conforms(to: .audio) == true else { throw DatabaseError.invalidOperation("Choose a supported audio file.") }
-
-        _ = try await database.proposeRelink(assetID: assetID, proposedRelativePath: relativePath)
-        try await reload()
     }
 
     public func analyzeImportBatch(_ batchID: ImportBatchID) async throws {

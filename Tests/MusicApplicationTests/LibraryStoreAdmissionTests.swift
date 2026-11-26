@@ -771,6 +771,108 @@ struct LibraryStoreAdmissionTests {
         try await barrier.value
     }
 
+    @Test("Missing asset decisions retain admission through refresh and preserve the track", arguments: [false, true])
+    func missingAssetDecisionDrain(removeReference: Bool) async throws {
+        let fixture = try await Fixture.make()
+        defer { fixture.remove() }
+        let database = fixture.database
+        let (albumID, assetID) = try await fixture.makeImportedAsset()
+        let rootID = try await database.storageRootID(for: assetID)
+        let rescan = try await database.createImportBatch(storageRootID: rootID, sourceDescription: fixture.directory.path)
+        try await database.finishImportBatch(rescan.id, status: .completed)
+        try await database.reconcileCompletedScan(batchID: rescan.id, rootID: rootID, discoveredRelativePaths: [])
+        let disc = try #require(await database.discs(albumID: albumID).first)
+        let track = try #require(await database.tracks(discID: disc.id).first)
+        let probe = Probe(), maintenance = Gate()
+        defer { probe.gate.open(); maintenance.open() }
+        let store = LibraryStore(database: database, albumSearch: { db, term in try await probe.load(db, term) })
+        try await store.reload()
+        await store.search("album")
+        #expect(try await store.missingAssetReviews(batchID: rescan.id).map(\.id) == [assetID])
+        let revision = store.catalogueRevision
+
+        probe.holdNext = true
+        let decision = Task {
+            if removeReference {
+                try await store.removeMissingAssetReference(assetID, in: rescan.id)
+            } else {
+                try await store.confirmAssetMissing(assetID, in: rescan.id)
+            }
+        }
+        try await until { probe.gate.started }
+        let barrier = Task { try await store.catalogueAdmission.withMaintenance { _ in await maintenance.hold() } }
+        try await until { store.catalogueAdmission.phase == .draining }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            try await store.confirmAssetMissing(assetID, in: rescan.id)
+        }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            try await store.removeMissingAssetReference(assetID, in: rescan.id)
+        }
+        #expect(store.catalogueAdmission.activeOperationCount == 1 && !maintenance.started)
+        #expect(try await database.currentRevision() == revision + 1)
+
+        probe.gate.open()
+        try await decision.value
+        try await until { maintenance.started }
+        #expect(store.catalogueRevision == revision + 1)
+        maintenance.open()
+        try await barrier.value
+        #expect(try await store.missingAssetReviews(batchID: rescan.id).isEmpty)
+        #expect(try await store.tracks(discID: disc.id).map(\.id) == [track.id])
+        #expect(try await database.digitalAssetIDs(albumID: albumID) == (removeReference ? [] : [assetID]))
+        #expect(try await database.playbackAsset(trackID: track.id)?.availability == (removeReference ? nil : .missing))
+    }
+
+    @Test("Relink operations drain through root refresh and preserve the old path without access", arguments: [false, true])
+    func relinkDrain(apply: Bool) async throws {
+        let fixture = try await Fixture.make()
+        defer { fixture.remove() }
+        let database = fixture.database
+        let (_, assetID) = try await fixture.makeImportedAsset()
+        let replacement = fixture.directory.appending(path: "replacement.flac")
+        let proposal = try await database.proposeRelink(assetID: assetID, proposedRelativePath: replacement.lastPathComponent)
+        let probe = Probe(), maintenance = Gate()
+        defer { probe.gate.open(); maintenance.open() }
+        let store = LibraryStore(database: database, albumSearch: { db, term in try await probe.load(db, term) })
+        try await store.reload()
+        await store.search("album")
+
+        probe.holdNext = true
+        let relink = Task {
+            if apply {
+                try await store.applyRelinkProposal(proposal.id)
+            } else {
+                try await store.proposeRelink(assetID: assetID, replacementURL: replacement)
+            }
+        }
+        try await until { probe.gate.started }
+        let barrier = Task { try await store.catalogueAdmission.withMaintenance { _ in await maintenance.hold() } }
+        try await until { store.catalogueAdmission.phase == .draining }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            try await store.applyRelinkProposal(proposal.id)
+        }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            try await store.proposeRelink(assetID: assetID, replacementURL: replacement)
+        }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            try await store.discardRelinkProposal(proposal.id)
+        }
+        #expect(store.catalogueAdmission.activeOperationCount == 1 && !maintenance.started)
+
+        probe.gate.open()
+        await #expect(throws: DatabaseError.self) { try await relink.value }
+        try await until { maintenance.started }
+        #expect(store.storageRoots.first?.status == .permissionRequired)
+        #expect(store.relinkProposals.map(\.id) == [proposal.id])
+        #expect(try await database.assetFingerprintCandidates().first?.relativePath == "fixture.flac")
+        maintenance.open()
+        try await barrier.value
+
+        try await store.discardRelinkProposal(proposal.id)
+        #expect(store.relinkProposals.isEmpty)
+        #expect(try await database.assetFingerprintCandidates().first?.relativePath == "fixture.flac")
+    }
+
     private func until(_ predicate: @MainActor () -> Bool) async throws {
         let deadline = ContinuousClock.now.advanced(by: .seconds(5))
         while !predicate() {
@@ -835,6 +937,13 @@ struct LibraryStoreAdmissionTests {
             ])
             return try #require(await database.importReleaseProposals(batchID: batch.id).first)
         }
+        func makeImportedAsset() async throws -> (AlbumID, DigitalAssetID) {
+            let proposal = try await makeImportProposal()
+            let albumID = try await database.confirmImportReleaseProposal(proposal.id)
+            let assetID = try #require(await database.digitalAssetIDs(albumID: albumID).first)
+            return (albumID, assetID)
+        }
+
         func remove() { try? FileManager.default.removeItem(at: directory) }
     }
 }
