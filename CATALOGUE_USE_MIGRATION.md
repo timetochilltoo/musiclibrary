@@ -1,11 +1,11 @@
 # Catalogue-use migration inventory
 
-Snapshot: 26 November 2026, RA2 catalogue previews and exports. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
+Snapshot: 26 November 2026, RA2 queued snapshot and master-backup capture. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
 Operational state: [HANDOFF.md](HANDOFF.md). Safety design: [recovery admission audit](RECOVERY_WRITER_ADMISSION_AUDIT.md).
 
 ## Coverage and lifetime contract
 
-The 102 public declarations below currently use catalogue admission. A call to
+The 106 public declarations below currently use catalogue admission. A call to
 public reload from an otherwise unscoped mutation does not cover the earlier
 mutation or its retained database. No production caller reserves maintenance;
 existing restore/reset/scan races remain open. Recovery must not be connected to
@@ -194,6 +194,18 @@ keep admission through serialization and the atomic destination write. FLAC
 tag-write preview retains one scope across all tracks, including root refresh,
 playback path resolution and dry-run reads.
 
+### Queued capture entry points
+
+Snapshot publication captures revision and JSON under admission, then publishes
+the values under the existing transfer queue turn. Manual and background
+publication, including a pending flush, delegate to that capture. Master backup
+holds admission through its awaited detached backup and retention work.
+
+- `createMasterBackupNow`
+- `flushPendingSnapshotPublication`
+- `publishSnapshot`
+- `publishSnapshotNow`
+
 ## Worker lifecycle control
 
 Scan cancellation signals an admitted worker during drain. The completion task
@@ -201,20 +213,16 @@ owns the worker's catalogue scope until it exits and publishes.
 
 - `cancelImportScan`
 
-## Queued services, maintenance and source-writing policy
+## Remaining queued services, maintenance and source-writing policy
 
 Some already use LibraryTransferQueue, but none reserves catalogue admission.
 Preserve acquisition order: transfer queue first, admission second. Never await
 these services while holding an ordinary scope they need to drain. Explicit FLAC
 execution keeps its independent opt-in backup/journal and safe-finish policy.
 
-- `createMasterBackupNow`
 - `executeTagWrite`
 - `exportCompleteCatalogueArchive`
-- `flushPendingSnapshotPublication`
 - `performCatalogueCleanup`
-- `publishSnapshot`
-- `publishSnapshotNow`
 - `resetCatalogue`
 - `restoreCompleteCatalogueArchive`
 - `restoreMasterBackup`
@@ -267,7 +275,6 @@ invalid-context failures release or refuse cleanly. Existing search overlap test
 continue to cover generation ordering. These are partial integration checks, not
 live recovery exclusion or reader migration completeness.
 
-Next review and scope queued snapshot and master-backup capture. Acquire the
-transfer queue before admission and track which work retains catalogue resources.
-Complete archive capture, destructive recovery and explicit FLAC execution
-need separate boundary reviews.
+Next review complete archive capture with its combined catalogue and artwork
+lifetime. Destructive recovery, installation epochs and explicit FLAC
+execution still need separate boundary reviews.

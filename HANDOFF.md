@@ -4,7 +4,36 @@ Last updated: 26 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — RA2 catalogue previews and exports
+## Current resume — RA2 queued snapshot and master-backup capture
+
+Snapshot serialization and master backup now acquire ordinary catalogue
+admission after their transfer queue turn. This brings coverage to 106 of 125
+LibraryStore declarations, including the pending-publication flush that
+delegates to the queued snapshot path. Snapshot releases admission once it
+has the revision and JSON values. The master backup holds admission through
+the awaited detached worker and retention. The queue still covers the full
+operation and status updates.
+
+The temporary fixture regression gates the queue and the detached backup
+worker. It verifies that a waiting request holds no admission, a running
+backup holds admission through cancellation, and synthetic maintenance waits
+for it. A queued snapshot and a new backup refuse during maintenance without
+creating output. After maintenance, the fixture verifies the backup manifest,
+checksum and captured album, and successfully publishes a snapshot. The
+fixture uses a disposable destination and skips persistent backup preferences.
+
+The 41 focused tests, 279 Debug tests, 268 Release tests and Swift build passed.
+Whitespace, declaration inventory and audit link checks passed. Logs are at
+`/private/tmp/musiclibrary-ra2-queued-capture-{focused,debug,release,build}.log`.
+The existing AVMetadataItem deprecation remains.
+
+Next review **complete archive capture**, including coherent database and
+managed artwork capture. The existing database-only backup revision and copy
+are still separate database calls. Production restore and reset still use the
+transfer queue. The latest runnable artifact is Music Library 0.72 build 73
+with schema 17. See [the migration inventory](CATALOGUE_USE_MIGRATION.md).
+
+## Previous resume — RA2 catalogue previews and exports
 
 Cleanup preview, FLAC tag-write preview and JSON and CSV exports now use
 catalogue admission, bringing coverage to 102 of 125 LibraryStore declarations.

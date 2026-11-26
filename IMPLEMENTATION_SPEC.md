@@ -14,6 +14,7 @@ Current baseline: inspect `main` with `git log --oneline -5`; [HANDOFF.md](HANDO
 
 Completed and verified:
 
+- RA2 queued snapshot and master-backup capture acquire the transfer queue before ordinary catalogue admission. Snapshot capture releases admission after producing the revision and JSON values. Master backup holds admission through the awaited detached worker. The queue remains held through publication, retention and status updates.
 - RA2 cleanup preview, FLAC tag-write preview, and JSON and CSV exports use catalogue admission. Tag preview reuses its context for per-track playback resolution and root refresh. Exports hold admission through the atomic destination write. Explicit FLAC execution has its separate backup and journal policy.
 - RA2 missing-asset confirmation and reference removal and relink proposal creation, application and dismissal use catalogue admission. Relink work holds one scope through root refresh, scoped replacement checks, database writes, availability refresh where applicable, and publication.
 - RA2 album creation and explicit artwork import and migration hold catalogue admission through managed file work, catalogue writes, rollback cleanup and refresh. Physical album entry and import review share the managed provider cover downloader while retaining their existing request headers and database workflows.

@@ -1460,14 +1460,15 @@ public final class LibraryStore: ObservableObject {
 
     private func publishSnapshotUncoordinated(to directory: URL) async throws -> SnapshotManifest {
         try validateRecoveryFixtureURL(directory)
-        guard let database else { throw DatabaseError.notFound("Catalogue database") }
-        let value = try await database.publicationRevisionAndJSON()
+        let (revision, json) = try await withCatalogueUse { database, _ in
+            try await database.publicationRevisionAndJSON()
+        }
         let fixtureAccess = hasRecoveryFixtureAccess(to: directory)
         return try await Task.detached(priority: .utility) {
             let accessed = directory.startAccessingSecurityScopedResource()
             defer { if accessed { directory.stopAccessingSecurityScopedResource() } }
             guard accessed || fixtureAccess else { throw DatabaseError.invalidOperation("Permission to access the snapshot destination was not available.") }
-            return try SnapshotPublisher.publish(json: value.1, revision: value.0, to: directory)
+            return try SnapshotPublisher.publish(json: json, revision: revision, to: directory)
         }.value
     }
     public func setSnapshotDestination(_ url: URL) throws {
@@ -1500,23 +1501,39 @@ public final class LibraryStore: ObservableObject {
     }
 
     public func createMasterBackupNow() async throws {
-        try await transferQueue.run(.databaseBackup) { try await self.createMasterBackupUncoordinated() }
+        try await createMasterBackupNow { database, archive in
+            try await MasterBackupArchive.create(database: database, in: archive)
+        }
     }
 
-    private func createMasterBackupUncoordinated() async throws {
-        guard let destination = resolvedSnapshotDestination(), let database else { throw DatabaseError.invalidOperation("Choose a snapshot destination first.") }
-        let manifest = try await Task.detached(priority: .utility) {
-            let accessed = destination.startAccessingSecurityScopedResource()
-            defer { if accessed { destination.stopAccessingSecurityScopedResource() } }
-            guard accessed else { throw DatabaseError.invalidOperation("Permission to access the master-backup destination was not available.") }
+    func createMasterBackupNow(
+        capture: @escaping @Sendable (MusicDatabase, URL) async throws -> MasterBackupManifest
+    ) async throws {
+        try await transferQueue.run(.databaseBackup) {
+            guard let destination = self.recoveryFixtureDirectory ?? self.resolvedSnapshotDestination() else {
+                throw DatabaseError.invalidOperation("Choose a snapshot destination first.")
+            }
             let archive = destination.appending(path: "MasterBackups", directoryHint: .isDirectory)
-            let manifest = try await MasterBackupArchive.create(database: database, in: archive)
-            try MasterBackupArchive.retain(in: archive)
-            return manifest
-        }.value
-        UserDefaults.standard.set(manifest.revision, forKey: lastMasterBackupRevisionKey)
-        UserDefaults.standard.set(manifest.createdAt, forKey: lastMasterBackupAtKey)
-        masterBackupStatus = "Backed up revision \(manifest.revision) at \(manifest.createdAt.formatted(date: .abbreviated, time: .shortened))"
+            try self.validateRecoveryFixtureURL(archive)
+            let fixtureAccess = self.hasRecoveryFixtureAccess(to: archive)
+            let manifest = try await self.withCatalogueUse { database, _ in
+                try await Task.detached(priority: .utility) {
+                    let accessed = destination.startAccessingSecurityScopedResource()
+                    defer { if accessed { destination.stopAccessingSecurityScopedResource() } }
+                    guard accessed || fixtureAccess else {
+                        throw DatabaseError.invalidOperation("Permission to access the master-backup destination was not available.")
+                    }
+                    let manifest = try await capture(database, archive)
+                    try MasterBackupArchive.retain(in: archive)
+                    return manifest
+                }.value
+            }
+            if self.permitsBackgroundServices {
+                UserDefaults.standard.set(manifest.revision, forKey: self.lastMasterBackupRevisionKey)
+                UserDefaults.standard.set(manifest.createdAt, forKey: self.lastMasterBackupAtKey)
+            }
+            self.masterBackupStatus = "Backed up revision \(manifest.revision) at \(manifest.createdAt.formatted(date: .abbreviated, time: .shortened))"
+        }
     }
 
     public func restoreMasterBackup(from manifestURL: URL) async throws {

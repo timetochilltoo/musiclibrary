@@ -938,6 +938,66 @@ struct LibraryStoreAdmissionTests {
         #expect(try await database.currentRevision() == revision)
     }
 
+    @Test("Queued backup admits after its turn and drains through the detached worker")
+    func queuedCaptureDrain() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "QueuedCapture-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try await LibraryStore(recoveryFixtureDirectory: root)
+        let album = try await store.addAlbum(.init(title: "Captured album"))
+        let revision = store.catalogueRevision
+        let earlierTurn = Gate(), capture = Gate(), maintenance = Gate()
+        defer { earlierTurn.open(); capture.open(); maintenance.open() }
+
+        let earlier = Task { try await store.transferQueue.run(.sharing) { await earlierTurn.hold() } }
+        try await until { earlierTurn.started }
+        let backup = Task {
+            try await store.createMasterBackupNow { database, archive in
+                await capture.hold()
+                return try await MasterBackupArchive.create(database: database, in: archive)
+            }
+        }
+        try await until { store.transferActivity.waiting == [.databaseBackup] }
+        #expect(store.catalogueAdmission.activeOperationCount == 0 && !capture.started)
+
+        earlierTurn.open()
+        try await earlier.value
+        try await until { capture.started }
+        #expect(store.transferActivity.active == .databaseBackup)
+        let destination = root.appending(path: "Shared")
+        let snapshot = Task { try await store.publishSnapshot(to: destination) }
+        try await until { store.transferActivity.waiting == [.sharing] }
+        #expect(store.catalogueAdmission.activeOperationCount == 1)
+
+        let barrier = Task { try await store.catalogueAdmission.withMaintenance { _ in await maintenance.hold() } }
+        try await until { store.catalogueAdmission.phase == .draining }
+        backup.cancel()
+        #expect(store.catalogueAdmission.activeOperationCount == 1 && !maintenance.started)
+        capture.open()
+        try await backup.value
+        try await until { maintenance.started }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) { _ = try await snapshot.value }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) { try await store.createMasterBackupNow() }
+        #expect(!FileManager.default.fileExists(atPath: destination.path))
+        #expect(!store.transferActivity.isBusy)
+        maintenance.open()
+        try await barrier.value
+
+        let archive = root.appending(path: "MasterBackups")
+        let files = try FileManager.default.contentsOfDirectory(at: archive, includingPropertiesForKeys: nil)
+        let manifests = files.filter { $0.lastPathComponent.hasSuffix(".manifest.json") }
+        #expect(manifests.count == 1)
+        let manifestURL = try #require(manifests.first)
+        let manifest = try JSONDecoder().decode(MasterBackupManifest.self, from: Data(contentsOf: manifestURL))
+        #expect(manifest.revision == revision)
+        try await MasterBackupArchive.verify(manifest, in: archive)
+        let backupURL = try MasterBackupArchive.validatedBackupURL(for: manifest, in: archive)
+        let inspectionURL = root.appending(path: "Backup inspection.sqlite")
+        try FileManager.default.copyItem(at: backupURL, to: inspectionURL)
+        let copiedCatalogue = try MusicDatabase(url: inspectionURL)
+        #expect(try await copiedCatalogue.album(id: album.id)?.title == album.title)
+        #expect(try await store.publishSnapshot(to: destination).revision == revision)
+    }
+
     private func until(_ predicate: @MainActor () -> Bool) async throws {
         let deadline = ContinuousClock.now.advanced(by: .seconds(5))
         while !predicate() {

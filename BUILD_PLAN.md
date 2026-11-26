@@ -312,8 +312,10 @@ refresh reuse the relink context.
 
 RA2 previews and exports checkpoint. Cleanup preview, FLAC tag-write preview
 and JSON and CSV exports bring coverage to 102 scoped LibraryStore declarations.
-Next review queued snapshot and master-backup capture before integrating
-exclusive recovery.
+
+RA2 queued capture checkpoint. Snapshot serialization and the detached master
+backup use catalogue admission after their transfer queue turn. Coverage is
+106 scoped LibraryStore declarations. Complete archive capture comes next.
 
 Store more than an absolute path:
 
