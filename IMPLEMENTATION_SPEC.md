@@ -14,6 +14,7 @@ Current baseline: inspect `main` with `git log --oneline -5`; [HANDOFF.md](HANDO
 
 Completed and verified:
 
+- RA2 import metadata selection save and application use catalogue admission. Applying a provider cover holds admission through download, managed copy, selection and proposal writes, and any album cover registration and reload.
 - RA2 import proposal decisions and composite preview use catalogue admission. The shared folder artwork lookup uses the caller's admitted database. Confirmation and attachment retain admission through reload. Temporary SQLite coverage checks blocking and drain during confirmation publication.
 
 - RA2 import metadata analysis uses one catalogue admission scope through root refresh, extraction, candidate writes and proposal rebuild. Direct review readers acquire admission before database capture. Temporary SQLite coverage checks drain and refusal around an unavailable source root.

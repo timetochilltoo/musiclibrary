@@ -581,22 +581,7 @@ struct LibraryStoreAdmissionTests {
         let probe = Probe(), maintenance = Gate()
         defer { probe.gate.open(); maintenance.open() }
         let database = fixture.database
-        let root = try await database.createStorageRoot(.init(
-            displayName: "Fixture root", lastKnownPath: fixture.directory.path, bookmarkData: nil, status: .available
-        ))
-        let batch = try await database.createImportBatch(storageRootID: root.id, sourceDescription: fixture.directory.path)
-        try await database.recordImportCandidate(batchID: batch.id, payload: .init(
-            relativePath: "fixture.flac", fileName: "fixture.flac", contentTypeIdentifier: "org.xiph.flac", fileSize: 1, modifiedAt: nil
-        ))
-        let candidate = try #require(await database.importCandidates(batchID: batch.id).first)
-        try await database.saveEmbeddedMetadata(.init(
-            title: "Fixture track", albumTitle: "Imported album", artist: nil, albumArtist: nil,
-            discNumber: 1, trackNumber: 1, durationMilliseconds: 1000, rawTags: [:]
-        ), for: candidate.id)
-        try await database.rebuildImportReleaseProposals(batchID: batch.id, drafts: [
-            .init(title: "Imported album", artist: nil, discCount: 1, confidence: 1, candidateIDs: [candidate.id])
-        ])
-        let proposal = try #require(await database.importReleaseProposals(batchID: batch.id).first)
+        let proposal = try await fixture.makeImportProposal()
         let store = LibraryStore(database: database, albumSearch: { db, term in try await probe.load(db, term) })
         try await store.reload()
         await store.search("album")
@@ -629,6 +614,84 @@ struct LibraryStoreAdmissionTests {
         try await barrier.value
         #expect(try await store.confirmImportReleaseProposal(proposal.id) == albumID)
         #expect(try await database.currentRevision() == committedRevision)
+    }
+
+    @Test("Import metadata application drains through managed cover download and publication", arguments: [200, 404])
+    func externalMetadataDrain(status: Int) async throws {
+        let fixture = try await Fixture.make()
+        defer { fixture.remove() }
+        let database = fixture.database
+        let proposal = try await fixture.makeImportProposal()
+        let albumID = try await database.confirmImportReleaseProposal(proposal.id)
+        let download = Gate(), maintenance = Gate(), probe = Probe()
+        defer { download.open(); maintenance.open(); probe.gate.open() }
+        let artwork = ManagedArtworkStore(directory: fixture.directory.appending(path: "Artwork"))
+        let cover = Data([0x01, 0x02, 0x03])
+        let release = ExternalReleasePreview(
+            id: UUID().uuidString.lowercased(), title: "Provider title", artist: "Provider artist",
+            releaseDate: nil, countryCode: nil, catalogueNumber: nil, mediaCount: 1
+        )
+        let store = LibraryStore(
+            database: database, albumSearch: { db, term in try await probe.load(db, term) },
+            managedArtworkStore: artwork,
+            importCoverDownload: { request in
+                guard await !download.started else { throw Harness.expected }
+                let url = try #require(request.url)
+                #expect(url == release.coverArtworkURL)
+                await download.hold()
+                let response = try #require(HTTPURLResponse(url: url, statusCode: status, httpVersion: nil, headerFields: nil))
+                return (cover, response)
+            }
+        )
+        try await store.reload()
+        await store.search("album")
+        try await store.saveMusicBrainzSelection(release, for: proposal.id)
+        let selection = try #require(await store.externalMetadataSelection(for: proposal.id))
+        let fields = ExternalMetadataFieldSelection(title: true, artist: false, discCount: false, frontArtwork: true)
+        let revision = try await database.currentRevision()
+        probe.holdNext = true
+        let application = Task { try await store.applyExternalMetadataSelection(selection, fields: fields) }
+        try await until { download.started }
+        let barrier = Task { try await store.catalogueAdmission.withMaintenance { _ in await maintenance.hold() } }
+        try await until { store.catalogueAdmission.phase == .draining }
+
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            try await store.saveMusicBrainzSelection(release, for: proposal.id)
+        }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            try await store.applyExternalMetadataSelection(selection, fields: fields)
+        }
+        #expect(store.catalogueAdmission.activeOperationCount == 1 && !maintenance.started)
+        #expect(try await database.currentRevision() == revision)
+        #expect(!FileManager.default.fileExists(atPath: artwork.directory.path))
+        #expect(store.albumFrontArtworkPaths[albumID] == nil)
+
+        download.open()
+        if status == 200 {
+            try await until { probe.gate.started }
+            #expect(store.catalogueAdmission.activeOperationCount == 1 && !maintenance.started)
+
+            probe.gate.open()
+            try await application.value
+            let path = try #require(store.albumFrontArtworkPaths[albumID])
+            let coverURL = URL(fileURLWithPath: path)
+            #expect(artwork.contains(coverURL))
+            #expect(try Data(contentsOf: coverURL) == cover)
+            #expect(try await database.externalMetadataSelection(importProposalID: proposal.id)?.artworkLocalPath == path)
+            let applied = try #require(await database.importReleaseProposals(batchID: proposal.batchID).first)
+            #expect(applied.title == release.title && applied.artist == proposal.artist)
+        } else {
+            await #expect(throws: DatabaseError.self) { try await application.value }
+            #expect(try await database.currentRevision() == revision)
+            #expect(try await database.externalMetadataSelection(importProposalID: proposal.id) == selection)
+            #expect(try await database.importReleaseProposals(batchID: proposal.batchID).first?.title == proposal.title)
+            #expect(!probe.gate.started && !FileManager.default.fileExists(atPath: artwork.directory.path))
+        }
+
+        try await until { maintenance.started }
+        #expect(store.catalogueAdmission.activeOperationCount == 0)
+        maintenance.open()
+        try await barrier.value
     }
 
     private func until(_ predicate: @MainActor () -> Bool) async throws {
@@ -676,6 +739,24 @@ struct LibraryStoreAdmissionTests {
             let disc = try await database.createDisc(albumID: album.id)
             let track = try await database.createTrack(discID: disc.id, draft: .init(title: "Synthetic track"))
             return .init(directory: directory, database: database, album: album, disc: disc, track: track)
+        }
+        func makeImportProposal() async throws -> ImportReleaseProposal {
+            let root = try await database.createStorageRoot(.init(
+                displayName: "Fixture root", lastKnownPath: directory.path, bookmarkData: nil, status: .available
+            ))
+            let batch = try await database.createImportBatch(storageRootID: root.id, sourceDescription: directory.path)
+            try await database.recordImportCandidate(batchID: batch.id, payload: .init(
+                relativePath: "fixture.flac", fileName: "fixture.flac", contentTypeIdentifier: "org.xiph.flac", fileSize: 1, modifiedAt: nil
+            ))
+            let candidate = try #require(await database.importCandidates(batchID: batch.id).first)
+            try await database.saveEmbeddedMetadata(.init(
+                title: "Fixture track", albumTitle: "Imported album", artist: nil, albumArtist: nil,
+                discNumber: 1, trackNumber: 1, durationMilliseconds: 1000, rawTags: [:]
+            ), for: candidate.id)
+            try await database.rebuildImportReleaseProposals(batchID: batch.id, drafts: [
+                .init(title: "Imported album", artist: nil, discCount: 1, confidence: 1, candidateIDs: [candidate.id])
+            ])
+            return try #require(await database.importReleaseProposals(batchID: batch.id).first)
         }
         func remove() { try? FileManager.default.removeItem(at: directory) }
     }

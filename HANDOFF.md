@@ -4,7 +4,33 @@ Last updated: 26 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — RA2 import proposal decisions and preview
+## Current resume — RA2 external metadata selection
+
+Saving an import's MusicBrainz selection and explicitly applying its fields
+now use catalogue admission, bringing coverage to 90 of 125 LibraryStore
+declarations. Applying a front cover holds one scope through provider download,
+temporary file cleanup, managed artwork copy, selection and proposal writes,
+and any album cover registration and catalogue refresh. Provider search and
+detail lookups continue to be independent of the catalogue.
+
+The temporary SQLite regression suspends a stubbed cover request while
+maintenance drains. It verifies rejection of new saves and applications,
+continued admission during the final search refresh, and publication of the
+managed cover on the created album. A stubbed 404 checks drain and unchanged
+catalogue state on failure. No live provider was used.
+
+The 35 focused tests, 274 Debug tests, 263 Release tests and Swift build passed.
+Whitespace, declaration inventory and audit link checks passed. Logs are at
+`/private/tmp/musiclibrary-ra2-external-{focused,debug,release,build}.log`.
+The existing AVMetadataItem deprecation remains.
+
+Next migrate **album creation and explicit artwork import and migration**,
+including the physical-album provider cover download and its managed copy.
+Production restore and reset still use the transfer queue. The latest runnable
+artifact is Music Library 0.72 build 73 with schema 17.
+See [the migration inventory](CATALOGUE_USE_MIGRATION.md).
+
+## Previous resume — RA2 import proposal decisions and preview
 
 Proposal status changes, confirmation, attachment and composite preview
 now use catalogue admission, bringing coverage to 88 of 125 LibraryStore

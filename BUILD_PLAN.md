@@ -295,7 +295,12 @@ composite preview come next.
 
 RA2 proposal checkpoint. Proposal decisions and composite preview bring
 coverage to 88 scoped LibraryStore declarations. External metadata selection
-writes and their managed artwork work come next.
+writes and their managed artwork work follow that checkpoint.
+
+RA2 external metadata checkpoint. Import selection save and application bring
+coverage to 90 scoped LibraryStore declarations. Application holds admission
+through the optional provider artwork download, copy, registration and reload.
+Album creation and explicit artwork import and migration come next.
 
 Store more than an absolute path:
 

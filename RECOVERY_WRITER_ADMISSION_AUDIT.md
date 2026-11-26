@@ -32,23 +32,23 @@ Before integrating a gate, enumerate every public use case and private worker.
 | Operation | Present protection | Gap relevant to recovery |
 |---|---|---|
 | Sharing, database backup, archive export/restore, reset, cleanup | [Transfer queue](Sources/MusicApplication/LibraryTransferQueue.swift#L15); service entry points call `run` | Orders these services only; not an application-wide resource lease. |
-| Album create/update and other catalogue edits | [addAlbum/updateAlbum](Sources/MusicApplication/LibraryStore.swift#L427), actor SQL/transactions | RA2 scopes updateAlbum, but production recovery never reserves admission. addAlbum still captures directly and can await cover download before commit. |
+| Album create/update and other catalogue edits | [addAlbum/updateAlbum](Sources/MusicApplication/LibraryStore.swift#L434), actor SQL/transactions | RA2 scopes updateAlbum, but production recovery never reserves admission. addAlbum still captures directly and can await cover download before commit. |
 | Disc/track/credit/alias, box/location, playlist and lyrics edits | LibraryStore catalogue mutation methods; see the migration inventory | Same direct database access pattern. UI-local disabling is not service admission. |
-| Managed artwork import/migration/selection | [addAlbumArtwork](Sources/MusicApplication/LibraryStore.swift#L630), [downloadManagedMusicBrainzArtwork](Sources/MusicApplication/LibraryStore.swift#L973) | Catalogue records and artwork files can change outside the transfer queue. Provider work retains the managed store across an await. |
-| Root renewal/scope/deletion and access refresh | [renewStorageRootAccess](Sources/MusicApplication/LibraryStore.swift#L704) and refreshStorageRootAccess | Root writes now use admission. Production recovery does not yet reserve admission. |
-| Metadata analysis, proposal confirmation/attachment and corrections | [analyzeImportBatch](Sources/MusicApplication/LibraryStore.swift#L858) and confirmImportReleaseProposal | Metadata analysis now holds admission through extraction and proposal writes. Proposal confirmation and attachment also hold admission through reload. |
-| Scan startup and detached scan persistence | [startImportScan](Sources/MusicApplication/LibraryStore.swift#L1648) | Scan admission now covers candidate and error writes, completion, reconciliation and final publication after the detached task exits. |
-| Scan cancellation | [cancelImportScan](Sources/MusicApplication/LibraryStore.swift#L1737) | Signals the worker during drain. The completion task releases admission after worker exit and publication. Production recovery has yet to reserve admission. |
-| Fingerprinting and availability health | [verifyFingerprints](Sources/MusicApplication/LibraryStore.swift#L1580) | Fingerprint verification and availability checks now hold admission through their result writes and reloads. Hash recording need not increment revision. |
-| Catalogue reads, reload, search, playback resolution, FR1 manifest reads | [reload](Sources/MusicApplication/LibraryStore.swift#L308), search and folderRecoveryManifest | RA2 scopes reload/search, but remaining readers retain actors directly and production recovery does not reserve admission. Request generations are not an installation epoch. |
-| Explicit FLAC tag execution | [executeTagWrite](Sources/MusicApplication/LibraryStore.swift#L1201) | Separate opt-in source writer; not a database lease or queued service. Its already-started work must never be automatically undone to facilitate recovery. |
+| Managed artwork import/migration/selection | [addAlbumArtwork](Sources/MusicApplication/LibraryStore.swift#L637), [downloadManagedMusicBrainzArtwork](Sources/MusicApplication/LibraryStore.swift#L980) | Applying an import provider cover now holds admission through download, managed copy, catalogue writes and reload. Physical album creation and explicit artwork import and migration still need scopes. |
+| Root renewal/scope/deletion and access refresh | [renewStorageRootAccess](Sources/MusicApplication/LibraryStore.swift#L711) and refreshStorageRootAccess | Root writes now use admission. Production recovery does not yet reserve admission. |
+| Metadata analysis, proposal confirmation/attachment and corrections | [analyzeImportBatch](Sources/MusicApplication/LibraryStore.swift#L865) and confirmImportReleaseProposal | Metadata analysis now holds admission through extraction and proposal writes. Proposal confirmation and attachment also hold admission through reload. |
+| Scan startup and detached scan persistence | [startImportScan](Sources/MusicApplication/LibraryStore.swift#L1647) | Scan admission now covers candidate and error writes, completion, reconciliation and final publication after the detached task exits. |
+| Scan cancellation | [cancelImportScan](Sources/MusicApplication/LibraryStore.swift#L1746) | Signals the worker during drain. The completion task releases admission after worker exit and publication. Production recovery has yet to reserve admission. |
+| Fingerprinting and availability health | [verifyFingerprints](Sources/MusicApplication/LibraryStore.swift#L1589) | Fingerprint verification and availability checks now hold admission through their result writes and reloads. Hash recording need not increment revision. |
+| Catalogue reads, reload, search, playback resolution, FR1 manifest reads | [reload](Sources/MusicApplication/LibraryStore.swift#L315), search and folderRecoveryManifest | RA2 scopes reload/search, but remaining readers retain actors directly and production recovery does not reserve admission. Request generations are not an installation epoch. |
+| Explicit FLAC tag execution | [executeTagWrite](Sources/MusicApplication/LibraryStore.swift#L1210) | Separate opt-in source writer; not a database lease or queued service. Its already-started work must never be automatically undone to facilitate recovery. |
 | Settings controls | [activity/disabled controls](Sources/MusicLibraryMac/MusicLibraryMacApp.swift#L1699) | Local submission and recovery-review flags cover selected controls, not all other workspaces, in-flight tasks or API callers. |
 
 ### A. Recovery boundary versus ordinary writes — high priority
 
 Complete restore stages the chosen archive, creates a local recovery archive,
 checkpoints, sets `self.database = nil`, then moves/copies database and artwork
-files. See [restore](Sources/MusicApplication/LibraryStore.swift#L1297).
+files. See [restore](Sources/MusicApplication/LibraryStore.swift#L1306).
 Ordinary operations can capture the old database before these steps and suspend.
 Setting the store property to nil refuses *new captures* during that interval;
 it does not revoke existing references or drain workers.
@@ -61,7 +61,7 @@ reproduced by this audit. Staging before the recovery snapshot is not itself a
 problem if the eventual exclusive boundary covers snapshot-through-install.
 
 Reset similarly awaits its complete recovery archive before deleting rows and
-moving/removing artwork. See [reset](Sources/MusicApplication/LibraryStore.swift#L1408).
+moving/removing artwork. See [reset](Sources/MusicApplication/LibraryStore.swift#L1417).
 A write admitted after that recovery snapshot can be removed by the reset
 without being represented in the snapshot. Cleanup also has a snapshot-to-delete
 window. Preserve exact RESET confirmation and root-preservation behavior.
@@ -198,8 +198,10 @@ startup. Do not add passing tests that require unsafe admission to remain allowe
   locations, playlists, album lifecycle, lyrics, embedded metadata, playback,
   storage root operations, folder recovery manifest reads and library health.
   Fingerprint verification now holds admission through the hash worker and result
-  writes. Import scans transfer admission to their completion task. Import analysis and direct review readers are scoped. Proposal decisions and composite preview are scoped. Next migrate
-  external metadata selection writes and associated artwork. Production maintenance
+  writes. Import scans transfer admission to their completion task. Import analysis,
+  direct review readers, proposal decisions, composite preview and external metadata
+  selection writes are scoped. Next migrate album creation and explicit artwork
+  import and migration. Production maintenance
   reservation depends on accounting for all affected holders and nested helper
   paths. Calling maintenance while holding an ordinary lease can deadlock.
 - **RA3:** integrate queued recovery/capture boundaries and epoch invalidation;

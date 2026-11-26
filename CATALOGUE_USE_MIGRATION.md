@@ -1,11 +1,11 @@
 # Catalogue-use migration inventory
 
-Snapshot: 26 November 2026, RA2 import proposal decisions. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
+Snapshot: 26 November 2026, RA2 external metadata selection. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
 Operational state: [HANDOFF.md](HANDOFF.md). Safety design: [recovery admission audit](RECOVERY_WRITER_ADMISSION_AUDIT.md).
 
 ## Coverage and lifetime contract
 
-The 88 public declarations below currently use catalogue admission. A call to
+The 90 public declarations below currently use catalogue admission. A call to
 public reload from an otherwise unscoped mutation does not cover the earlier
 mutation or its retained database. No production caller reserves maintenance;
 existing restore/reset/scan races remain open. Recovery must not be connected to
@@ -46,6 +46,7 @@ is a Debug temporary-data factory; its seeding is separate from production uses.
 - `albumArtwork`
 - `albumContributors`
 - `albums`
+- `applyExternalMetadataSelection`
 - `availableTrackIDs`
 - `boxMembers`
 - `boxPlacement`
@@ -88,6 +89,7 @@ is a Debug temporary-data factory; its seeding is separate from production uses.
 - `restoreBoxSet`
 - `restorePlaylist`
 - `saveLyrics`
+- `saveMusicBrainzSelection`
 - `search`
 - `softDeleteAlbum`
 - `softDeleteEmptyBoxSet`
@@ -159,6 +161,11 @@ catalogue admission. Confirmation and attachment reuse the scope through
 reload. Preview and confirmation pass their admitted database to the folder
 artwork lookup.
 
+Import metadata selection save and application use catalogue admission.
+Application holds admission through optional provider cover download, temporary
+and managed file work, selection and proposal writes, any album cover
+registration and its reload.
+
 ## Remaining catalogue mutations and worker lifecycle entry points
 
 These remain unscoped for their full operation, even when their final reload now
@@ -166,7 +173,6 @@ uses admission. Some entries are worker lifecycle controls rather than SQL write
 
 - `addAlbum`
 - `addAlbumArtwork`
-- `applyExternalMetadataSelection`
 - `applyRelinkProposal`
 - `cancelImportScan`
 - `confirmAssetMissing`
@@ -174,7 +180,6 @@ uses admission. Some entries are worker lifecycle controls rather than SQL write
 - `migrateArtworkToManagedStorage`
 - `proposeRelink`
 - `removeMissingAssetReference`
-- `saveMusicBrainzSelection`
 
 ## Remaining readers, previews and exports
 
@@ -252,6 +257,6 @@ invalid-context failures release or refuse cleanly. Existing search overlap test
 continue to cover generation ordering. These are partial integration checks, not
 live recovery exclusion or reader migration completeness.
 
-Next migrate external metadata selection saves and application. Review the
-lifetime of the optional provider cover download and managed artwork write,
-including cleanup on database failure. Queued recovery has a separate lifetime.
+Next migrate album creation and explicit artwork import and migration. Include
+the physical-album cover download, managed copy, database writes and reload.
+Queued recovery has a separate lifetime.
