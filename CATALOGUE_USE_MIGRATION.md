@@ -1,11 +1,11 @@
 # Catalogue-use migration inventory
 
-Snapshot: 26 November 2026, RA2 external metadata selection. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
+Snapshot: 26 November 2026, RA2 album creation and artwork. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
 Operational state: [HANDOFF.md](HANDOFF.md). Safety design: [recovery admission audit](RECOVERY_WRITER_ADMISSION_AUDIT.md).
 
 ## Coverage and lifetime contract
 
-The 90 public declarations below currently use catalogue admission. A call to
+The 93 public declarations below currently use catalogue admission. A call to
 public reload from an otherwise unscoped mutation does not cover the earlier
 mutation or its retained database. No production caller reserves maintenance;
 existing restore/reset/scan races remain open. Recovery must not be connected to
@@ -31,7 +31,9 @@ is a Debug temporary-data factory; its seeding is separate from production uses.
 
 ## Migrated public methods
 
+- `addAlbum`
 - `addAlbumAlias`
+- `addAlbumArtwork`
 - `addAlbumContributor`
 - `addBoxSet`
 - `addDisc`
@@ -63,6 +65,7 @@ is a Debug temporary-data factory; its seeding is separate from production uses.
 - `embeddedMetadata`
 - `folderRecoveryManifest`
 - `lyrics`
+- `migrateArtworkToManagedStorage`
 - `moveAlbum`
 - `moveLocation`
 - `movePlaylistItem` (3 overloads)
@@ -166,18 +169,20 @@ Application holds admission through optional provider cover download, temporary
 and managed file work, selection and proposal writes, any album cover
 registration and its reload.
 
+Album creation holds admission through the optional provider cover download
+and managed copy, the creation transaction, rollback file cleanup, and
+refresh. Artwork import and migration hold admission through security-scoped
+access, managed copy, catalogue update, cleanup and refresh.
+
 ## Remaining catalogue mutations and worker lifecycle entry points
 
 These remain unscoped for their full operation, even when their final reload now
 uses admission. Some entries are worker lifecycle controls rather than SQL writers.
 
-- `addAlbum`
-- `addAlbumArtwork`
 - `applyRelinkProposal`
 - `cancelImportScan`
 - `confirmAssetMissing`
 - `discardRelinkProposal`
-- `migrateArtworkToManagedStorage`
 - `proposeRelink`
 - `removeMissingAssetReference`
 
@@ -257,6 +262,6 @@ invalid-context failures release or refuse cleanly. Existing search overlap test
 continue to cover generation ordering. These are partial integration checks, not
 live recovery exclusion or reader migration completeness.
 
-Next migrate album creation and explicit artwork import and migration. Include
-the physical-album cover download, managed copy, database writes and reload.
-Queued recovery has a separate lifetime.
+Next migrate missing-asset decisions and relink proposal creation, application
+and dismissal. Keep one scope through root access refresh, verification and
+final catalogue publication. Queued recovery has a separate lifetime.

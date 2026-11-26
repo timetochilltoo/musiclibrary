@@ -14,6 +14,7 @@ Current baseline: inspect `main` with `git log --oneline -5`; [HANDOFF.md](HANDO
 
 Completed and verified:
 
+- RA2 album creation and explicit artwork import and migration hold catalogue admission through managed file work, catalogue writes, rollback cleanup and refresh. Physical album entry and import review share the managed provider cover downloader while retaining their existing request headers and database workflows.
 - RA2 import metadata selection save and application use catalogue admission. Applying a provider cover holds admission through download, managed copy, selection and proposal writes, and any album cover registration and reload.
 - RA2 import proposal decisions and composite preview use catalogue admission. The shared folder artwork lookup uses the caller's admitted database. Confirmation and attachment retain admission through reload. Temporary SQLite coverage checks blocking and drain during confirmation publication.
 

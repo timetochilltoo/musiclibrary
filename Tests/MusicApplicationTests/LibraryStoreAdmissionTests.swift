@@ -634,7 +634,7 @@ struct LibraryStoreAdmissionTests {
         let store = LibraryStore(
             database: database, albumSearch: { db, term in try await probe.load(db, term) },
             managedArtworkStore: artwork,
-            importCoverDownload: { request in
+            coverDownload: { request in
                 guard await !download.started else { throw Harness.expected }
                 let url = try #require(request.url)
                 #expect(url == release.coverArtworkURL)
@@ -690,6 +690,83 @@ struct LibraryStoreAdmissionTests {
 
         try await until { maintenance.started }
         #expect(store.catalogueAdmission.activeOperationCount == 0)
+        maintenance.open()
+        try await barrier.value
+    }
+
+    @Test("Album creation holds admission through cover download, commit and cleanup", arguments: [false, true])
+    func albumCreationDrain(invalidBox: Bool) async throws {
+        let fixture = try await Fixture.make()
+        defer { fixture.remove() }
+        let database = fixture.database
+        let download = Gate(), maintenance = Gate(), probe = Probe()
+        defer { download.open(); maintenance.open(); probe.gate.open() }
+        let artwork = ManagedArtworkStore(directory: fixture.directory.appending(path: "Artwork"))
+        let cover = Data([0x01, 0x02, 0x03])
+        let legacyURL = fixture.directory.appending(path: "legacy.jpg")
+        try cover.write(to: legacyURL)
+        let legacy = try await database.addAlbumArtwork(albumID: fixture.album.id, localPath: legacyURL.path)
+        let releaseID = UUID().uuidString.lowercased()
+        let coverURL = try #require(URL(string: "https://coverartarchive.org/release/\(releaseID)/front"))
+        let store = LibraryStore(
+            database: database, albumSearch: { db, term in try await probe.load(db, term) },
+            managedArtworkStore: artwork,
+            coverDownload: { request in
+                #expect(request.url == coverURL)
+                #expect(request.value(forHTTPHeaderField: "Accept") == "image/*")
+                await download.hold()
+                let response = try #require(HTTPURLResponse(url: coverURL, statusCode: 200, httpVersion: nil, headerFields: nil))
+                return (cover, response)
+            }
+        )
+        try await store.reload()
+        await store.search("album")
+        let revision = try await database.currentRevision()
+        probe.holdNext = true
+        let creation = Task {
+            try await store.addAlbum(
+                .init(title: "Physical album", hasCD: true, isPhysicalLocationUnknown: true),
+                toBoxSet: invalidBox ? BoxSetID() : nil, musicBrainzArtworkURL: coverURL, musicBrainzReleaseID: releaseID
+            )
+        }
+        try await until { download.started }
+        let barrier = Task { try await store.catalogueAdmission.withMaintenance { _ in await maintenance.hold() } }
+        try await until { store.catalogueAdmission.phase == .draining }
+
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            _ = try await store.addAlbum(.init(title: "Must refuse"))
+        }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            try await store.addAlbumArtwork(albumID: fixture.album.id, from: legacyURL, role: .front)
+        }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            try await store.migrateArtworkToManagedStorage(legacy)
+        }
+        #expect(store.catalogueAdmission.activeOperationCount == 1 && !maintenance.started)
+        #expect(try await database.currentRevision() == revision)
+
+        download.open()
+        if invalidBox {
+            await #expect(throws: DatabaseError.self) { _ = try await creation.value }
+            #expect(try await database.currentRevision() == revision)
+            #expect(try FileManager.default.contentsOfDirectory(atPath: artwork.directory.path).isEmpty)
+            #expect(!probe.gate.started)
+        } else {
+            try await until { probe.gate.started }
+            #expect(store.catalogueAdmission.activeOperationCount == 1 && !maintenance.started)
+            probe.gate.open()
+            let album = try await creation.value
+            #expect(store.albums.contains { $0.id == album.id })
+            #expect(store.albumMusicBrainzReleaseIDs[album.id] == releaseID)
+            let path = try #require(store.albumFrontArtworkPaths[album.id])
+            let managedURL = URL(fileURLWithPath: path)
+            #expect(artwork.contains(managedURL))
+            #expect(try Data(contentsOf: managedURL) == cover)
+        }
+
+        try await until { maintenance.started }
+        #expect(store.catalogueAdmission.activeOperationCount == 0)
+        #expect(try Data(contentsOf: legacyURL) == cover)
         maintenance.open()
         try await barrier.value
     }

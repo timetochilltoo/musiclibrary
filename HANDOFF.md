@@ -4,7 +4,36 @@ Last updated: 26 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — RA2 external metadata selection
+## Current resume — RA2 album creation and artwork
+
+Album creation, explicit artwork import and artwork migration now use catalogue
+admission, bringing coverage to 93 of 125 LibraryStore declarations. The scope
+covers managed file work, SQL writes, cleanup on failed writes and refresh.
+Physical album entry and import review share the provider cover download and
+managed copy implementation. Their request headers and database workflows are
+preserved. Local artwork import and migration keep their security-scoped access
+requirements. Album creation still returns the saved album if refresh fails
+after commit.
+
+The temporary SQLite regression holds a stubbed physical-album download and
+the final active search refresh. It checks that maintenance waits and rejects
+new album creation and artwork operations during drain. It checks cover
+publication and release provenance on success, and managed file cleanup on
+transaction failure. It uses synthetic cover bytes and exercises local artwork
+entry points at the admission boundary without a live file-picker grant.
+
+The 44 focused tests, 275 Debug tests, 264 Release tests and Swift build passed.
+Whitespace, declaration inventory and audit link checks passed. Logs are at
+`/private/tmp/musiclibrary-ra2-album-artwork-{focused,debug,release,build}.log`.
+The existing AVMetadataItem deprecation remains.
+
+Next migrate **missing-asset and relink decisions**, including shared root
+refresh, security-scoped replacement checks and final publication. Production
+restore and reset still use the transfer queue. The latest runnable artifact
+is Music Library 0.72 build 73 with schema 17.
+See [the migration inventory](CATALOGUE_USE_MIGRATION.md).
+
+## Previous resume — RA2 external metadata selection
 
 Saving an import's MusicBrainz selection and explicitly applying its fields
 now use catalogue admission, bringing coverage to 90 of 125 LibraryStore

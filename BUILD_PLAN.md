@@ -300,7 +300,12 @@ writes and their managed artwork work follow that checkpoint.
 RA2 external metadata checkpoint. Import selection save and application bring
 coverage to 90 scoped LibraryStore declarations. Application holds admission
 through the optional provider artwork download, copy, registration and reload.
-Album creation and explicit artwork import and migration come next.
+Album creation and explicit artwork import and migration follow that checkpoint.
+
+RA2 album artwork checkpoint. Album creation and explicit artwork import and
+migration bring coverage to 93 scoped LibraryStore declarations. They hold
+admission through managed file work and refresh. Missing-asset and relink
+decisions come next.
 
 Store more than an absolute path:
 

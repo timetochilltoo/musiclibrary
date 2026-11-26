@@ -125,7 +125,7 @@ public final class LibraryStore: ObservableObject {
     private var recoveryFixtureMoveFailure: RecoveryFixtureMoveFailure?
     enum RecoveryFixtureRollbackFailure: Sendable { case afterDatabase, afterArtwork }
     private var recoveryFixtureRollbackFailure: RecoveryFixtureRollbackFailure?
-    private var importCoverDownload: @Sendable (URLRequest) async throws -> (Data, URLResponse) = { request in
+    private var coverDownload: @Sendable (URLRequest) async throws -> (Data, URLResponse) = { request in
         try await URLSession.shared.data(for: request)
     }
     private let metadataLookupProvider: any MetadataLookupProviding
@@ -148,13 +148,13 @@ public final class LibraryStore: ObservableObject {
          albumSearch: (@Sendable (MusicDatabase, String) async throws -> [Album])? = nil,
          metadataLookupProvider: any MetadataLookupProviding = MusicBrainzMetadataProvider(),
          managedArtworkStore: ManagedArtworkStore? = nil,
-         importCoverDownload: (@Sendable (URLRequest) async throws -> (Data, URLResponse))? = nil) {
+         coverDownload: (@Sendable (URLRequest) async throws -> (Data, URLResponse))? = nil) {
         self.database = database
         self.metadataLookupProvider = metadataLookupProvider
         transferQueue.onChange = { [weak self] in self?.transferActivity = $0 }
         if let albumSearch { self.albumSearch = albumSearch }
         self.managedArtworkStore = managedArtworkStore
-        if let importCoverDownload { self.importCoverDownload = importCoverDownload }
+        if let coverDownload { self.coverDownload = coverDownload }
         permitsBackgroundServices = false
         startGate.succeed()
         isReady = true
@@ -439,32 +439,36 @@ public final class LibraryStore: ObservableObject {
         musicBrainzReleaseID: String? = nil,
         discs: [NewAlbumDisc] = []
     ) async throws -> Album {
-        guard let database else { throw DatabaseError.notFound("Catalogue database") }
-        let managedArtworkURL: URL?
-        if let musicBrainzArtworkURL {
-            managedArtworkURL = try await downloadManagedMusicBrainzArtwork(from: musicBrainzArtworkURL)
-        } else {
-            managedArtworkURL = nil
+        try await withCatalogueUse { database, context in
+            let managedArtworkURL: URL?
+            if let musicBrainzArtworkURL {
+                var request = MusicNetworkRequestPolicy.request(url: musicBrainzArtworkURL)
+                request.setValue("MusicLibrary/0.1 (+https://github.com/timetochilltoo/musiclibrary)", forHTTPHeaderField: "User-Agent")
+                request.setValue("image/*", forHTTPHeaderField: "Accept")
+                managedArtworkURL = try await downloadManagedMusicBrainzArtwork(using: request)
+            } else {
+                managedArtworkURL = nil
+            }
+            let album: Album
+            do {
+                album = try await database.createAlbum(
+                    draft,
+                    in: boxSetID,
+                    contributors: contributors,
+                    frontArtworkPath: managedArtworkURL?.path,
+                    frontArtworkSource: "managed-musicbrainz-artwork",
+                    musicBrainzReleaseID: musicBrainzReleaseID,
+                    discs: discs
+                )
+            } catch {
+                if let managedArtworkURL { try? FileManager.default.removeItem(at: managedArtworkURL) }
+                throw error
+            }
+            // Creation has committed. A refresh failure must not invite a duplicate
+            // retry of the same album; report it separately and return the saved ID.
+            do { try await self.reload(using: context) } catch { presentError(error) }
+            return album
         }
-        let album: Album
-        do {
-            album = try await database.createAlbum(
-                draft,
-                in: boxSetID,
-                contributors: contributors,
-                frontArtworkPath: managedArtworkURL?.path,
-                frontArtworkSource: "managed-musicbrainz-artwork",
-                musicBrainzReleaseID: musicBrainzReleaseID,
-                discs: discs
-            )
-        } catch {
-            if let managedArtworkURL { try? FileManager.default.removeItem(at: managedArtworkURL) }
-            throw error
-        }
-        // Creation has committed. A refresh failure must not invite a duplicate
-        // retry of the same album; report it separately and return the saved ID.
-        do { try await reload() } catch { presentError(error) }
-        return album
     }
 
     private func editCatalogue(_ edit: @MainActor (MusicDatabase) async throws -> Void) async throws {
@@ -635,18 +639,20 @@ public final class LibraryStore: ObservableObject {
         }
     }
     public func addAlbumArtwork(albumID: AlbumID, from sourceURL: URL, role: ArtworkRole) async throws {
-        guard let database, let managedArtworkStore else { throw DatabaseError.notFound("Catalogue database") }
-        let accessed = sourceURL.startAccessingSecurityScopedResource()
-        defer { if accessed { sourceURL.stopAccessingSecurityScopedResource() } }
-        guard accessed else { throw DatabaseError.invalidOperation("Permission to access the selected artwork was not available.") }
-        let managedURL = try managedArtworkStore.importArtwork(from: sourceURL)
-        do {
-            _ = try await database.addAlbumArtwork(albumID: albumID, localPath: managedURL.path, role: role, source: "managed-user-selected")
-        } catch {
-            try? FileManager.default.removeItem(at: managedURL)
-            throw error
+        try await withCatalogueUse { database, context in
+            guard let managedArtworkStore else { throw DatabaseError.notFound("Catalogue database") }
+            let accessed = sourceURL.startAccessingSecurityScopedResource()
+            defer { if accessed { sourceURL.stopAccessingSecurityScopedResource() } }
+            guard accessed else { throw DatabaseError.invalidOperation("Permission to access the selected artwork was not available.") }
+            let managedURL = try managedArtworkStore.importArtwork(from: sourceURL)
+            do {
+                _ = try await database.addAlbumArtwork(albumID: albumID, localPath: managedURL.path, role: role, source: "managed-user-selected")
+            } catch {
+                try? FileManager.default.removeItem(at: managedURL)
+                throw error
+            }
+            try await self.reload(using: context)
         }
-        try await reload()
     }
 
     /// Returns whether the artwork path is already inside the managed artwork
@@ -662,27 +668,29 @@ public final class LibraryStore: ObservableObject {
     /// catalogue update fails, the newly copied managed file is removed so the
     /// database and filesystem do not drift apart.
     public func migrateArtworkToManagedStorage(_ artwork: Artwork) async throws {
-        guard let database, let managedArtworkStore else { throw DatabaseError.notFound("Managed artwork storage") }
-        guard let rawPath = artwork.localPath?.trimmingCharacters(in: .whitespacesAndNewlines), !rawPath.isEmpty else {
-            throw DatabaseError.invalidOperation("This artwork has no local file to migrate.")
-        }
-        let sourceURL = URL(fileURLWithPath: rawPath)
-        guard FileManager.default.fileExists(atPath: sourceURL.path) else {
-            throw DatabaseError.invalidOperation("The legacy artwork file is no longer available.")
-        }
-        guard !managedArtworkStore.contains(sourceURL) else { return }
+        try await withCatalogueUse { database, context in
+            guard let managedArtworkStore else { throw DatabaseError.notFound("Managed artwork storage") }
+            guard let rawPath = artwork.localPath?.trimmingCharacters(in: .whitespacesAndNewlines), !rawPath.isEmpty else {
+                throw DatabaseError.invalidOperation("This artwork has no local file to migrate.")
+            }
+            let sourceURL = URL(fileURLWithPath: rawPath)
+            guard FileManager.default.fileExists(atPath: sourceURL.path) else {
+                throw DatabaseError.invalidOperation("The legacy artwork file is no longer available.")
+            }
+            guard !managedArtworkStore.contains(sourceURL) else { return }
 
-        let accessed = sourceURL.startAccessingSecurityScopedResource()
-        defer { if accessed { sourceURL.stopAccessingSecurityScopedResource() } }
-        guard accessed else { throw DatabaseError.invalidOperation("Permission to access the legacy artwork was not available.") }
-        let managedURL = try managedArtworkStore.importArtwork(from: sourceURL)
-        do {
-            _ = try await database.migrateAlbumArtwork(artwork.id, to: managedURL.path, source: "managed-migrated")
-        } catch {
-            try? FileManager.default.removeItem(at: managedURL)
-            throw error
+            let accessed = sourceURL.startAccessingSecurityScopedResource()
+            defer { if accessed { sourceURL.stopAccessingSecurityScopedResource() } }
+            guard accessed else { throw DatabaseError.invalidOperation("Permission to access the legacy artwork was not available.") }
+            let managedURL = try managedArtworkStore.importArtwork(from: sourceURL)
+            do {
+                _ = try await database.migrateAlbumArtwork(artwork.id, to: managedURL.path, source: "managed-migrated")
+            } catch {
+                try? FileManager.default.removeItem(at: managedURL)
+                throw error
+            }
+            try await self.reload(using: context)
         }
-        try await reload()
     }
 
     public func addStorageRoot(url: URL) async throws {
@@ -977,12 +985,9 @@ public final class LibraryStore: ObservableObject {
         try await metadataLookupProvider.lookupRelease(lookup)
     }
 
-    private func downloadManagedMusicBrainzArtwork(from sourceURL: URL) async throws -> URL {
+    private func downloadManagedMusicBrainzArtwork(using request: URLRequest) async throws -> URL {
         guard let managedArtworkStore else { throw DatabaseError.notFound("Managed artwork storage") }
-        var request = MusicNetworkRequestPolicy.request(url: sourceURL)
-        request.setValue("MusicLibrary/0.1 (+https://github.com/timetochilltoo/musiclibrary)", forHTTPHeaderField: "User-Agent")
-        request.setValue("image/*", forHTTPHeaderField: "Accept")
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await coverDownload(request)
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode), !data.isEmpty else {
             throw DatabaseError.invalidOperation("MusicBrainz did not provide a usable front-cover image for this release.")
         }
@@ -1032,18 +1037,10 @@ public final class LibraryStore: ObservableObject {
         try await withCatalogueUse { database, context in
             var managedArtworkPath: String?
             if fields.frontArtwork {
-                guard let managedArtworkStore, let artworkURL = URL(string: "https://coverartarchive.org/release/\(selection.externalID)/front") else {
+                guard let artworkURL = URL(string: "https://coverartarchive.org/release/\(selection.externalID)/front") else {
                     throw DatabaseError.notFound("Managed artwork storage")
                 }
-                let request = MusicNetworkRequestPolicy.request(url: artworkURL)
-                let (data, response) = try await importCoverDownload(request)
-                guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode), !data.isEmpty else {
-                    throw DatabaseError.invalidOperation("MusicBrainz did not provide a usable front-cover image for this release.")
-                }
-                let temporaryURL = FileManager.default.temporaryDirectory.appending(path: "musicbrainz-cover-\(UUID().uuidString).jpg")
-                defer { try? FileManager.default.removeItem(at: temporaryURL) }
-                try data.write(to: temporaryURL, options: .atomic)
-                let managedURL = try managedArtworkStore.importArtwork(from: temporaryURL)
+                let managedURL = try await downloadManagedMusicBrainzArtwork(using: MusicNetworkRequestPolicy.request(url: artworkURL))
                 do {
                     try await database.setExternalMetadataArtworkPath(managedURL.path, for: selection.id)
                     managedArtworkPath = managedURL.path
