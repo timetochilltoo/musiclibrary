@@ -167,6 +167,24 @@ public actor MusicDatabase {
     }
 
     private static func verifyDatabaseFile(at url: URL, immutable: Bool) throws {
+        try withReadOnlyDatabaseFile(at: url, immutable: immutable) { handle in
+            try verifyDatabase(handle)
+        }
+    }
+
+    /// Reads archive metadata from the self-contained SQLite copy without
+    /// creating sidecars or touching the live catalogue.
+    public static func standaloneBackupCatalogueMetadata(at url: URL) throws -> (revision: Int64, artworkPaths: [String]) {
+        try withReadOnlyDatabaseFile(at: url, immutable: true) { handle in
+            try verifyDatabase(handle)
+            let revision = try scalarInt("SELECT catalogue_revision FROM catalogue_state WHERE singleton_id = 1;", on: handle)
+            return (revision, try managedArtworkLocalPaths(on: handle))
+        }
+    }
+
+    private static func withReadOnlyDatabaseFile<Value>(
+        at url: URL, immutable: Bool, _ read: (OpaquePointer) throws -> Value
+    ) throws -> Value {
         var handle: OpaquePointer?
         var components = URLComponents(url: url, resolvingAgainstBaseURL: true)
         components?.queryItems = [URLQueryItem(name: "immutable", value: "1")]
@@ -186,6 +204,10 @@ public actor MusicDatabase {
             throw DatabaseError.sqlite(message: "Unable to open the catalogue archive database.")
         }
         defer { sqlite3_close(handle) }
+        return try read(handle)
+    }
+
+    private static func verifyDatabase(_ handle: OpaquePointer) throws {
         let integrity = Self.textResult("PRAGMA integrity_check;", on: handle)
         guard integrity == "ok" else {
             throw DatabaseError.sqlite(message: "Catalogue archive database integrity check failed: \(integrity ?? String(cString: sqlite3_errmsg(handle)))")
@@ -276,6 +298,10 @@ public actor MusicDatabase {
     }
 
     public func managedArtworkLocalPaths() throws -> [String] {
+        try Self.managedArtworkLocalPaths(on: connection)
+    }
+
+    private static func managedArtworkLocalPaths(on connection: OpaquePointer) throws -> [String] {
         let statement = try Self.prepare(
             "SELECT local_path FROM artwork WHERE local_path IS NOT NULL UNION SELECT artwork_local_path FROM external_metadata_selection WHERE artwork_local_path IS NOT NULL ORDER BY 1;",
             on: connection

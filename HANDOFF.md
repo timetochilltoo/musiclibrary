@@ -4,7 +4,35 @@ Last updated: 26 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — RA2 queued snapshot and master-backup capture
+## Current resume — RA2 complete archive capture
+
+Complete catalogue export and local recovery archive creation now drain
+ordinary catalogue users inside their transfer queue turn. Exclusive admission
+covers the database and artwork reads and final archive publication. The
+archive name, manifest revision and recorded artwork paths come from the
+staged SQLite payload. Metadata inspection and database verification open
+the payload read-only and immutable. The v1 archive format is preserved.
+This brings coverage to 107 of 125 LibraryStore declarations.
+
+The temporary SQLite regression holds an ordinary reader, observes archive
+drain, and attempts catalogue and artwork edits before and during exclusive
+capture. It verifies that the manifest revision and artwork path agree with
+the archived SQLite payload, checks copied artwork bytes, and retries an
+edit after admission reopens. Recovery fixtures also exercise creation of
+pre-operation archives during reset and restore.
+
+The 43 focused tests, 280 Debug tests, 269 Release tests and Swift build passed.
+Whitespace, declaration inventory and audit link checks passed. Logs are at
+`/private/tmp/musiclibrary-ra2-archive-capture-{focused,debug,release,build}.log`.
+
+Next extend **exclusive admission through cleanup**, reusing one context for
+its recovery archive, cleanup write and reload. The local archive reservation
+currently ends before cleanup, reset or restore continues. Database-only
+backup still reads revision separately before backup. The latest runnable
+artifact is Music Library 0.72 build 73 with schema 17.
+See [the migration inventory](CATALOGUE_USE_MIGRATION.md).
+
+## Previous resume — RA2 queued snapshot and master-backup capture
 
 Snapshot serialization and master backup now acquire ordinary catalogue
 admission after their transfer queue turn. This brings coverage to 106 of 125

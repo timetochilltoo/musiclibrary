@@ -57,21 +57,19 @@ public enum CompleteCatalogueArchive {
     ) async throws -> URL {
         let manager = FileManager.default
         try manager.createDirectory(at: destinationDirectory, withIntermediateDirectories: true)
-        let revision = try await database.currentRevision()
-        let stamp = Int64((now.timeIntervalSince1970 * 1_000).rounded())
-        let archiveName = "MusicLibraryCatalogue-r\(revision)-\(stamp).musiclibraryarchive"
-        let destination = destinationDirectory.appending(path: archiveName, directoryHint: .isDirectory)
-        guard !manager.fileExists(atPath: destination.path) else {
-            throw DatabaseError.invalidOperation("A catalogue archive with this name already exists.")
-        }
-
-        let staging = destinationDirectory.appending(path: ".\(archiveName).\(UUID().uuidString).tmp", directoryHint: .isDirectory)
+        let staging = destinationDirectory.appending(path: ".MusicLibraryCatalogue.\(UUID().uuidString).tmp", directoryHint: .isDirectory)
         defer { try? manager.removeItem(at: staging) }
         try manager.createDirectory(at: staging, withIntermediateDirectories: false)
         let stagedDatabase = staging.appending(path: databaseFileName)
         try await database.createConsistentBackup(at: stagedDatabase)
-        try MusicDatabase.verifyDatabaseFile(at: stagedDatabase)
-        let recordedArtworkPaths = try await database.managedArtworkLocalPaths().filter {
+        let captured = try MusicDatabase.standaloneBackupCatalogueMetadata(at: stagedDatabase)
+        let stamp = Int64((now.timeIntervalSince1970 * 1_000).rounded())
+        let archiveName = "MusicLibraryCatalogue-r\(captured.revision)-\(stamp).musiclibraryarchive"
+        let destination = destinationDirectory.appending(path: archiveName, directoryHint: .isDirectory)
+        guard !manager.fileExists(atPath: destination.path) else {
+            throw DatabaseError.invalidOperation("A catalogue archive with this name already exists.")
+        }
+        let recordedArtworkPaths = captured.artworkPaths.filter {
             RegisteredPathSecurity.contains(URL(fileURLWithPath: $0), within: managedArtworkDirectory)
         }
 
@@ -110,7 +108,7 @@ public enum CompleteCatalogueArchive {
 
         let databaseDigest = try fileDigest(at: stagedDatabase)
         let manifest = CompleteCatalogueArchiveManifest(
-            revision: revision,
+            revision: captured.revision,
             createdAt: now,
             database: .init(fileName: databaseFileName, originalPaths: [], byteCount: databaseDigest.byteCount, sha256: databaseDigest.sha256),
             artwork: artworkFiles
@@ -142,7 +140,7 @@ public enum CompleteCatalogueArchive {
         }
         let databaseURL = archiveURL.appending(path: databaseFileName)
         try verify(manifest.database, at: databaseURL)
-        try MusicDatabase.verifyDatabaseFile(at: databaseURL)
+        try MusicDatabase.verifyStandaloneBackupFile(at: databaseURL)
 
         let artworkDirectory = archiveURL.appending(path: artworkDirectoryName, directoryHint: .isDirectory)
         let declaredNames = Set(manifest.artwork.map(\CompleteCatalogueArchiveFile.fileName))

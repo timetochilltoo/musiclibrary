@@ -315,7 +315,12 @@ and JSON and CSV exports bring coverage to 102 scoped LibraryStore declarations.
 
 RA2 queued capture checkpoint. Snapshot serialization and the detached master
 backup use catalogue admission after their transfer queue turn. Coverage is
-106 scoped LibraryStore declarations. Complete archive capture comes next.
+106 scoped LibraryStore declarations.
+
+RA2 complete archive checkpoint. Complete exports and local recovery archive
+capture drain ordinary users inside their transfer queue turn. The copied
+database supplies the manifest revision and artwork path mappings. Coverage is
+107 scoped LibraryStore declarations. Extend the boundary through cleanup next.
 
 Store more than an absolute path:
 

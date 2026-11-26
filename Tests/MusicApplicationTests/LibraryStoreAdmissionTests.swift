@@ -998,6 +998,60 @@ struct LibraryStoreAdmissionTests {
         #expect(try await store.publishSnapshot(to: destination).revision == revision)
     }
 
+    @Test("Complete archive capture drains catalogue work and excludes edits through capture")
+    func completeArchiveCaptureDrain() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "ArchiveCapture-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try await LibraryStore(recoveryFixtureDirectory: root)
+        let album = try await store.addAlbum(.init(title: "Archived album"))
+        let cover = root.appending(path: "Artwork/cover.jpg")
+        try FileManager.default.createDirectory(at: cover.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let coverBytes = Data([1, 2, 3])
+        try coverBytes.write(to: cover)
+        do {
+            let database = try MusicDatabase(url: root.appending(path: "MusicLibrary.sqlite"))
+            _ = try await database.addAlbumArtwork(albumID: album.id, localPath: cover.path)
+        }
+        try await store.reload()
+
+        let admitted = Gate(), capture = Gate()
+        defer { admitted.open(); capture.open() }
+        let reader = Task { try await store.withCatalogueUse { _, _ in await admitted.hold() } }
+        try await until { admitted.started }
+        let exports = root.appending(path: "Exports")
+        let export = Task { try await store.exportCompleteCatalogueArchive(to: exports) { await capture.hold() } }
+        try await until { store.catalogueAdmission.phase == .draining }
+        #expect(store.transferActivity.active == .archiveExport && !capture.started)
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            try await store.updateAlbum(album.id, with: .init(title: "Refused during drain"))
+        }
+        #expect(!FileManager.default.fileExists(atPath: exports.path))
+
+        admitted.open()
+        try await reader.value
+        try await until { capture.started }
+        #expect(store.catalogueAdmission.phase == .exclusive)
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            try await store.updateAlbum(album.id, with: .init(title: "Refused during capture"))
+        }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            try await store.addAlbumArtwork(albumID: album.id, from: cover, role: .front)
+        }
+
+        capture.open()
+        let archive = try await export.value
+        let manifest = try CompleteCatalogueArchive.verify(at: archive)
+        let copiedDatabase = archive.appending(path: CompleteCatalogueArchive.databaseFileName)
+        let copiedMetadata = try MusicDatabase.standaloneBackupCatalogueMetadata(at: copiedDatabase)
+        #expect(manifest.revision == copiedMetadata.revision && manifest.revision == store.catalogueRevision)
+        #expect(manifest.artwork.flatMap(\.originalPaths) == copiedMetadata.artworkPaths)
+        #expect(copiedMetadata.artworkPaths == [cover.path])
+        #expect(try Data(contentsOf: archive.appending(path: "Artwork/cover.jpg")) == coverBytes)
+        #expect(store.catalogueAdmission.phase == .open && !store.transferActivity.isBusy)
+        try await store.updateAlbum(album.id, with: .init(title: "Changed after capture"))
+        #expect(store.catalogueRevision == manifest.revision + 1)
+    }
+
     private func until(_ predicate: @MainActor () -> Bool) async throws {
         let deadline = ContinuousClock.now.advanced(by: .seconds(5))
         while !predicate() {

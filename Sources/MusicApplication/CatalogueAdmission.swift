@@ -1,7 +1,7 @@
 import Foundation
 
-/// Operation lifetime coordination. LibraryStore uses this for a partial set
-/// of ordinary operations; production maintenance reservation is not enabled.
+/// Operation lifetime coordination for ordinary catalogue use and exclusive
+/// work such as complete archive capture.
 /// Ordinary users share admission; maintenance closes admission and waits for
 /// every admitted user before entering. Queue services must acquire their queue
 /// turn first. Never await maintenance from inside an ordinary leased operation.

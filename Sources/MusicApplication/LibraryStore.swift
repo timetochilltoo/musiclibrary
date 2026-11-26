@@ -76,8 +76,8 @@ public final class LibraryStore: ObservableObject {
     private let lastMasterBackupAtKey = "MusicLibrary.lastMasterBackupAt"
     private var publicationSchedule = SnapshotPublicationSchedule()
     let transferQueue = LibraryTransferQueue()
-    // RA2 partial migration only. Recovery must not reserve this coordinator
-    // until every database/artwork holder has a scoped lifetime.
+    // Complete archive capture reserves maintenance. Destructive recovery
+    // still needs an exclusive scope through installation and publication.
     let catalogueAdmission = CatalogueAdmission()
     #if DEBUG
     @Published public private(set) var syntheticRecoveryFailure: RestoreRecoveryError?
@@ -1298,22 +1298,21 @@ public final class LibraryStore: ObservableObject {
     }
 
     public func exportCompleteCatalogueArchive(to destinationDirectory: URL) async throws -> URL {
-        try await transferQueue.run(.archiveExport) { try await self.exportCompleteCatalogueArchiveUncoordinated(to: destinationDirectory) }
+        try await exportCompleteCatalogueArchive(to: destinationDirectory) {}
     }
 
-    private func exportCompleteCatalogueArchiveUncoordinated(to destinationDirectory: URL) async throws -> URL {
-        try validateRecoveryFixtureURL(destinationDirectory)
-        guard let database, let managedArtworkStore else { throw DatabaseError.notFound("Catalogue database") }
-        let accessed = destinationDirectory.startAccessingSecurityScopedResource()
-        defer { if accessed { destinationDirectory.stopAccessingSecurityScopedResource() } }
-        guard accessed || hasRecoveryFixtureAccess(to: destinationDirectory) else { throw DatabaseError.invalidOperation("Permission to write to the selected archive destination was not available.") }
-        let archive = try await CompleteCatalogueArchive.create(
-            database: database,
-            managedArtworkDirectory: managedArtworkStore.directory,
-            in: destinationDirectory
-        )
-        catalogueMaintenanceStatus = "Exported complete catalogue archive \(archive.lastPathComponent)"
-        return archive
+    func exportCompleteCatalogueArchive(
+        to destinationDirectory: URL, beforeCapture: @escaping @MainActor () async -> Void
+    ) async throws -> URL {
+        try await transferQueue.run(.archiveExport) {
+            try self.validateRecoveryFixtureURL(destinationDirectory)
+            let accessed = destinationDirectory.startAccessingSecurityScopedResource()
+            defer { if accessed { destinationDirectory.stopAccessingSecurityScopedResource() } }
+            guard accessed || self.hasRecoveryFixtureAccess(to: destinationDirectory) else { throw DatabaseError.invalidOperation("Permission to write to the selected archive destination was not available.") }
+            let archive = try await self.captureCompleteCatalogueArchive(to: destinationDirectory, beforeCapture: beforeCapture)
+            self.catalogueMaintenanceStatus = "Exported complete catalogue archive \(archive.lastPathComponent)"
+            return archive
+        }
     }
 
     public func restoreCompleteCatalogueArchive(from archiveURL: URL) async throws {
@@ -1919,16 +1918,28 @@ public final class LibraryStore: ObservableObject {
     }
 
     private func createLocalRecoveryArchive(reason: String) async throws -> URL {
-        guard let database, let managedArtworkStore else { throw DatabaseError.notFound("Catalogue database") }
         let directory = try applicationSupportDirectory()
             .appending(path: "Recovery", directoryHint: .isDirectory)
             .appending(path: "CatalogueArchives", directoryHint: .isDirectory)
             .appending(path: reason, directoryHint: .isDirectory)
-        return try await CompleteCatalogueArchive.create(
-            database: database,
-            managedArtworkDirectory: managedArtworkStore.directory,
-            in: directory
-        )
+        return try await captureCompleteCatalogueArchive(to: directory)
+    }
+
+    /// Called only inside a transfer queue turn. Destructive recovery still
+    /// needs to extend this boundary through replacement and publication.
+    private func captureCompleteCatalogueArchive(
+        to directory: URL, beforeCapture: @MainActor () async -> Void = {}
+    ) async throws -> URL {
+        guard isReady else { throw DatabaseError.notFound("Ready catalogue") }
+        return try await catalogueAdmission.withMaintenance { _ in
+            guard let database, let managedArtworkStore else { throw DatabaseError.notFound("Catalogue database") }
+            await beforeCapture()
+            return try await CompleteCatalogueArchive.create(
+                database: database,
+                managedArtworkDirectory: managedArtworkStore.directory,
+                in: directory
+            )
+        }
     }
 
     private func removeSQLiteSidecars(for databaseURL: URL) {
