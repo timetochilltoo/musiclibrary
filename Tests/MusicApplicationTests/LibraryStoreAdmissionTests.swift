@@ -873,6 +873,71 @@ struct LibraryStoreAdmissionTests {
         #expect(try await database.assetFingerprintCandidates().first?.relativePath == "fixture.flac")
     }
 
+    @Test("Tag preview drains through root refresh and blocks new previews and exports")
+    func previewsAndExportsDrain() async throws {
+        let fixture = try await Fixture.make()
+        defer { fixture.remove() }
+        let database = fixture.database
+        let (albumID, _) = try await fixture.makeImportedAsset()
+        let album = try #require(await database.album(id: albumID))
+        let disc = try #require(await database.discs(albumID: albumID).first)
+        let tracks = try await database.tracks(discID: disc.id)
+        _ = try await database.createContributor(.init(name: "Unused credit"))
+        let jsonURL = fixture.directory.appending(path: "catalogue.json")
+        let csvURL = fixture.directory.appending(path: "catalogue.csv")
+        try "Existing export".write(to: jsonURL, atomically: true, encoding: .utf8)
+
+        let probe = Probe(), maintenance = Gate()
+        defer { probe.gate.open(); maintenance.open() }
+        let store = LibraryStore(database: database, albumSearch: { db, term in try await probe.load(db, term) })
+        try await store.reload()
+        await store.search("album")
+        probe.holdNext = true
+        let preview = Task {
+            try await store.tagWritePreviews(
+                album: album, discs: [disc], tracksByDisc: [disc.id: tracks], albumCredits: [], trackCredits: [:]
+            )
+        }
+        try await until { probe.gate.started }
+        let barrier = Task { try await store.catalogueAdmission.withMaintenance { _ in await maintenance.hold() } }
+        try await until { store.catalogueAdmission.phase == .draining }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            _ = try await store.tagWritePreviews(album: album, discs: [], tracksByDisc: [:], albumCredits: [], trackCredits: [:])
+        }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            _ = try await store.catalogueCleanupPreview()
+        }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            try await store.exportCatalogue(to: jsonURL)
+        }
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            try await store.exportCatalogueCSV(to: csvURL)
+        }
+        #expect(try String(contentsOf: jsonURL, encoding: .utf8) == "Existing export")
+        #expect(!FileManager.default.fileExists(atPath: csvURL.path))
+        #expect(store.catalogueAdmission.activeOperationCount == 1 && !maintenance.started)
+
+        probe.gate.open()
+        await #expect(throws: DatabaseError.invalidOperation("The asset's storage root is unavailable.")) {
+            _ = try await preview.value
+        }
+        try await until { maintenance.started }
+        #expect(store.catalogueAdmission.activeOperationCount == 0)
+        maintenance.open()
+        try await barrier.value
+
+        let revision = try await database.currentRevision()
+        let cleanup = try await store.catalogueCleanupPreview()
+        #expect(cleanup.orphanContributorCount == 1)
+        try await store.exportCatalogue(to: jsonURL)
+        try await store.exportCatalogueCSV(to: csvURL)
+        let exports = try JSONSerialization.jsonObject(with: Data(contentsOf: jsonURL)) as? [String: Any]
+        let albums = try #require(exports?["albums"] as? [[String: Any]])
+        #expect(albums.contains { $0["title"] as? String == album.title })
+        #expect(try String(contentsOf: csvURL, encoding: .utf8).contains(album.title))
+        #expect(try await database.currentRevision() == revision)
+    }
+
     private func until(_ predicate: @MainActor () -> Bool) async throws {
         let deadline = ContinuousClock.now.advanced(by: .seconds(5))
         while !predicate() {

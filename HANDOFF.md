@@ -4,7 +4,35 @@ Last updated: 26 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — RA2 missing assets and relink decisions
+## Current resume — RA2 catalogue previews and exports
+
+Cleanup preview, FLAC tag-write preview and JSON and CSV exports now use
+catalogue admission, bringing coverage to 102 of 125 LibraryStore declarations.
+FLAC preview retains one scope across all tracks and reuses the per-track
+playback lookup with its admitted database and refresh context. JSON and CSV
+exports hold admission through the atomic destination write.
+
+The temporary SQLite regression holds tag preview in root refresh and verifies
+that maintenance waits and refuses new previews and exports. A rejected JSON
+export preserves the existing file and a rejected CSV export creates no file.
+After admission reopens, cleanup preview and both exports succeed without
+changing the catalogue revision. The tag preview fixture uses a root without
+a usable grant. Source tag handling is exercised independently by the existing
+FLAC fixture tests.
+
+The 23 focused tests, 278 Debug tests, 267 Release tests and Swift build passed.
+Whitespace, declaration inventory and audit link checks passed. Logs are at
+`/private/tmp/musiclibrary-ra2-previews-exports-{focused,debug,release,build}.log`.
+The existing AVMetadataItem deprecation remains.
+
+Next review and scope **queued snapshot and master-backup capture**. Keep the
+transfer queue first and track the database lifetime through detached work.
+Complete archive capture, destructive recovery and explicit FLAC execution
+need separate boundary reviews. Production restore and reset still use the
+transfer queue. The latest runnable artifact is Music Library 0.72 build 73
+with schema 17. See [the migration inventory](CATALOGUE_USE_MIGRATION.md).
+
+## Previous resume — RA2 missing assets and relink decisions
 
 Missing-asset confirmation and reference removal and relink proposal creation,
 application and dismissal now use catalogue admission, bringing coverage to

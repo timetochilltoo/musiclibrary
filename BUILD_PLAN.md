@@ -308,7 +308,12 @@ admission through managed file work and refresh.
 
 RA2 missing-asset and relink checkpoint. Explicit decisions and relink review
 bring coverage to 98 scoped LibraryStore declarations. Root and availability
-refresh reuse the relink context. Catalogue previews and exports come next.
+refresh reuse the relink context.
+
+RA2 previews and exports checkpoint. Cleanup preview, FLAC tag-write preview
+and JSON and CSV exports bring coverage to 102 scoped LibraryStore declarations.
+Next review queued snapshot and master-backup capture before integrating
+exclusive recovery.
 
 Store more than an absolute path:
 

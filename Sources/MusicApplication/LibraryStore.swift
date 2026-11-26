@@ -1067,10 +1067,14 @@ public final class LibraryStore: ObservableObject {
 
     public func playbackURL(for trackID: TrackID) async throws -> (url: URL, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?) {
         try await withCatalogueUse { database, context in
-            try await self.refreshStorageRootAccess(using: database, context: context)
-            guard let asset = try await database.playbackAsset(trackID: trackID) else { throw DatabaseError.notFound("Playable asset") }
-            return try self.playbackURL(for: asset)
+            try await self.playbackURL(for: trackID, using: database, context: context)
         }
+    }
+
+    private func playbackURL(for trackID: TrackID, using database: MusicDatabase, context: CatalogueAdmission.Context) async throws -> (url: URL, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?) {
+        try await refreshStorageRootAccess(using: database, context: context)
+        guard let asset = try await database.playbackAsset(trackID: trackID) else { throw DatabaseError.notFound("Playable asset") }
+        return try playbackURL(for: asset)
     }
 
     private func playbackURL(for asset: PlaybackAssetReference) throws -> (url: URL, title: String, cueStartMilliseconds: Int?, cueEndMilliseconds: Int?) {
@@ -1184,25 +1188,27 @@ public final class LibraryStore: ObservableObject {
     /// Builds a dry-run only. The caller must explicitly confirm before any source
     /// file is copied, backed up, or changed.
     public func tagWritePreviews(album: Album, discs: [Disc], tracksByDisc: [DiscID: [Track]], albumCredits: [ContributorCredit], trackCredits: [TrackID: [ContributorCredit]]) async throws -> [FLACTagWriteCoordinator.Preview] {
-        let albumArtist = albumCredits.first(where: { $0.role == .albumArtist }).map { $0.creditedName ?? $0.contributor.name }
-        var previews: [FLACTagWriteCoordinator.Preview] = []
-        for disc in discs {
-            for track in tracksByDisc[disc.id] ?? [] {
-                let asset = try await playbackURL(for: track.id)
-                var changes: [String: String] = [
-                    "TITLE": track.title,
-                    "ALBUM": album.title,
-                    "TRACKNUMBER": String(track.number),
-                    "DISCNUMBER": String(disc.number)
-                ]
-                if let year = album.releaseYear { changes["DATE"] = String(year) }
-                if let albumArtist { changes["ALBUMARTIST"] = albumArtist }
-                if let artist = trackCredits[track.id]?.first(where: { $0.role == .performer || $0.role == .soloist || $0.role == .featuredArtist }).map({ $0.creditedName ?? $0.contributor.name }) ?? albumArtist { changes["ARTIST"] = artist }
-                let plan = FLACTagWriteCoordinator.PlannedWrite(trackID: track.id.rawValue, trackTitle: track.title, sourcePath: asset.url.path, changes: changes)
-                previews.append(try FLACTagWriteCoordinator().preview(plan))
+        try await withCatalogueUse { database, context in
+            let albumArtist = albumCredits.first(where: { $0.role == .albumArtist }).map { $0.creditedName ?? $0.contributor.name }
+            var previews: [FLACTagWriteCoordinator.Preview] = []
+            for disc in discs {
+                for track in tracksByDisc[disc.id] ?? [] {
+                    let asset = try await self.playbackURL(for: track.id, using: database, context: context)
+                    var changes: [String: String] = [
+                        "TITLE": track.title,
+                        "ALBUM": album.title,
+                        "TRACKNUMBER": String(track.number),
+                        "DISCNUMBER": String(disc.number)
+                    ]
+                    if let year = album.releaseYear { changes["DATE"] = String(year) }
+                    if let albumArtist { changes["ALBUMARTIST"] = albumArtist }
+                    if let artist = trackCredits[track.id]?.first(where: { $0.role == .performer || $0.role == .soloist || $0.role == .featuredArtist }).map({ $0.creditedName ?? $0.contributor.name }) ?? albumArtist { changes["ARTIST"] = artist }
+                    let plan = FLACTagWriteCoordinator.PlannedWrite(trackID: track.id.rawValue, trackTitle: track.title, sourcePath: asset.url.path, changes: changes)
+                    previews.append(try FLACTagWriteCoordinator().preview(plan))
+                }
             }
+            return previews
         }
-        return previews
     }
 
     public func executeTagWrite(previews: [FLACTagWriteCoordinator.Preview]) async throws -> FLACTagWriteCoordinator.Journal {
@@ -1256,11 +1262,24 @@ public final class LibraryStore: ObservableObject {
             try await database.permanentlyDeleteAlbum(id)
         }
     }
-    public func exportCatalogue(to url: URL) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; let json = try await database.catalogueExportJSON(); try json.write(to: url, atomically: true, encoding: .utf8) }
-    public func exportCatalogueCSV(to url: URL) async throws { guard let database else { throw DatabaseError.notFound("Catalogue database") }; let csv = try await database.catalogueExportCSV(); try csv.write(to: url, atomically: true, encoding: .utf8) }
+    public func exportCatalogue(to url: URL) async throws {
+        try await withCatalogueUse { database, _ in
+            let json = try await database.catalogueExportJSON()
+            try json.write(to: url, atomically: true, encoding: .utf8)
+        }
+    }
+
+    public func exportCatalogueCSV(to url: URL) async throws {
+        try await withCatalogueUse { database, _ in
+            let csv = try await database.catalogueExportCSV()
+            try csv.write(to: url, atomically: true, encoding: .utf8)
+        }
+    }
+
     public func catalogueCleanupPreview() async throws -> CatalogueCleanupPreview {
-        guard let database else { throw DatabaseError.notFound("Catalogue database") }
-        return try await database.catalogueCleanupPreview()
+        try await withCatalogueUse { database, _ in
+            try await database.catalogueCleanupPreview()
+        }
     }
 
     public func performCatalogueCleanup(_ options: CatalogueCleanupOptions) async throws -> CatalogueCleanupResult {

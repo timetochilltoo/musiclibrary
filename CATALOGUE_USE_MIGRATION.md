@@ -1,11 +1,11 @@
 # Catalogue-use migration inventory
 
-Snapshot: 26 November 2026, RA2 missing assets and relink decisions. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
+Snapshot: 26 November 2026, RA2 catalogue previews and exports. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
 Operational state: [HANDOFF.md](HANDOFF.md). Safety design: [recovery admission audit](RECOVERY_WRITER_ADMISSION_AUDIT.md).
 
 ## Coverage and lifetime contract
 
-The 98 public declarations below currently use catalogue admission. A call to
+The 102 public declarations below currently use catalogue admission. A call to
 public reload from an otherwise unscoped mutation does not cover the earlier
 mutation or its retained database. No production caller reserves maintenance;
 existing restore/reset/scan races remain open. Recovery must not be connected to
@@ -53,6 +53,7 @@ is a Debug temporary-data factory; its seeding is separate from production uses.
 - `availableTrackIDs`
 - `boxMembers`
 - `boxPlacement`
+- `catalogueCleanupPreview`
 - `deleteAlbumAlias`
 - `deleteAlbumContributor`
 - `deleteDisc`
@@ -65,6 +66,8 @@ is a Debug temporary-data factory; its seeding is separate from production uses.
 - `discs`
 - `discardRelinkProposal`
 - `embeddedMetadata`
+- `exportCatalogue`
+- `exportCatalogueCSV`
 - `folderRecoveryManifest`
 - `lyrics`
 - `migrateArtworkToManagedStorage`
@@ -100,6 +103,7 @@ is a Debug temporary-data factory; its seeding is separate from production uses.
 - `search`
 - `softDeleteAlbum`
 - `softDeleteEmptyBoxSet`
+- `tagWritePreviews`
 - `trackContributors`
 - `tracks`
 - `updateAlbumContributorCredit`
@@ -185,22 +189,17 @@ also reuse their scope through root refresh, replacement verification and
 catalogue publication. Application uses its admitted database for availability
 refresh.
 
+Cleanup preview borrows the database under admission. JSON and CSV exports
+keep admission through serialization and the atomic destination write. FLAC
+tag-write preview retains one scope across all tracks, including root refresh,
+playback path resolution and dry-run reads.
+
 ## Worker lifecycle control
 
 Scan cancellation signals an admitted worker during drain. The completion task
 owns the worker's catalogue scope until it exits and publishes.
 
 - `cancelImportScan`
-
-## Remaining readers, previews and exports
-
-Readers can retain an old database actor and must be accounted for before file
-replacement; being read-only does not make an outstanding use safe to ignore.
-
-- `catalogueCleanupPreview`
-- `exportCatalogue`
-- `exportCatalogueCSV`
-- `tagWritePreviews`
 
 ## Queued services, maintenance and source-writing policy
 
@@ -268,5 +267,7 @@ invalid-context failures release or refuse cleanly. Existing search overlap test
 continue to cover generation ordering. These are partial integration checks, not
 live recovery exclusion or reader migration completeness.
 
-Next migrate cleanup and FLAC tag-write previews and the JSON and CSV exports.
-Queued recovery and explicit FLAC execution have separate lifetimes.
+Next review and scope queued snapshot and master-backup capture. Acquire the
+transfer queue before admission and track which work retains catalogue resources.
+Complete archive capture, destructive recovery and explicit FLAC execution
+need separate boundary reviews.

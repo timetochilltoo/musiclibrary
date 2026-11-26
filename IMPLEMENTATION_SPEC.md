@@ -14,6 +14,7 @@ Current baseline: inspect `main` with `git log --oneline -5`; [HANDOFF.md](HANDO
 
 Completed and verified:
 
+- RA2 cleanup preview, FLAC tag-write preview, and JSON and CSV exports use catalogue admission. Tag preview reuses its context for per-track playback resolution and root refresh. Exports hold admission through the atomic destination write. Explicit FLAC execution has its separate backup and journal policy.
 - RA2 missing-asset confirmation and reference removal and relink proposal creation, application and dismissal use catalogue admission. Relink work holds one scope through root refresh, scoped replacement checks, database writes, availability refresh where applicable, and publication.
 - RA2 album creation and explicit artwork import and migration hold catalogue admission through managed file work, catalogue writes, rollback cleanup and refresh. Physical album entry and import review share the managed provider cover downloader while retaining their existing request headers and database workflows.
 - RA2 import metadata selection save and application use catalogue admission. Applying a provider cover holds admission through download, managed copy, selection and proposal writes, and any album cover registration and reload.
