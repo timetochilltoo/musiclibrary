@@ -12,7 +12,7 @@ struct ImportReviewWorkspace: View {
     let library: LibraryStore
     let onAdd: (ImportReleaseProposal) async throws -> AlbumID
     let onStatus: (ImportReleaseProposal, ImportProposalStatus) async throws -> Void
-    let onAttach: (ImportReleaseProposal, AlbumID) async throws -> AlbumID
+    let onAttach: (ImportReleaseProposal, AlbumID, UUID) async throws -> AlbumID
     let onSelectRelease: (ImportReleaseProposal, ExternalReleasePreview) async throws -> Void
     let onApplyMetadata: (ExternalMetadataSelection, ExternalMetadataFieldSelection) async throws -> Void
     let onOpenAlbum: (AlbumID) -> Void
@@ -26,7 +26,7 @@ struct ImportReviewWorkspace: View {
     @State private var showsLookup = false
     @State private var showsAttachment = false
 
-    init(batchID: ImportBatchID, proposals: [ImportReleaseProposal], previews: [UUID: ImportProposalPreview], candidates: [ImportCandidate], selections: [UUID: ExternalMetadataSelection], library: LibraryStore, onAdd: @escaping (ImportReleaseProposal) async throws -> AlbumID, onStatus: @escaping (ImportReleaseProposal, ImportProposalStatus) async throws -> Void, onAttach: @escaping (ImportReleaseProposal, AlbumID) async throws -> AlbumID, onSelectRelease: @escaping (ImportReleaseProposal, ExternalReleasePreview) async throws -> Void, onApplyMetadata: @escaping (ExternalMetadataSelection, ExternalMetadataFieldSelection) async throws -> Void, onOpenAlbum: @escaping (AlbumID) -> Void) {
+    init(batchID: ImportBatchID, proposals: [ImportReleaseProposal], previews: [UUID: ImportProposalPreview], candidates: [ImportCandidate], selections: [UUID: ExternalMetadataSelection], library: LibraryStore, onAdd: @escaping (ImportReleaseProposal) async throws -> AlbumID, onStatus: @escaping (ImportReleaseProposal, ImportProposalStatus) async throws -> Void, onAttach: @escaping (ImportReleaseProposal, AlbumID, UUID) async throws -> AlbumID, onSelectRelease: @escaping (ImportReleaseProposal, ExternalReleasePreview) async throws -> Void, onApplyMetadata: @escaping (ExternalMetadataSelection, ExternalMetadataFieldSelection) async throws -> Void, onOpenAlbum: @escaping (AlbumID) -> Void) {
         self.batchID = batchID; self.proposals = proposals; self.previews = previews; self.candidates = candidates; self.selections = selections
         self.library = library
         self.onAdd = onAdd; self.onStatus = onStatus; self.onAttach = onAttach; self.onSelectRelease = onSelectRelease; self.onApplyMetadata = onApplyMetadata; self.onOpenAlbum = onOpenAlbum
@@ -113,8 +113,8 @@ struct ImportReviewWorkspace: View {
                     }
                     actionControls(proposal)
                     if showsAttachment, proposal.createdAlbumID == nil, proposal.status != .dismissed {
-                        ImportAttachmentReviewView(library: library, proposal: proposal, onBusyChange: { isBusy = $0 }, onAttach: { targetID in
-                            let id = try await onAttach(proposal, targetID)
+                        ImportAttachmentReviewView(library: library, proposal: proposal, onBusyChange: { isBusy = $0 }, onAttach: { targetID, installationID in
+                            let id = try await onAttach(proposal, targetID, installationID)
                             lastAction = "Linked"; lastAdded = (proposal.title, id)
                             showsAttachment = false
                             advance(after: proposal)

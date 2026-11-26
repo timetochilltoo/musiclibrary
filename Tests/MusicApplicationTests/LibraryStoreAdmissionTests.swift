@@ -1347,6 +1347,43 @@ struct LibraryStoreAdmissionTests {
         #expect(try await recovered.album(id: album.id)?.title == edited.title)
     }
 
+    @Test("Same-revision restore invalidates the previous attachment intent", arguments: [false, true])
+    func sameRevisionRestore(archive: Bool) async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "InstallationIdentity-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try await LibraryStore(recoveryFixtureDirectory: root)
+        let installation = store.catalogueInstallationID
+        let album = try await store.addAlbum(.init(title: "Attachment target"))
+        let proposal = try await store.withCatalogueUse { database, _ in
+            try await Fixture.seedImportProposal(database: database, directory: root)
+        }
+        try await store.reload()
+        let revision = store.catalogueRevision
+        #expect(store.catalogueInstallationID == installation)
+        if archive {
+            let saved = try await store.exportCompleteCatalogueArchive(to: root.appending(path: "Exports"))
+            try await store.restoreCompleteCatalogueArchive(from: saved)
+        } else {
+            try await store.createMasterBackupNow()
+            let directory = root.appending(path: "MasterBackups")
+            let manifest = try #require(FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+                .first { $0.lastPathComponent.hasSuffix(".manifest.json") })
+            try await store.restoreMasterBackup(from: manifest)
+        }
+
+        #expect(store.catalogueRevision == revision)
+        #expect(store.catalogueInstallationID != installation)
+        await #expect(throws: DatabaseError.invalidOperation("The catalogue changed. Reopen the attachment review before linking files.")) {
+            _ = try await store.attachImportReleaseProposal(proposal.id, to: album.id, expectedInstallationID: installation)
+        }
+        #expect(store.catalogueRevision == revision)
+        let preview = try await store.importAttachmentPreview(proposalID: proposal.id, albumID: album.id)
+        #expect(preview.isCompatible)
+        #expect(try await store.attachImportReleaseProposal(
+            proposal.id, to: album.id, expectedInstallationID: store.catalogueInstallationID
+        ) == album.id)
+    }
+
     private func until(_ predicate: @MainActor () -> Bool) async throws {
         let deadline = ContinuousClock.now.advanced(by: .seconds(5))
         while !predicate() {
@@ -1394,6 +1431,10 @@ struct LibraryStoreAdmissionTests {
             return .init(directory: directory, database: database, album: album, disc: disc, track: track)
         }
         func makeImportProposal() async throws -> ImportReleaseProposal {
+            try await Self.seedImportProposal(database: database, directory: directory)
+        }
+
+        static func seedImportProposal(database: MusicDatabase, directory: URL) async throws -> ImportReleaseProposal {
             let root = try await database.createStorageRoot(.init(
                 displayName: "Fixture root", lastKnownPath: directory.path, bookmarkData: nil, status: .available
             ))

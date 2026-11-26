@@ -51,6 +51,9 @@ public final class LibraryStore: ObservableObject {
     @Published public private(set) var snapshotDestinationPath: String?
     @Published public private(set) var snapshotPublishStatus = "Snapshot destination not configured"
     @Published public private(set) var catalogueRevision: Int64 = 0
+    /// Session identity for the currently installed catalogue. Revision values
+    /// may repeat after restore.
+    @Published public private(set) var catalogueInstallationID = UUID()
     @Published public private(set) var lastPublishedRevision: Int64?
     @Published public private(set) var lastPublishedAt: Date?
     @Published public private(set) var lastSnapshotPublishFailure: String?
@@ -928,8 +931,13 @@ public final class LibraryStore: ObservableObject {
         }
     }
 
-    public func attachImportReleaseProposal(_ proposalID: UUID, to albumID: AlbumID) async throws -> AlbumID {
+    public func attachImportReleaseProposal(
+        _ proposalID: UUID, to albumID: AlbumID, expectedInstallationID: UUID? = nil
+    ) async throws -> AlbumID {
         try await withCatalogueUse { database, context in
+            if let expectedInstallationID, expectedInstallationID != catalogueInstallationID {
+                throw DatabaseError.invalidOperation("The catalogue changed. Reopen the attachment review before linking files.")
+            }
             let attachedAlbumID = try await database.attachImportReleaseProposal(proposalID, to: albumID)
             try await self.reload(using: context)
             return attachedAlbumID
@@ -1395,6 +1403,7 @@ public final class LibraryStore: ObservableObject {
             try await reloadAfterMaintenanceCommit(using: context)
             try? FileManager.default.removeItem(at: rollbackDirectory)
             catalogueMaintenanceStatus = "Restored revision \(staged.manifest.revision); previous catalogue archived as \(recoveryArchive.lastPathComponent)"
+            catalogueInstallationID = UUID()
         } catch {
             let restoreFailure = error.localizedDescription
             self.database = nil
@@ -1433,6 +1442,7 @@ public final class LibraryStore: ObservableObject {
                 try catalogueAdmission.requireReview(using: context)
                 recoveryReviewMessage = report.localizedDescription
                 catalogueMaintenanceStatus = report.localizedDescription
+                catalogueInstallationID = UUID()
                 throw report
             }
             try? FileManager.default.removeItem(at: rollbackDirectory)
@@ -1484,11 +1494,13 @@ public final class LibraryStore: ObservableObject {
                 try catalogueAdmission.requireReview(using: context)
                 recoveryReviewMessage = message
                 catalogueMaintenanceStatus = message
+                catalogueInstallationID = UUID()
                 throw DatabaseError.invalidOperation(message)
             }
             throw resetError
         }
         if hadArtwork { try? manager.removeItem(at: displacedArtwork) }
+        defer { catalogueInstallationID = UUID() }
         try await reloadAfterMaintenanceCommit(using: context)
         catalogueMaintenanceStatus = "Catalogue reset; music folders preserved and recovery archive kept at \(recoveryArchive.lastPathComponent)"
         return recoveryArchive
@@ -1634,6 +1646,7 @@ public final class LibraryStore: ObservableObject {
             database = restored
             try await reloadAfterMaintenanceCommit(using: context)
             masterBackupStatus = "Restored revision \(revision); previous master kept in Recovery"
+            catalogueInstallationID = UUID()
         } catch {
             let restoreFailure = error.localizedDescription
             database = nil
@@ -1662,6 +1675,7 @@ public final class LibraryStore: ObservableObject {
                 try catalogueAdmission.requireReview(using: context)
                 recoveryReviewMessage = report.localizedDescription
                 masterBackupStatus = report.localizedDescription
+                catalogueInstallationID = UUID()
                 throw report
             }
             let report = RestoreRecoveryError(outcome: .restoredPreviousCatalogue, restoreFailure: restoreFailure, recoveryFailure: nil, recoveryURL: catalogueURL)

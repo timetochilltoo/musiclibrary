@@ -6,7 +6,7 @@ struct ImportAttachmentReviewView: View {
     @ObservedObject var library: LibraryStore
     let proposal: ImportReleaseProposal
     let onBusyChange: (Bool) -> Void
-    let onAttach: (AlbumID) async throws -> Void
+    let onAttach: (AlbumID, UUID) async throws -> Void
     let onReviewMatching: () -> Void
     let onCancel: () -> Void
     var intendedTargetID: AlbumID? = nil
@@ -14,6 +14,7 @@ struct ImportAttachmentReviewView: View {
     @State private var searchText = ""
     @State private var selectedAlbumID: AlbumID?
     @State private var preview: ImportAttachmentPreview?
+    @State private var previewInstallationID: UUID?
     @State private var requestID = UUID()
     @State private var isLoading = false
     @State private var isAttaching = false
@@ -27,7 +28,8 @@ struct ImportAttachmentReviewView: View {
         }.sorted { $0.displayTitle.localizedStandardCompare($1.displayTitle) == .orderedAscending }
     }
     private var canAttach: Bool {
-        !isLoading && !isAttaching && ImportAttachmentReview.canConfirm(preview, proposalID: proposal.id, albumID: selectedAlbumID, acknowledged: acknowledged)
+        previewInstallationID == library.catalogueInstallationID && !isLoading && !isAttaching &&
+            ImportAttachmentReview.canConfirm(preview, proposalID: proposal.id, albumID: selectedAlbumID, acknowledged: acknowledged)
     }
 
     var body: some View {
@@ -85,31 +87,36 @@ struct ImportAttachmentReviewView: View {
         }
         .onChange(of: proposal) { _, _ in invalidatePreview() }
         .onChange(of: library.catalogueRevision) { _, _ in invalidatePreview() }
+        .onChange(of: library.catalogueInstallationID) { _, _ in invalidatePreview() }
     }
 
     private func invalidatePreview() {
         requestID = UUID(); preview = nil; acknowledged = false; errorMessage = nil; isLoading = false
+        previewInstallationID = nil
     }
     private func loadPreview() async {
         guard let albumID = selectedAlbumID else { return }
         let token = requestID
+        let installationID = library.catalogueInstallationID
         isLoading = true
         defer { if token == requestID { isLoading = false } }
         do {
             let result = try await library.importAttachmentPreview(proposalID: proposal.id, albumID: albumID)
-            guard !Task.isCancelled, token == requestID, selectedAlbumID == albumID else { return }
+            guard !Task.isCancelled, token == requestID, selectedAlbumID == albumID,
+                  installationID == library.catalogueInstallationID else { return }
             preview = result
+            previewInstallationID = installationID
         } catch {
             guard !Task.isCancelled, token == requestID else { return }
             errorMessage = error.localizedDescription
         }
     }
     private func attach() {
-        guard canAttach, let albumID = selectedAlbumID else { return }
+        guard canAttach, let albumID = selectedAlbumID, let installationID = previewInstallationID else { return }
         isAttaching = true; errorMessage = nil; onBusyChange(true)
         Task {
             defer { isAttaching = false; onBusyChange(false) }
-            do { try await onAttach(albumID) }
+            do { try await onAttach(albumID, installationID) }
             catch {
                 invalidatePreview()
                 await loadPreview()

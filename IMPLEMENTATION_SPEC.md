@@ -14,6 +14,7 @@ Current baseline: inspect `main` with `git log --oneline -5`; [HANDOFF.md](HANDO
 
 Completed and verified:
 
+- RA3 session-local catalogue installation identity changes on successful restore, committed reset or incomplete rollback. The Mac clears catalogue routes, open drafts and player presentation caches while keeping the playback controller and Settings transfer state. An import attachment review carries the installation identity into the admitted write, which refuses stale reviews independently of revision.
 - RA2 database-only restore verifies an independent staging copy against the backup manifest, then drains ordinary operations. It checkpoints and verifies the retained previous database and holds exclusive admission through installation or rollback and publication. Current artwork and audio remain in place. Incomplete rollback closes ordinary admission for review.
 - RA2 complete archive restore validates and stages the selected archive under the transfer queue, then reserves exclusive admission through verified recovery capture, database and artwork replacement or rollback, and publication. A failed rollback retains the verified recovery archive and enters review-required state.
 - RA2 catalogue reset reserves exclusive admission across verified recovery capture, managed artwork displacement, the root-preserving reset transaction, rollback if needed and final publication. A rollback failure retains the verified archive and closes ordinary admission for review.

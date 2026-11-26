@@ -1,6 +1,6 @@
 # Catalogue-use migration inventory
 
-Snapshot: 27 November 2026, RA2 exclusive database-only restore. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
+Snapshot: 27 November 2026, RA3 catalogue installation identity. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
 Operational state: [HANDOFF.md](HANDOFF.md). Safety design: [recovery admission audit](RECOVERY_WRITER_ADMISSION_AUDIT.md).
 
 ## Coverage and lifetime contract
@@ -292,6 +292,12 @@ invalid-context failures release or refuse cleanly. Existing search overlap test
 continue to cover generation ordering. These are partial integration checks, not
 live recovery exclusion or reader migration completeness.
 
-Next review installation identity and stale intents retained outside a
-catalogue scope. Restore can publish a revision already used by the previous
-catalogue. Explicit FLAC execution has a separate boundary.
+Catalogue installation identity changes after a committed reset, successful
+restore, or incomplete rollback. Ordinary edits and recovered rollbacks keep
+it. Mac catalogue workspaces and player presentation invalidate their cached
+state on replacement. Attachment previews capture this identity and pass it
+to the admitted write.
+
+Next guard other deferred catalogue intents across installation changes,
+beginning with MusicBrainz selections and relink or file-picker returns.
+Explicit FLAC execution has a separate boundary.

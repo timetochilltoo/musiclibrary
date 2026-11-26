@@ -299,7 +299,10 @@ private struct LibraryShellView: View {
             .navigationTitle("Music Library")
             .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 260)
         } detail: {
-            workspace
+            Group {
+                if section == .settings { workspace }
+                else { workspace.id(library.catalogueInstallationID) }
+            }
                 .navigationTitle(workspaceTitle)
                 .toolbar { toolbar }
         }
@@ -328,6 +331,23 @@ private struct LibraryShellView: View {
             }
         }
         .onChange(of: selectedContributorID) { _, _ in contributorDetailRole = nil }
+        .onChange(of: library.catalogueInstallationID) { _, _ in
+            selectedAlbumID = nil
+            selectedContributorID = nil
+            selectedBoxSetID = nil
+            selectedImportBatchID = nil
+            importBatchToAnalyzeAfterScan = nil
+            selectedPlaylistID = nil
+            showsAlbumEditor = false
+            showsLocationEditor = false
+            showsBoxSetEditor = false
+            showsStorageRootPicker = false
+            showsScanRootPicker = false
+            showsPlaylistEditor = false
+            albumToEdit = nil
+            playlistToRename = nil
+            metadataSelection = nil
+        }
         .onChange(of: section) { _, newSection in
             // Album links stay inside their originating workspace. A sidebar
             // change always closes that route, even when moving to Albums.
@@ -393,6 +413,7 @@ private struct LibraryShellView: View {
                         metadataSelection = .init(trackID: trackID, title: playback.currentTitle)
                     }
                 }
+                .id(library.catalogueInstallationID)
             }
         }
     }
@@ -2120,6 +2141,14 @@ private struct StorageRootList: View {
                 onReset: { confirmation in resetCatalogue(confirmation: confirmation) }
             )
         }
+        .onChange(of: library.catalogueInstallationID) { _, _ in
+            rootToRename = nil
+            relinkProposalToApply = nil
+            albumToPurge = nil
+            playlistToPurge = nil
+            cleanupPreview = nil
+            showsCleanupReview = false
+        }
         .task(id: category) {
             if shows(.playback) { await refreshDSFCacheStatus() }
         }
@@ -2837,8 +2866,8 @@ private struct ImportBatchDetail: View {
                     return id
                 },
                 onStatus: { proposal, status in try await library.setImportReleaseProposal(proposal.id, status: status); await load() },
-                onAttach: { proposal, targetID in
-                    let id = try await library.attachImportReleaseProposal(proposal.id, to: targetID)
+                onAttach: { proposal, targetID, installationID in
+                    let id = try await library.attachImportReleaseProposal(proposal.id, to: targetID, expectedInstallationID: installationID)
                     await load()
                     return id
                 }, onSelectRelease: { proposal, release in

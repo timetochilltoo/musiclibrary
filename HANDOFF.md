@@ -4,7 +4,33 @@ Last updated: 27 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — RA2 exclusive database-only restore
+## Current resume — RA3 catalogue installation identity
+
+LibraryStore now publishes a session-local installation identity distinct
+from its revision. Successful restore, committed reset and incomplete rollback
+change the identity. Ordinary edits and successful rollback preserve it.
+The Mac clears catalogue routes and drafts, rebuilds catalogue workspaces
+and player presentation, and retains the Settings transfer state and playback
+controller. Native window and sheet behaviour still needs an interactive check.
+
+Import attachment captures the installation identity when it previews the
+file pairing. Both entry points carry it into the admitted attachment write.
+The disposable regression restores an identical revision by both restore
+paths, checks that the prior attachment intent refuses without a write,
+then re-previews and attaches against the new installation. Existing fixtures
+check that successful rollback preserves identity and reset changes it.
+
+The 50 focused tests, 287 Debug tests, 276 Release tests and Swift build passed.
+Whitespace, declaration inventory and audit link checks passed. Logs are at
+`/private/tmp/musiclibrary-ra3-installation-{focused,debug,release,build}.log`.
+
+Next guard **other deferred catalogue intents**, beginning with MusicBrainz
+selections and relink or file-picker callbacks that can outlive an installation.
+Explicit FLAC execution still has a separate boundary. The latest runnable
+artifact is Music Library 0.72 build 73 with schema 17.
+See [the migration inventory](CATALOGUE_USE_MIGRATION.md).
+
+## Previous resume — RA2 exclusive database-only restore
 
 Database-only restore copies the selected SQLite payload into disposable staging
 and verifies it against its manifest under the transfer queue. It then drains

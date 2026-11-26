@@ -294,6 +294,7 @@ struct RecoveryTransferIntegrationTests {
         try await store.updateAlbum(album.id, with: .init(title: "Live title before failure"))
         try Data([9]).write(to: art)
         let revision = store.catalogueRevision
+        let installation = store.catalogueInstallationID
         do { try await store.restoreCompleteCatalogueArchive(from: archive); Issue.record("Expected injected failure") }
         catch {
             let report = try #require(error as? RestoreRecoveryError)
@@ -303,7 +304,7 @@ struct RecoveryTransferIntegrationTests {
         }
         try await store.reload()
         #expect(store.catalogueAlbums.first?.title == "Live title before failure")
-        #expect(store.catalogueRevision == revision)
+        #expect(store.catalogueRevision == revision && store.catalogueInstallationID == installation)
         #expect(try Data(contentsOf: art) == Data([9]))
         #expect(!store.transferActivity.isBusy)
         let recovery = root.appending(path: "Recovery/CatalogueArchives/before-archive-restore")
@@ -329,6 +330,7 @@ struct RecoveryTransferIntegrationTests {
         try FileManager.default.createDirectory(at: art.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data([8]).write(to: art)
         let revision = store.catalogueRevision
+        let installation = store.catalogueInstallationID
         do { try await store.restoreMasterBackup(from: backup); Issue.record("Expected injected failure") }
         catch {
             let report = try #require(error as? RestoreRecoveryError)
@@ -338,7 +340,7 @@ struct RecoveryTransferIntegrationTests {
         }
         try await store.reload()
         #expect(store.catalogueAlbums.first?.title == "Live database before failure")
-        #expect(store.catalogueRevision == revision)
+        #expect(store.catalogueRevision == revision && store.catalogueInstallationID == installation)
         #expect(try Data(contentsOf: art) == Data([8]))
         #expect(!store.transferActivity.isBusy)
         try await store.updateAlbum(album.id, with: .init(title: "Writable after rollback"))
@@ -402,6 +404,7 @@ struct RecoveryTransferIntegrationTests {
         try await store.reload()
         let roots = store.storageRoots
         let revision = store.catalogueRevision
+        let installation = store.catalogueInstallationID
         let audio = root.appending(path: "AudioReferences/synthetic.flac")
         try FileManager.default.createDirectory(at: audio.deletingLastPathComponent(), withIntermediateDirectories: true)
         let sentinel = Data("Disposable source sentinel".utf8)
@@ -414,7 +417,9 @@ struct RecoveryTransferIntegrationTests {
         }
         #expect(store.catalogueRevision == revision)
         #expect(!FileManager.default.fileExists(atPath: root.appending(path: "Recovery").path))
+        #expect(store.catalogueInstallationID == installation)
         let archive = try await store.resetCatalogue(confirmation: "RESET")
+        #expect(store.catalogueInstallationID != installation)
         let manifest = try CompleteCatalogueArchive.verify(at: archive)
         #expect(manifest.revision == revision)
         #expect(manifest.artwork.map(\.fileName) == ["cover.jpg"])

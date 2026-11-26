@@ -58,9 +58,9 @@ struct AlbumAttachmentEntryView: View {
                                     }
                                 }
                                 if let selected {
-                                    ImportAttachmentReviewView(library: library, proposal: selected, onBusyChange: { isBusy = $0 }, onAttach: { _ in
+                                    ImportAttachmentReviewView(library: library, proposal: selected, onBusyChange: { isBusy = $0 }, onAttach: { _, installationID in
                                         // Never allow a UI selection to redirect an album-origin write.
-                                        _ = try await library.attachImportReleaseProposal(selected.id, to: album.id)
+                                        _ = try await library.attachImportReleaseProposal(selected.id, to: album.id, expectedInstallationID: installationID)
                                         await onAttached()
                                         didAttach = true
                                     }, onReviewMatching: { onReviewMatching(batch.id); dismiss() }, onCancel: { dismiss() }, intendedTargetID: album.id, onSeparateAlbum: { onReviewMatching(batch.id); dismiss() })

@@ -338,7 +338,10 @@ Database-only restore follows the same scope in the next checkpoint.
 RA2 database-only restore checkpoint. Restore verifies a staged backup, then
 drains ordinary users and holds admission through previous database retention,
 installation or rollback, and final refresh. Coverage is 111 scoped declarations.
-Catalogue installation identity and stale intent handling come next.
+RA3 installation identity checkpoint. Reset, successful restore, and
+incomplete rollback invalidate Mac catalogue routes and review drafts. Import
+attachment refuses a preview from an earlier installation even at the same
+revision. Remaining deferred catalogue intents come next.
 
 Store more than an absolute path:
 
