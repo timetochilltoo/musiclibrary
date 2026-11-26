@@ -314,6 +314,12 @@ public final class LibraryStore: ObservableObject {
         }
     }
 
+    private func validateInstallation(_ expectedID: UUID?) throws {
+        if let expectedID, expectedID != catalogueInstallationID {
+            throw DatabaseError.invalidOperation("The catalogue changed. Reopen this action and try again.")
+        }
+    }
+
     public func reload() async throws {
         try await catalogueAdmission.withOperation { context in try await self.reload(using: context) }
     }
@@ -439,9 +445,11 @@ public final class LibraryStore: ObservableObject {
         contributors: [NewAlbumContributorCredit] = [],
         musicBrainzArtworkURL: URL? = nil,
         musicBrainzReleaseID: String? = nil,
-        discs: [NewAlbumDisc] = []
+        discs: [NewAlbumDisc] = [],
+        expectedInstallationID: UUID? = nil
     ) async throws -> Album {
         try await withCatalogueUse { database, context in
+            try validateInstallation(expectedInstallationID)
             let managedArtworkURL: URL?
             if let musicBrainzArtworkURL {
                 var request = MusicNetworkRequestPolicy.request(url: musicBrainzArtworkURL)
@@ -640,8 +648,9 @@ public final class LibraryStore: ObservableObject {
             _ = try await database.updateContributor(contributorID, with: draft)
         }
     }
-    public func addAlbumArtwork(albumID: AlbumID, from sourceURL: URL, role: ArtworkRole) async throws {
+    public func addAlbumArtwork(albumID: AlbumID, from sourceURL: URL, role: ArtworkRole, expectedInstallationID: UUID? = nil) async throws {
         try await withCatalogueUse { database, context in
+            try validateInstallation(expectedInstallationID)
             guard let managedArtworkStore else { throw DatabaseError.notFound("Catalogue database") }
             let accessed = sourceURL.startAccessingSecurityScopedResource()
             defer { if accessed { sourceURL.stopAccessingSecurityScopedResource() } }
@@ -695,8 +704,9 @@ public final class LibraryStore: ObservableObject {
         }
     }
 
-    public func addStorageRoot(url: URL) async throws {
+    public func addStorageRoot(url: URL, expectedInstallationID: UUID? = nil) async throws {
         try await withCatalogueUse { database, context in
+            try validateInstallation(expectedInstallationID)
             let bookmarkData = try makeSecurityScopedBookmark(for: url)
             let values = try? url.resourceValues(forKeys: [.volumeUUIDStringKey])
             let scope: StorageRootScope = url.path.hasPrefix("/Volumes/") ? .nasPublished : .localOnly
@@ -718,8 +728,9 @@ public final class LibraryStore: ObservableObject {
         }
     }
 
-    public func renewStorageRootAccess(_ id: StorageRootID, selecting url: URL) async throws {
+    public func renewStorageRootAccess(_ id: StorageRootID, selecting url: URL, expectedInstallationID: UUID? = nil) async throws {
         try await withCatalogueUse { database, context in
+            try validateInstallation(expectedInstallationID)
             guard let root = try await database.storageRoots().first(where: { $0.id == id }) else {
                 throw DatabaseError.notFound("Storage root")
             }
@@ -778,8 +789,9 @@ public final class LibraryStore: ObservableObject {
             try await self.reload(using: context)
         }
     }
-    public func applyRelinkProposal(_ id: UUID) async throws {
+    public func applyRelinkProposal(_ id: UUID, expectedInstallationID: UUID? = nil) async throws {
         try await withCatalogueUse { database, context in
+            try validateInstallation(expectedInstallationID)
             guard let proposal = relinkProposals.first(where: { $0.id == id }) else { throw DatabaseError.notFound("Relink proposal") }
             try await self.refreshStorageRootAccess(using: database, context: context)
             let rootID = try await database.storageRootID(for: proposal.assetID)
@@ -845,8 +857,9 @@ public final class LibraryStore: ObservableObject {
     /// Records a user-selected replacement under the asset's existing music root.
     /// The catalogue path remains unchanged until the stored proposal is explicitly
     /// applied from Settings.
-    public func proposeRelink(assetID: DigitalAssetID, replacementURL: URL) async throws {
+    public func proposeRelink(assetID: DigitalAssetID, replacementURL: URL, expectedInstallationID: UUID? = nil) async throws {
         try await withCatalogueUse { database, context in
+            try validateInstallation(expectedInstallationID)
             try await self.refreshStorageRootAccess(using: database, context: context)
             let rootID = try await database.storageRootID(for: assetID)
             guard let root = storageRoots.first(where: { $0.id == rootID }) else { throw DatabaseError.notFound("Storage root for digital asset") }
@@ -1029,8 +1042,9 @@ public final class LibraryStore: ObservableObject {
         try await metadataLookupProvider.releaseDetails(id: id)
     }
 
-    public func saveMusicBrainzSelection(_ result: ExternalReleasePreview, for proposalID: UUID) async throws {
+    public func saveMusicBrainzSelection(_ result: ExternalReleasePreview, for proposalID: UUID, expectedInstallationID: UUID? = nil) async throws {
         try await withCatalogueUse { database, _ in
+            try validateInstallation(expectedInstallationID)
             try await database.saveExternalMetadataSelection(importProposalID: proposalID, provider: "musicbrainz", externalID: result.id, title: result.title, artist: result.artist, discCount: result.mediaCount, countryCode: result.countryCode, catalogueNumber: result.catalogueNumber, releaseDate: result.releaseDate, trackTitles: result.trackTitles)
         }
     }
@@ -1041,8 +1055,9 @@ public final class LibraryStore: ObservableObject {
         }
     }
 
-    public func applyExternalMetadataSelection(_ selection: ExternalMetadataSelection, fields: ExternalMetadataFieldSelection) async throws {
+    public func applyExternalMetadataSelection(_ selection: ExternalMetadataSelection, fields: ExternalMetadataFieldSelection, expectedInstallationID: UUID? = nil) async throws {
         try await withCatalogueUse { database, context in
+            try validateInstallation(expectedInstallationID)
             var managedArtworkPath: String?
             if fields.frontArtwork {
                 guard let artworkURL = URL(string: "https://coverartarchive.org/release/\(selection.externalID)/front") else {
@@ -1749,17 +1764,18 @@ public final class LibraryStore: ObservableObject {
         }
     }
 
-    public func startImportScan(rootID: StorageRootID) async throws -> ImportBatchID {
-        return try await startImportScan(rootID: rootID, folderURL: nil)
+    public func startImportScan(rootID: StorageRootID, expectedInstallationID: UUID? = nil) async throws -> ImportBatchID {
+        try await startImportScan(rootID: rootID, folderURL: nil, expectedInstallationID: expectedInstallationID)
     }
 
-    public func startImportScan(containing folderURL: URL) async throws -> ImportBatchID {
-        try await startImportScan(rootID: nil, folderURL: folderURL)
+    public func startImportScan(containing folderURL: URL, expectedInstallationID: UUID? = nil) async throws -> ImportBatchID {
+        try await startImportScan(rootID: nil, folderURL: folderURL, expectedInstallationID: expectedInstallationID)
     }
 
-    private func startImportScan(rootID: StorageRootID?, folderURL: URL?) async throws -> ImportBatchID {
+    private func startImportScan(rootID: StorageRootID?, folderURL: URL?, expectedInstallationID: UUID? = nil) async throws -> ImportBatchID {
         let context = try catalogueAdmission.beginOperation()
         do {
+            try validateInstallation(expectedInstallationID)
             return try await prepareImportScan(rootID: rootID, folderURL: folderURL, context: context)
         } catch {
             catalogueAdmission.endOperation(context)
@@ -1877,8 +1893,9 @@ public final class LibraryStore: ObservableObject {
         return try await startImportScan(rootID: rootID, folderURL: folderURL)
     }
 
-    public func addLocation(_ draft: NewPhysicalLocation) async throws -> PhysicalLocation {
+    public func addLocation(_ draft: NewPhysicalLocation, expectedInstallationID: UUID? = nil) async throws -> PhysicalLocation {
         try await withCatalogueUse { database, context in
+            try validateInstallation(expectedInstallationID)
             let location = try await database.createLocation(draft)
             try await self.reload(using: context)
             return location

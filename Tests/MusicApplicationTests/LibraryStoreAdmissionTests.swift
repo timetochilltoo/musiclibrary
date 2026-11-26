@@ -1384,6 +1384,74 @@ struct LibraryStoreAdmissionTests {
         ) == album.id)
     }
 
+    @Test("Deferred MusicBrainz and file selections refuse after restoring the same revision")
+    func deferredInstallationIntents() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "DeferredIntents-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try await LibraryStore(recoveryFixtureDirectory: root)
+        let album = try await store.addAlbum(.init(title: "Physical album"))
+        let proposal = try await store.withCatalogueUse { database, _ in
+            try await Fixture.seedImportProposal(database: database, directory: root)
+        }
+        try await store.reload()
+        let registeredRoot = try #require(store.storageRoots.first)
+        let release = ExternalReleasePreview(id: UUID().uuidString.lowercased(), title: "Reviewed title", artist: nil,
+                                             releaseDate: nil, countryCode: nil, catalogueNumber: nil, mediaCount: 1)
+        let installation = store.catalogueInstallationID
+        try await store.saveMusicBrainzSelection(release, for: proposal.id, expectedInstallationID: installation)
+        let selection = try #require(await store.externalMetadataSelection(for: proposal.id))
+        let revision = store.catalogueRevision
+        let archive = try await store.exportCompleteCatalogueArchive(to: root.appending(path: "Exports"))
+        try await store.restoreCompleteCatalogueArchive(from: archive)
+        #expect(store.catalogueRevision == revision && store.catalogueInstallationID != installation)
+
+        let stale = DatabaseError.invalidOperation("The catalogue changed. Reopen this action and try again.")
+        let fields = ExternalMetadataFieldSelection(title: true, artist: false, discCount: false)
+        let pickedFile = root.appending(path: "selected.jpg")
+        await #expect(throws: stale) {
+            try await store.saveMusicBrainzSelection(release, for: proposal.id, expectedInstallationID: installation)
+        }
+        await #expect(throws: stale) {
+            try await store.applyExternalMetadataSelection(selection, fields: fields, expectedInstallationID: installation)
+        }
+        await #expect(throws: stale) {
+            _ = try await store.addAlbum(.init(title: "Stale draft"), expectedInstallationID: installation)
+        }
+        await #expect(throws: stale) {
+            _ = try await store.addLocation(.init(name: "Stale location"), expectedInstallationID: installation)
+        }
+        await #expect(throws: stale) {
+            try await store.applyRelinkProposal(UUID(), expectedInstallationID: installation)
+        }
+        await #expect(throws: stale) {
+            try await store.proposeRelink(assetID: DigitalAssetID(), replacementURL: pickedFile, expectedInstallationID: installation)
+        }
+        await #expect(throws: stale) {
+            try await store.addAlbumArtwork(albumID: album.id, from: pickedFile, role: .front, expectedInstallationID: installation)
+        }
+        await #expect(throws: stale) {
+            try await store.addStorageRoot(url: root, expectedInstallationID: installation)
+        }
+        await #expect(throws: stale) {
+            try await store.renewStorageRootAccess(registeredRoot.id, selecting: root, expectedInstallationID: installation)
+        }
+        await #expect(throws: stale) {
+            _ = try await store.startImportScan(rootID: registeredRoot.id, expectedInstallationID: installation)
+        }
+        await #expect(throws: stale) {
+            _ = try await store.startImportScan(containing: root, expectedInstallationID: installation)
+        }
+        #expect(store.catalogueAdmission.activeOperationCount == 0)
+        #expect(store.catalogueRevision == revision)
+        #expect(try await store.externalMetadataSelection(for: proposal.id) == selection)
+        #expect(try await store.importReleaseProposals(batchID: proposal.batchID).first?.title == proposal.title)
+
+        let current = store.catalogueInstallationID
+        try await store.applyExternalMetadataSelection(selection, fields: fields, expectedInstallationID: current)
+        #expect(try await store.importReleaseProposals(batchID: proposal.batchID).first?.title == release.title)
+        #expect(try await store.addAlbum(.init(title: "Fresh draft"), expectedInstallationID: current).title == "Fresh draft")
+    }
+
     private func until(_ predicate: @MainActor () -> Bool) async throws {
         let deadline = ContinuousClock.now.advanced(by: .seconds(5))
         while !predicate() {

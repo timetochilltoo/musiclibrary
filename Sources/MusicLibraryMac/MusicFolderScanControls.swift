@@ -12,6 +12,7 @@ struct MusicFolderScanControls: View {
     @State private var isCheckingAccess = false
     @State private var errorMessage: String?
     @State private var showsRenewalPicker = false
+    @State private var renewalPickerInstallationID: UUID?
     @State private var renewalStatus: String?
     @State private var showsRecoveryPreview = false
 
@@ -33,7 +34,8 @@ struct MusicFolderScanControls: View {
             .pickerStyle(.menu).disabled(isBusy)
             HStack {
                 Button(latestBatch == nil ? "Scan Folder" : "Rescan Folder", systemImage: "arrow.clockwise") {
-                    start { try await library.startImportScan(rootID: root.id) }
+                    let installationID = library.catalogueInstallationID
+                    start { try await library.startImportScan(rootID: root.id, expectedInstallationID: installationID) }
                 }
                 .disabled(root.status != .available || isBusy)
                 if let batch = activeBatch ?? latestBatch {
@@ -42,7 +44,10 @@ struct MusicFolderScanControls: View {
                 }
                 Button("Check Access", systemImage: "folder.badge.questionmark") { checkAccess() }
                     .disabled(isBusy)
-                Button("Renew Access…") { showsRenewalPicker = true }
+                Button("Renew Access…") {
+                    renewalPickerInstallationID = library.catalogueInstallationID
+                    showsRenewalPicker = true
+                }
                     .disabled(isBusy)
                     .help("Select the same registered folder to renew its access permission.")
             }
@@ -88,8 +93,10 @@ struct MusicFolderScanControls: View {
             #endif
         }
         .fileImporter(isPresented: $showsRenewalPicker, allowedContentTypes: [.folder]) { result in
+            guard let installationID = renewalPickerInstallationID else { return }
+            renewalPickerInstallationID = nil
             switch result {
-            case .success(let url): renewAccess(url)
+            case .success(let url): renewAccess(url, installationID: installationID)
             case .failure(let error): errorMessage = error.localizedDescription
             }
         }
@@ -118,7 +125,7 @@ struct MusicFolderScanControls: View {
         }
     }
 
-    private func renewAccess(_ url: URL) {
+    private func renewAccess(_ url: URL, installationID: UUID) {
         guard !isBusy else { return }
         errorMessage = nil
         renewalStatus = nil
@@ -126,7 +133,7 @@ struct MusicFolderScanControls: View {
         Task {
             defer { isCheckingAccess = false }
             do {
-                try await library.renewStorageRootAccess(root.id, selecting: url)
+                try await library.renewStorageRootAccess(root.id, selecting: url, expectedInstallationID: installationID)
                 renewalStatus = "Folder access renewed. Existing album and file references were kept; no scan was started."
             } catch { errorMessage = error.localizedDescription }
         }

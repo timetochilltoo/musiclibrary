@@ -8,6 +8,7 @@ struct ScanRootPicker: View {
     @ObservedObject var library: LibraryStore
     var onStarted: (ImportBatchID) -> Void = { _ in }
     @State private var showsChildFolderPicker = false
+    @State private var childFolderPickerInstallationID: UUID?
     @State private var isStarting = false
     @State private var errorMessage: String?
 
@@ -31,7 +32,10 @@ struct ScanRootPicker: View {
                 }
                 #endif
                 List(library.storageRoots) { root in
-                    Button { start { try await library.startImportScan(rootID: root.id) } } label: {
+                    Button {
+                        let installationID = library.catalogueInstallationID
+                        start { try await library.startImportScan(rootID: root.id, expectedInstallationID: installationID) }
+                    } label: {
                         HStack {
                             Image(systemName: "folder").accessibilityHidden(true)
                             VStack(alignment: .leading, spacing: 4) {
@@ -63,7 +67,10 @@ struct ScanRootPicker: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .primaryAction) {
-                    Button("Choose Album Subfolder…", systemImage: "folder") { showsChildFolderPicker = true }
+                    Button("Choose Album Subfolder…", systemImage: "folder") {
+                        childFolderPickerInstallationID = library.catalogueInstallationID
+                        showsChildFolderPicker = true
+                    }
                         .disabled(!hasAvailableFolder)
                 }
             }
@@ -73,8 +80,10 @@ struct ScanRootPicker: View {
         .interactiveDismissDisabled(isStarting)
         .frame(minWidth: 580, idealWidth: 640, minHeight: 440, idealHeight: 500)
         .fileImporter(isPresented: $showsChildFolderPicker, allowedContentTypes: [.folder]) { result in
+            guard let installationID = childFolderPickerInstallationID else { return }
+            childFolderPickerInstallationID = nil
             switch result {
-            case .success(let url): start { try await library.startImportScan(containing: url) }
+            case .success(let url): start { try await library.startImportScan(containing: url, expectedInstallationID: installationID) }
             case .failure(let error): errorMessage = error.localizedDescription
             }
         }

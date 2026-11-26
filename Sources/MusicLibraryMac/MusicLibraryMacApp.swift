@@ -271,6 +271,7 @@ private struct LibraryShellView: View {
     @State private var showsLocationEditor = false
     @State private var showsBoxSetEditor = false
     @State private var showsStorageRootPicker = false
+    @State private var storageRootPickerInstallationID: UUID?
     @State private var showsScanRootPicker = false
     @State private var showsPlaylistEditor = false
     @State private var albumToEdit: Album?
@@ -383,7 +384,14 @@ private struct LibraryShellView: View {
         .sheet(item: $playlistToRename) { playlist in PlaylistRenameEditor(library: library, playlist: playlist) }
         .sheet(item: $metadataSelection) { selection in TrackMetadataInspector(library: library, selection: selection) }
         .fileImporter(isPresented: $showsStorageRootPicker, allowedContentTypes: [.folder]) { result in
-            if case let .success(url) = result { Task { do { try await library.addStorageRoot(url: url) } catch { library.presentError(error) } } }
+            let installationID = storageRootPickerInstallationID
+            storageRootPickerInstallationID = nil
+            if case let .success(url) = result, let installationID {
+                Task {
+                    do { try await library.addStorageRoot(url: url, expectedInstallationID: installationID) }
+                    catch { library.presentError(error) }
+                }
+            }
         }
         .focusedSceneValue(\.settingsNavigation, { category in
             selectedAlbumID = nil
@@ -810,7 +818,10 @@ private struct LibraryShellView: View {
                     }
                     .help("Add a physical album to the catalogue")
                 } else if section == .settings && settingsCategory == .musicFolders {
-                    Button("Add Music Folder", systemImage: "plus") { showsStorageRootPicker = true }
+                    Button("Add Music Folder", systemImage: "plus") {
+                        storageRootPickerInstallationID = library.catalogueInstallationID
+                        showsStorageRootPicker = true
+                    }
                         .labelStyle(.titleAndIcon)
                 } else if section == .locations || section == .boxSets || section == .importInbox || section == .playlists {
                     Button(section == .locations ? "Add Location" : section == .boxSets ? "Add Box Set" : section == .importInbox ? "Rescan Music Folder" : "Add Playlist", systemImage: "plus") {
@@ -1635,6 +1646,7 @@ private struct StorageRootList: View {
     let onShowHealth: () -> Void
     @State private var rootToRename: StorageRoot?
     @State private var relinkProposalToApply: AssetRelinkProposal?
+    @State private var relinkConfirmationInstallationID: UUID?
     @State private var restoreManifestURL: URL?
     @State private var albumToPurge: Album?
     @State private var playlistToPurge: Playlist?
@@ -1988,7 +2000,10 @@ private struct StorageRootList: View {
                             Text(proposal.currentPath).font(.caption)
                             Text("Proposed: \(proposal.proposedPath)").font(.caption).foregroundStyle(.secondary)
                             HStack {
-                                Button("Apply Catalogue Path") { relinkProposalToApply = proposal }
+                                Button("Apply Catalogue Path") {
+                                    relinkConfirmationInstallationID = library.catalogueInstallationID
+                                    relinkProposalToApply = proposal
+                                }
                                 Button("Discard", role: .destructive) {
                                     Task {
                                         do { try await library.discardRelinkProposal(proposal.id) }
@@ -2100,11 +2115,11 @@ private struct StorageRootList: View {
             Text("The archive database and every managed artwork file are checksum-verified before replacement. The current catalogue is archived locally first. Source audio files are never changed.")
         }
         .confirmationDialog("Apply catalogue path?", isPresented: Binding(get: { relinkProposalToApply != nil }, set: { if !$0 { relinkProposalToApply = nil } }), titleVisibility: .visible) {
-            if let proposal = relinkProposalToApply {
+            if let proposal = relinkProposalToApply, let installationID = relinkConfirmationInstallationID {
                 Button("Apply Catalogue Path") {
                     Task {
                         do {
-                            try await library.applyRelinkProposal(proposal.id)
+                            try await library.applyRelinkProposal(proposal.id, expectedInstallationID: installationID)
                             relinkProposalToApply = nil
                         } catch {
                             library.presentError(error)
@@ -2730,7 +2745,8 @@ private struct ImportBatchDetail: View {
     @State private var missingAssets: [MissingAssetReview] = []
     @State private var missingAssetToConfirm: MissingAssetReview?
     @State private var missingAssetToRemove: MissingAssetReview?
-    @State private var missingAssetToRelink: MissingAssetReview?
+    @State private var missingAssetToRelink: (asset: MissingAssetReview, installationID: UUID)?
+    @State private var showsReplacementPicker = false
     @State private var showsBatchDetails = false
     @State private var isReadingMetadata = false
 
@@ -2818,7 +2834,10 @@ private struct ImportBatchDetail: View {
                             Text(asset.trackTitle).font(.caption)
                             Text(asset.relativePath).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                             HStack {
-                                Button("Choose Replacement File…") { missingAssetToRelink = asset }
+                                Button("Choose Replacement File…") {
+                                    missingAssetToRelink = (asset, library.catalogueInstallationID)
+                                    showsReplacementPicker = true
+                                }
                                 Button("Mark Catalogue Asset Missing…", role: .destructive) { missingAssetToConfirm = asset }
                                 Button("Remove Asset Reference…", role: .destructive) { missingAssetToRemove = asset }
                             }
@@ -2870,12 +2889,12 @@ private struct ImportBatchDetail: View {
                     let id = try await library.attachImportReleaseProposal(proposal.id, to: targetID, expectedInstallationID: installationID)
                     await load()
                     return id
-                }, onSelectRelease: { proposal, release in
-                    try await library.saveMusicBrainzSelection(release, for: proposal.id)
+                }, onSelectRelease: { proposal, release, installationID in
+                    try await library.saveMusicBrainzSelection(release, for: proposal.id, expectedInstallationID: installationID)
                     await load()
                 },
-                onApplyMetadata: { selection, fields in
-                    try await library.applyExternalMetadataSelection(selection, fields: fields)
+                onApplyMetadata: { selection, fields, installationID in
+                    try await library.applyExternalMetadataSelection(selection, fields: fields, expectedInstallationID: installationID)
                     await load()
                 }, onOpenAlbum: onOpenAlbum
             )
@@ -2921,14 +2940,14 @@ private struct ImportBatchDetail: View {
         } message: {
             Text("This permanently removes only the stored file reference for \(missingAssetToRemove?.trackTitle ?? "this track"). The catalogue track, album, playlists, and source audio files are not deleted or changed.")
         }
-        .fileImporter(isPresented: Binding(get: { missingAssetToRelink != nil }, set: { if !$0 { missingAssetToRelink = nil } }), allowedContentTypes: [.audio, .data]) { result in
-            guard let asset = missingAssetToRelink else { return }
+        .fileImporter(isPresented: $showsReplacementPicker, allowedContentTypes: [.audio, .data]) { result in
+            guard let (asset, installationID) = missingAssetToRelink else { return }
+            missingAssetToRelink = nil
             switch result {
             case .success(let url):
                 Task {
                     do {
-                        try await library.proposeRelink(assetID: asset.id, replacementURL: url)
-                        missingAssetToRelink = nil
+                        try await library.proposeRelink(assetID: asset.id, replacementURL: url, expectedInstallationID: installationID)
                         await load()
                     } catch {
                         library.presentError(error)
@@ -3402,6 +3421,7 @@ private struct AlbumDetail: View {
     @State private var albumCreditToEdit: ContributorCredit?
     @State private var trackCreditToEdit: TrackCreditSelection?
     @State private var showsArtworkPicker = false
+    @State private var artworkPickerInstallationID: UUID?
     @State private var artworkToMigrate: Artwork?
     @State private var discPendingDeletion: Disc?
     @State private var showsTagWritePreview = false
@@ -3447,7 +3467,7 @@ private struct AlbumDetail: View {
                     credits: credits,
                     aliases: aliases,
                     canPlay: !playableTracks.isEmpty,
-                    onChangeArtwork: { showsArtworkPicker = true },
+                    onChangeArtwork: { chooseArtwork() },
                     onPlay: { playAlbum(shuffled: false) },
                     onShuffle: { playAlbum(shuffled: true) },
                     onAddContributor: { showsAddContributor = true },
@@ -3545,7 +3565,7 @@ private struct AlbumDetail: View {
                 library: library,
                 onChooseArtwork: {
                     showsArtworkManagement = false
-                    showsArtworkPicker = true
+                    chooseArtwork()
                 },
                 onMigrate: { artworkToMigrate = $0 }
             )
@@ -3580,13 +3600,20 @@ private struct AlbumDetail: View {
             Text("A managed copy of \(image.localPath.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "this artwork") will be stored with the catalogue. The original file will not be modified or deleted.")
         }
         .fileImporter(isPresented: $showsArtworkPicker, allowedContentTypes: [.image]) { result in
-            if case let .success(url) = result {
+            let installationID = artworkPickerInstallationID
+            artworkPickerInstallationID = nil
+            if case let .success(url) = result, let installationID {
                 Task {
-                    do { try await library.addAlbumArtwork(albumID: album.id, from: url, role: .front); await loadContent() }
+                    do { try await library.addAlbumArtwork(albumID: album.id, from: url, role: .front, expectedInstallationID: installationID); await loadContent() }
                     catch { library.presentError(error) }
                 }
             }
         }
+    }
+
+    private func chooseArtwork() {
+        artworkPickerInstallationID = library.catalogueInstallationID
+        showsArtworkPicker = true
     }
 
     private var locationName: String {
@@ -3614,7 +3641,7 @@ private struct AlbumDetail: View {
         }
         if isOrganizeMode {
             Divider()
-            Button("Change Cover…", systemImage: "photo.badge.plus") { showsArtworkPicker = true }
+            Button("Change Cover…", systemImage: "photo.badge.plus") { chooseArtwork() }
             Button("Artwork Details…", systemImage: "info.circle") { showsArtworkManagement = true }
         } else if selectedArtwork == nil {
             Text("No cover selected")
@@ -3702,7 +3729,7 @@ private struct AlbumDetail: View {
                 onMakePortable: { artworkToMigrate = image }
             )
         }
-        Button("Choose Artwork…", systemImage: "photo.badge.plus") { showsArtworkPicker = true }
+        Button("Choose Artwork…", systemImage: "photo.badge.plus") { chooseArtwork() }
     }
 
     private func loadContent() async {
@@ -4352,6 +4379,7 @@ private struct AlbumEditor: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var library: LibraryStore
     var onAdded: (Album) -> Void = { _ in }
+    @State private var installationID: UUID
     @State private var step: Step = .find
     @State private var showsDiscardConfirmation = false
     @State private var pendingRelease: ExternalReleasePreview?
@@ -4385,6 +4413,12 @@ private struct AlbumEditor: View {
     @State private var newLocationParentID: PhysicalLocationID?
     @State private var errorMessage: String?
 
+    init(library: LibraryStore, onAdded: @escaping (Album) -> Void = { _ in }) {
+        self.library = library
+        self.onAdded = onAdded
+        _installationID = State(initialValue: library.catalogueInstallationID)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             HStack {
@@ -4404,7 +4438,7 @@ private struct AlbumEditor: View {
             Divider()
             RetainedBrowseWorkspace(showsDetail: step != .find) {
                 MusicBrainzReleaseLookupView(library: library, title: title, artist: contributorDrafts.first?.name) { release in
-                    guard step == .find else { return }
+                    guard step == .find, installationID == library.catalogueInstallationID else { return }
                     if hasReviewInput { pendingRelease = release }
                     else { applyMusicBrainzRelease(release); step = .review }
                 }
@@ -4747,7 +4781,7 @@ private struct AlbumEditor: View {
         Task {
             defer { isCreatingLocation = false }
             do {
-                let location = try await library.addLocation(.init(name: name, parentID: parentID))
+                let location = try await library.addLocation(.init(name: name, parentID: parentID), expectedInstallationID: installationID)
                 selectedLocationID = location.id
                 newLocationName = ""
                 newLocationParentID = nil
@@ -4809,7 +4843,8 @@ private struct AlbumEditor: View {
                     contributors: credits,
                     musicBrainzArtworkURL: saveMusicBrainzCover ? selectedMusicBrainzRelease?.coverArtworkURL : nil,
                     musicBrainzReleaseID: selectedMusicBrainzRelease?.id,
-                    discs: includeTrackListing ? (selectedMusicBrainzRelease?.physicalDiscs ?? []) : []
+                    discs: includeTrackListing ? (selectedMusicBrainzRelease?.physicalDiscs ?? []) : [],
+                    expectedInstallationID: installationID
                 )
                 onAdded(album)
                 dismiss()

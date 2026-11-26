@@ -13,11 +13,12 @@ struct ImportReviewWorkspace: View {
     let onAdd: (ImportReleaseProposal) async throws -> AlbumID
     let onStatus: (ImportReleaseProposal, ImportProposalStatus) async throws -> Void
     let onAttach: (ImportReleaseProposal, AlbumID, UUID) async throws -> AlbumID
-    let onSelectRelease: (ImportReleaseProposal, ExternalReleasePreview) async throws -> Void
-    let onApplyMetadata: (ExternalMetadataSelection, ExternalMetadataFieldSelection) async throws -> Void
+    let onSelectRelease: (ImportReleaseProposal, ExternalReleasePreview, UUID) async throws -> Void
+    let onApplyMetadata: (ExternalMetadataSelection, ExternalMetadataFieldSelection, UUID) async throws -> Void
     let onOpenAlbum: (AlbumID) -> Void
     @AppStorage private var savedCategory: String
     @AppStorage private var savedSelection: String
+    @State private var installationID: UUID
     @State private var selectedID: UUID?
     @State private var isBusy = false
     @State private var errorMessage: String?
@@ -26,9 +27,10 @@ struct ImportReviewWorkspace: View {
     @State private var showsLookup = false
     @State private var showsAttachment = false
 
-    init(batchID: ImportBatchID, proposals: [ImportReleaseProposal], previews: [UUID: ImportProposalPreview], candidates: [ImportCandidate], selections: [UUID: ExternalMetadataSelection], library: LibraryStore, onAdd: @escaping (ImportReleaseProposal) async throws -> AlbumID, onStatus: @escaping (ImportReleaseProposal, ImportProposalStatus) async throws -> Void, onAttach: @escaping (ImportReleaseProposal, AlbumID, UUID) async throws -> AlbumID, onSelectRelease: @escaping (ImportReleaseProposal, ExternalReleasePreview) async throws -> Void, onApplyMetadata: @escaping (ExternalMetadataSelection, ExternalMetadataFieldSelection) async throws -> Void, onOpenAlbum: @escaping (AlbumID) -> Void) {
+    init(batchID: ImportBatchID, proposals: [ImportReleaseProposal], previews: [UUID: ImportProposalPreview], candidates: [ImportCandidate], selections: [UUID: ExternalMetadataSelection], library: LibraryStore, onAdd: @escaping (ImportReleaseProposal) async throws -> AlbumID, onStatus: @escaping (ImportReleaseProposal, ImportProposalStatus) async throws -> Void, onAttach: @escaping (ImportReleaseProposal, AlbumID, UUID) async throws -> AlbumID, onSelectRelease: @escaping (ImportReleaseProposal, ExternalReleasePreview, UUID) async throws -> Void, onApplyMetadata: @escaping (ExternalMetadataSelection, ExternalMetadataFieldSelection, UUID) async throws -> Void, onOpenAlbum: @escaping (AlbumID) -> Void) {
         self.batchID = batchID; self.proposals = proposals; self.previews = previews; self.candidates = candidates; self.selections = selections
         self.library = library
+        _installationID = State(initialValue: library.catalogueInstallationID)
         self.onAdd = onAdd; self.onStatus = onStatus; self.onAttach = onAttach; self.onSelectRelease = onSelectRelease; self.onApplyMetadata = onApplyMetadata; self.onOpenAlbum = onOpenAlbum
         _savedCategory = AppStorage(wrappedValue: ImportReviewCategory.all.rawValue, "MusicLibrary.importReview.\(batchID).category")
         _savedSelection = AppStorage(wrappedValue: "", "MusicLibrary.importReview.\(batchID).selection")
@@ -124,7 +126,7 @@ struct ImportReviewWorkspace: View {
                     if showsLookup, proposal.createdAlbumID == nil, proposal.status != .dismissed {
                         GroupBox("Find on MusicBrainz") {
                             MusicBrainzReleaseLookupView(library: library, title: proposal.title, artist: proposal.artist, isImportReview: true, onBusyChange: { isBusy = $0 }) { release in
-                                try await onSelectRelease(proposal, release)
+                                try await onSelectRelease(proposal, release, installationID)
                                 showsLookup = false
                             }
                             .id(proposal.id)
@@ -136,7 +138,7 @@ struct ImportReviewWorkspace: View {
                             guard !isBusy else { return }
                             isBusy = true
                             defer { isBusy = false }
-                            try await onApplyMetadata(selection, fields)
+                            try await onApplyMetadata(selection, fields, installationID)
                         }
                         .id(proposal.id)
                     }

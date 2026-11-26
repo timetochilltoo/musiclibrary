@@ -1,6 +1,6 @@
 # Catalogue-use migration inventory
 
-Snapshot: 27 November 2026, RA3 catalogue installation identity. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
+Snapshot: 27 November 2026, RA3 deferred metadata and file actions. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
 Operational state: [HANDOFF.md](HANDOFF.md). Safety design: [recovery admission audit](RECOVERY_WRITER_ADMISSION_AUDIT.md).
 
 ## Coverage and lifetime contract
@@ -298,6 +298,11 @@ it. Mac catalogue workspaces and player presentation invalidate their cached
 state on replacement. Attachment previews capture this identity and pass it
 to the admitted write.
 
-Next guard other deferred catalogue intents across installation changes,
-beginning with MusicBrainz selections and relink or file-picker returns.
-Explicit FLAC execution has a separate boundary.
+MusicBrainz review and physical entry retain the identity of their drafts.
+Relink confirmation and mutating folder and artwork pickers capture it when
+opened. The store checks it inside admission before catalogue or file work.
+Scan startup releases admission if the identity check refuses.
+
+Next guard destructive Settings approvals and queued maintenance requests
+that can outlive a catalogue installation. Explicit FLAC execution has a
+separate boundary.

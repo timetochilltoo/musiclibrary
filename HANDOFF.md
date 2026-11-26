@@ -4,7 +4,34 @@ Last updated: 27 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — RA3 catalogue installation identity
+## Current resume — RA3 deferred metadata and file actions
+
+Import MusicBrainz selection and field application, physical album creation
+and its inline location creation, relink confirmation and replacement-file
+selection now carry their originating installation identity. Music folder
+registration, permission renewal, root and subfolder scan start, and album
+artwork selection do the same. The store validates identity inside admission
+before database changes, downloads, bookmark work or managed file copies.
+Scan startup releases its admission if the identity check refuses.
+Read-only previews and sharing preferences have separate lifetimes.
+
+The temporary regression restores the same revision, verifies refusal of
+old actions and that the revision and proposal state remain intact, then
+applies metadata and adds an album using the current identity. The Mac
+picker and sheet wiring is compiled. Native picker interactions have not
+been exercised.
+
+The 65 focused tests, 288 Debug tests, 277 Release tests and Swift build passed.
+Whitespace, declaration inventory and audit link checks passed. Logs are at
+`/private/tmp/musiclibrary-ra3-deferred-intents-{focused,debug,release,build}.log`.
+
+Next guard **destructive Settings approvals and queued maintenance requests**
+that can outlive their originating installation. Explicit FLAC execution
+still has a separate boundary. The latest runnable artifact is Music Library
+0.72 build 73 with schema 17.
+See [the migration inventory](CATALOGUE_USE_MIGRATION.md).
+
+## Previous resume — RA3 catalogue installation identity
 
 LibraryStore now publishes a session-local installation identity distinct
 from its revision. Successful restore, committed reset and incomplete rollback

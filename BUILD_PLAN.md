@@ -341,7 +341,12 @@ installation or rollback, and final refresh. Coverage is 111 scoped declarations
 RA3 installation identity checkpoint. Reset, successful restore, and
 incomplete rollback invalidate Mac catalogue routes and review drafts. Import
 attachment refuses a preview from an earlier installation even at the same
-revision. Remaining deferred catalogue intents come next.
+revision.
+
+RA3 deferred actions checkpoint. MusicBrainz import review, physical entry,
+relink confirmation and mutating file pickers carry their installation identity
+to the admitted write. Destructive Settings approvals and queued requests
+come next.
 
 Store more than an absolute path:
 
