@@ -1219,6 +1219,66 @@ struct LibraryStoreAdmissionTests {
         }
     }
 
+    @Test("Complete archive restore drains edits and publishes restored search results after cancellation")
+    func archiveRestoreDrain() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "RestoreDrain-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let writer = Gate(), probe = Probe()
+        defer { writer.open(); probe.gate.open() }
+        let store = try await LibraryStore(recoveryFixtureDirectory: root, albumSearch: { db, term in
+            try await probe.load(db, term)
+        })
+        let album = try await store.addAlbum(.init(title: "Archived album"))
+        let cover = root.appending(path: "Artwork/cover.jpg")
+        try FileManager.default.createDirectory(at: cover.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data([1]).write(to: cover)
+        let archive = try await store.exportCompleteCatalogueArchive(to: root.appending(path: "Exports"))
+        try await store.updateAlbum(album.id, with: .init(title: "Live album"))
+        try Data([2]).write(to: cover)
+        await store.search("album")
+        let edit = Task {
+            try await store.withCatalogueUse { database, _ in
+                await writer.hold()
+                return try await database.updateAlbum(album.id, with: .init(title: "Last admitted album"))
+            }
+        }
+        try await until { writer.started }
+        probe.holdNext = true
+        let restore = Task { try await store.restoreCompleteCatalogueArchive(from: archive) }
+        try await until { store.catalogueAdmission.phase == .draining }
+        #expect(store.transferActivity.active == .archiveRestore)
+        #expect(!FileManager.default.fileExists(atPath: root.appending(path: "Recovery").path))
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            try await store.updateAlbum(album.id, with: .init(title: "Refused during drain"))
+        }
+
+        writer.open()
+        let edited = try await edit.value
+        try await until { probe.gate.started }
+        #expect(store.catalogueAdmission.phase == .exclusive)
+        #expect(store.catalogueAlbums.first?.title == "Archived album")
+        #expect(store.albums.first?.title == "Live album")
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            try await store.updateAlbum(album.id, with: .init(title: "Refused during publication"))
+        }
+
+        restore.cancel()
+        probe.gate.open()
+        try await restore.value
+        #expect(store.albums.first?.title == "Archived album")
+        #expect(try Data(contentsOf: cover) == Data([1]))
+        #expect(store.catalogueAdmission.phase == .open && !store.transferActivity.isBusy)
+
+        let backups = root.appending(path: "Recovery/CatalogueArchives/before-archive-restore")
+        let backup = try #require(FileManager.default.contentsOfDirectory(at: backups, includingPropertiesForKeys: nil).first)
+        _ = try CompleteCatalogueArchive.verify(at: backup)
+        #expect(try Data(contentsOf: backup.appending(path: "Artwork/cover.jpg")) == Data([2]))
+        let inspection = root.appending(path: "Recovery inspection.sqlite")
+        try FileManager.default.copyItem(at: backup.appending(path: CompleteCatalogueArchive.databaseFileName), to: inspection)
+        let archivedDatabase = try MusicDatabase(url: inspection)
+        #expect(try await archivedDatabase.album(id: album.id)?.title == edited.title)
+    }
+
     private func until(_ predicate: @MainActor () -> Bool) async throws {
         let deadline = ContinuousClock.now.advanced(by: .seconds(5))
         while !predicate() {

@@ -1,10 +1,38 @@
 # Music Library — Project Handoff
 
-Last updated: 26 November 2026
+Last updated: 27 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — RA2 exclusive catalogue reset
+## Current resume — RA2 exclusive complete archive restore
+
+Complete archive restore validates and stages the selected archive after its
+transfer queue turn. It then drains catalogue users before capturing and
+verifying the recovery archive. One context covers the checkpoint, database
+and artwork replacement, rollback if needed, and final catalogue and search
+publication. Cancellation is checked before replacement and cannot skip the
+final refresh after replacement begins. Incomplete rollback retains the
+verified archive and closes ordinary admission for review. Coverage is 110
+of 125 LibraryStore declarations.
+
+The disposable interleaving test verifies drain, edit refusal, preservation
+of the last admitted edit and original artwork in the recovery archive, and
+publication of the restored state after cancellation during refresh. The
+existing rollback fixtures exercise installation and copy failures, retries,
+and review-required refusal.
+
+The 54 focused tests, 285 Debug tests, 274 Release tests and Swift build passed.
+Whitespace, declaration inventory and audit link checks passed. Logs are at
+`/private/tmp/musiclibrary-ra2-archive-restore-{focused,debug,release,build}.log`.
+
+Next extend **exclusive admission through database-only restore**. Preserve
+the verified backup, the retained previous database and current managed
+artwork and source audio. Installation epochs and explicit FLAC execution
+have separate boundaries. The latest runnable artifact is Music Library 0.72
+build 73 with schema 17.
+See [the migration inventory](CATALOGUE_USE_MIGRATION.md).
+
+## Previous resume — RA2 exclusive catalogue reset
 
 Reset keeps one exclusive catalogue context after its transfer queue turn.
 The exact RESET confirmation still happens before queueing. The context

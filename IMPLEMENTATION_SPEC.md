@@ -14,6 +14,7 @@ Current baseline: inspect `main` with `git log --oneline -5`; [HANDOFF.md](HANDO
 
 Completed and verified:
 
+- RA2 complete archive restore validates and stages the selected archive under the transfer queue, then reserves exclusive admission through verified recovery capture, database and artwork replacement or rollback, and publication. A failed rollback retains the verified recovery archive and enters review-required state.
 - RA2 catalogue reset reserves exclusive admission across verified recovery capture, managed artwork displacement, the root-preserving reset transaction, rollback if needed and final publication. A rollback failure retains the verified archive and closes ordinary admission for review.
 - RA2 catalogue cleanup reserves exclusive admission after its transfer queue turn. It captures and verifies its recovery archive, checks cancellation before the transaction, and awaits refresh under the same context after commit.
 - RA2 complete archive export and local recovery archive creation reserve exclusive admission after their transfer queue turn. The staged SQLite payload supplies the archive revision and artwork paths via a read-only immutable connection. The scope currently ends at archive publication, before surrounding destructive operations continue.

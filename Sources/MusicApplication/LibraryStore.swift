@@ -76,8 +76,8 @@ public final class LibraryStore: ObservableObject {
     private let lastMasterBackupAtKey = "MusicLibrary.lastMasterBackupAt"
     private var publicationSchedule = SnapshotPublicationSchedule()
     let transferQueue = LibraryTransferQueue()
-    // Archive capture, cleanup and reset reserve maintenance. Restore still
-    // needs an exclusive scope through installation and publication.
+    // Complete archive restore, cleanup and reset reserve maintenance through
+    // publication. Database-only restore still needs that boundary.
     let catalogueAdmission = CatalogueAdmission()
     #if DEBUG
     @Published public private(set) var syntheticRecoveryFailure: RestoreRecoveryError?
@@ -1326,8 +1326,9 @@ public final class LibraryStore: ObservableObject {
 
     private func restoreCompleteCatalogueArchiveUncoordinated(from archiveURL: URL) async throws {
         try validateRecoveryFixtureURL(archiveURL)
+        guard catalogueAdmission.phase != .reviewRequired else { throw CatalogueAdmission.Failure.reviewRequired }
         // Do not retain the old connection across file replacement or rollback.
-        guard let catalogueURL, database != nil, let managedArtworkStore else { throw DatabaseError.notFound("Catalogue database") }
+        guard isReady, database != nil, let managedArtworkStore else { throw DatabaseError.notFound("Catalogue database") }
         let accessed = archiveURL.startAccessingSecurityScopedResource()
         defer { if accessed { archiveURL.stopAccessingSecurityScopedResource() } }
         guard accessed || hasRecoveryFixtureAccess(to: archiveURL) else { throw DatabaseError.invalidOperation("Permission to read the selected catalogue archive was not available.") }
@@ -1344,9 +1345,20 @@ public final class LibraryStore: ObservableObject {
         }.value
         let stagingDirectory = staged.databaseURL.deletingLastPathComponent()
         defer { try? FileManager.default.removeItem(at: stagingDirectory) }
-        let recoveryArchive = try await createLocalRecoveryArchive(reason: "before-archive-restore")
-        try await self.database?.checkpointWAL()
+        try await catalogueAdmission.withMaintenance { context in
+            try await installCompleteCatalogueArchive(staged, in: supportDirectory, using: context)
+        }
+    }
 
+    private func installCompleteCatalogueArchive(
+        _ staged: StagedCatalogueRestore, in supportDirectory: URL, using context: CatalogueAdmission.Context
+    ) async throws {
+        guard let catalogueURL, database != nil, let managedArtworkStore else { throw DatabaseError.notFound("Catalogue database") }
+        let liveArtworkDirectory = managedArtworkStore.directory
+        let recoveryArchive = try await createLocalRecoveryArchive(reason: "before-archive-restore", using: context)
+        try CompleteCatalogueArchive.verify(at: recoveryArchive)
+        try await database?.checkpointWAL()
+        try Task.checkCancellation()
         let rollbackDirectory = supportDirectory.appending(path: "RestoreRollback-\(UUID().uuidString)", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: rollbackDirectory, withIntermediateDirectories: true)
         let rollbackDatabase = rollbackDirectory.appending(path: CompleteCatalogueArchive.databaseFileName)
@@ -1381,7 +1393,7 @@ public final class LibraryStore: ObservableObject {
             try await restored.remapManagedArtworkPaths(staged.artworkPathMappings)
             self.database = restored
             self.managedArtworkStore = .init(directory: managedArtworkStore.directory)
-            try await reload()
+            try await reloadAfterMaintenanceCommit(using: context)
             try? FileManager.default.removeItem(at: rollbackDirectory)
             catalogueMaintenanceStatus = "Restored revision \(staged.manifest.revision); previous catalogue archived as \(recoveryArchive.lastPathComponent)"
         } catch {
@@ -1415,10 +1427,11 @@ public final class LibraryStore: ObservableObject {
                 try await recovered.migrate()
                 self.database = recovered
                 self.managedArtworkStore = .init(directory: managedArtworkStore.directory)
-                try await reload()
+                try await reloadAfterMaintenanceCommit(using: context)
             } catch {
                 self.database = nil
                 let report = RestoreRecoveryError(outcome: .recoveryIncomplete, restoreFailure: restoreFailure, recoveryFailure: error.localizedDescription, recoveryURL: recoveryArchive)
+                try catalogueAdmission.requireReview(using: context)
                 recoveryReviewMessage = report.localizedDescription
                 catalogueMaintenanceStatus = report.localizedDescription
                 throw report
@@ -1951,30 +1964,26 @@ public final class LibraryStore: ObservableObject {
         return directory
     }
 
-    private func createLocalRecoveryArchive(reason: String, using context: CatalogueAdmission.Context? = nil) async throws -> URL {
+    private func createLocalRecoveryArchive(reason: String, using context: CatalogueAdmission.Context) async throws -> URL {
         let directory = try applicationSupportDirectory()
             .appending(path: "Recovery", directoryHint: .isDirectory)
             .appending(path: "CatalogueArchives", directoryHint: .isDirectory)
             .appending(path: reason, directoryHint: .isDirectory)
-        return try await captureCompleteCatalogueArchive(to: directory, using: context)
+        return try await writeCompleteCatalogueArchive(to: directory, using: context)
     }
 
-    /// Called only inside a transfer queue turn. Restore still needs to hold
-    /// this boundary through replacement and publication.
+    /// Explicit export calls this after acquiring its transfer queue turn.
     private func captureCompleteCatalogueArchive(
-        to directory: URL, using context: CatalogueAdmission.Context? = nil, beforeCapture: @MainActor () async -> Void = {}
+        to directory: URL, beforeCapture: @MainActor () async -> Void
     ) async throws -> URL {
         guard isReady else { throw DatabaseError.notFound("Ready catalogue") }
-        if let context {
-            return try await writeCompleteCatalogueArchive(to: directory, using: context, beforeCapture: beforeCapture)
-        }
         return try await catalogueAdmission.withMaintenance { context in
             try await self.writeCompleteCatalogueArchive(to: directory, using: context, beforeCapture: beforeCapture)
         }
     }
 
     private func writeCompleteCatalogueArchive(
-        to directory: URL, using context: CatalogueAdmission.Context, beforeCapture: @MainActor () async -> Void
+        to directory: URL, using context: CatalogueAdmission.Context, beforeCapture: @MainActor () async -> Void = {}
     ) async throws -> URL {
         try await withCatalogueUse(using: context) { database, _ in
             guard let managedArtworkStore else { throw DatabaseError.notFound("Managed artwork storage") }

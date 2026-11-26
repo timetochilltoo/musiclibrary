@@ -328,7 +328,12 @@ refresh. Coverage is 108 scoped LibraryStore declarations.
 
 RA2 reset checkpoint. Exact-confirmation reset retains exclusive admission
 through archive verification, artwork handling, commit or rollback, and
-refresh. Coverage is 109 scoped declarations. Complete archive restore is next.
+refresh. Coverage is 109 scoped declarations.
+
+RA2 complete restore checkpoint. Complete archive restore drains ordinary users
+after staging and retains admission through verified recovery capture,
+installation or rollback, and final refresh. Coverage is 110 scoped declarations.
+Database-only restore is next.
 
 Store more than an absolute path:
 
