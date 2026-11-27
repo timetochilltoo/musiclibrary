@@ -1,6 +1,6 @@
 # Catalogue-use migration inventory
 
-Snapshot: 27 November 2026, RA3 deferred metadata and file actions. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
+Snapshot: 27 November 2026, RA3 destructive Settings approvals. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
 Operational state: [HANDOFF.md](HANDOFF.md). Safety design: [recovery admission audit](RECOVERY_WRITER_ADMISSION_AUDIT.md).
 
 ## Coverage and lifetime contract
@@ -303,6 +303,11 @@ Relink confirmation and mutating folder and artwork pickers capture it when
 opened. The store checks it inside admission before catalogue or file work.
 Scan startup releases admission if the identity check refuses.
 
-Next guard destructive Settings approvals and queued maintenance requests
-that can outlive a catalogue installation. Explicit FLAC execution has a
-separate boundary.
+Permanent album and playlist removal validate the Settings confirmation's
+identity inside admission. Cleanup, reset and both restores capture the
+request identity at submission and check it after the transfer queue wait,
+before staging, recovery writes or the exclusive reservation.
+
+Next review explicit FLAC execution. Validate the approved preview's identity
+and define its admission lifetime while preserving opt-in backup and journal
+protections.

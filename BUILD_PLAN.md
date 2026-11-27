@@ -345,8 +345,12 @@ revision.
 
 RA3 deferred actions checkpoint. MusicBrainz import review, physical entry,
 relink confirmation and mutating file pickers carry their installation identity
-to the admitted write. Destructive Settings approvals and queued requests
-come next.
+to the admitted write.
+
+RA3 Settings approvals checkpoint. Permanent removal, cleanup, reset and
+both restores carry the installation identity from review to execution.
+Queued destructive requests recheck it when their turn starts. Explicit FLAC
+write-back is the next separate boundary.
 
 Store more than an absolute path:
 

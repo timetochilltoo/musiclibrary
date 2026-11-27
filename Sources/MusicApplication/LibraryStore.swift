@@ -1175,8 +1175,9 @@ public final class LibraryStore: ObservableObject {
             try await database.restorePlaylist(id)
         }
     }
-    public func permanentlyDeletePlaylist(_ id: PlaylistID) async throws {
+    public func permanentlyDeletePlaylist(_ id: PlaylistID, expectedInstallationID: UUID? = nil) async throws {
         try await editCatalogue { database in
+            try validateInstallation(expectedInstallationID)
             try await database.permanentlyDeletePlaylist(id)
         }
     }
@@ -1279,8 +1280,9 @@ public final class LibraryStore: ObservableObject {
             try await database.softDeleteAlbum(id)
         }
     }
-    public func permanentlyDeleteAlbum(_ id: AlbumID) async throws {
+    public func permanentlyDeleteAlbum(_ id: AlbumID, expectedInstallationID: UUID? = nil) async throws {
         try await editCatalogue { database in
+            try validateInstallation(expectedInstallationID)
             try await database.permanentlyDeleteAlbum(id)
         }
     }
@@ -1304,8 +1306,21 @@ public final class LibraryStore: ObservableObject {
         }
     }
 
-    public func performCatalogueCleanup(_ options: CatalogueCleanupOptions) async throws -> CatalogueCleanupResult {
-        try await transferQueue.run(.cleanup) { try await self.performCatalogueCleanupUncoordinated(options) }
+    public func performCatalogueCleanup(_ options: CatalogueCleanupOptions, expectedInstallationID: UUID? = nil) async throws -> CatalogueCleanupResult {
+        try await runCatalogueMaintenance(.cleanup, expectedInstallationID: expectedInstallationID) {
+            try await self.performCatalogueCleanupUncoordinated(options)
+        }
+    }
+
+    private func runCatalogueMaintenance<Value: Sendable>(
+        _ kind: LibraryTransferActivity.Kind, expectedInstallationID: UUID?,
+        _ operation: @escaping @MainActor () async throws -> Value
+    ) async throws -> Value {
+        let installationID = expectedInstallationID ?? catalogueInstallationID
+        return try await transferQueue.run(kind) {
+            try self.validateInstallation(installationID)
+            return try await operation()
+        }
     }
 
     private func performCatalogueCleanupUncoordinated(_ options: CatalogueCleanupOptions) async throws -> CatalogueCleanupResult {
@@ -1342,8 +1357,10 @@ public final class LibraryStore: ObservableObject {
         }
     }
 
-    public func restoreCompleteCatalogueArchive(from archiveURL: URL) async throws {
-        try await transferQueue.run(.archiveRestore) { try await self.restoreCompleteCatalogueArchiveUncoordinated(from: archiveURL) }
+    public func restoreCompleteCatalogueArchive(from archiveURL: URL, expectedInstallationID: UUID? = nil) async throws {
+        try await runCatalogueMaintenance(.archiveRestore, expectedInstallationID: expectedInstallationID) {
+            try await self.restoreCompleteCatalogueArchiveUncoordinated(from: archiveURL)
+        }
     }
 
     private func restoreCompleteCatalogueArchiveUncoordinated(from archiveURL: URL) async throws {
@@ -1467,9 +1484,11 @@ public final class LibraryStore: ObservableObject {
         }
     }
 
-    public func resetCatalogue(confirmation: String) async throws -> URL {
+    public func resetCatalogue(confirmation: String, expectedInstallationID: UUID? = nil) async throws -> URL {
         guard confirmation == "RESET" else { throw DatabaseError.invalidOperation("Type RESET exactly before clearing the catalogue.") }
-        return try await transferQueue.run(.reset) { try await self.resetCatalogueUncoordinated(confirmation: confirmation) }
+        return try await runCatalogueMaintenance(.reset, expectedInstallationID: expectedInstallationID) {
+            try await self.resetCatalogueUncoordinated(confirmation: confirmation)
+        }
     }
 
     private func resetCatalogueUncoordinated(confirmation: String) async throws -> URL {
@@ -1608,8 +1627,10 @@ public final class LibraryStore: ObservableObject {
         }
     }
 
-    public func restoreMasterBackup(from manifestURL: URL) async throws {
-        try await transferQueue.run(.databaseRestore) { try await self.restoreMasterBackupUncoordinated(from: manifestURL) }
+    public func restoreMasterBackup(from manifestURL: URL, expectedInstallationID: UUID? = nil) async throws {
+        try await runCatalogueMaintenance(.databaseRestore, expectedInstallationID: expectedInstallationID) {
+            try await self.restoreMasterBackupUncoordinated(from: manifestURL)
+        }
     }
 
     private func restoreMasterBackupUncoordinated(from manifestURL: URL) async throws {

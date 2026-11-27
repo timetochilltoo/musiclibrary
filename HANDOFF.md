@@ -4,7 +4,33 @@ Last updated: 27 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — RA3 deferred metadata and file actions
+## Current resume — RA3 destructive Settings approvals
+
+Settings now retains the catalogue installation used for permanent album and
+playlist removal, cleanup preview, typed reset and both restore pickers and
+confirmations. Replacing the catalogue dismisses stale reviews. Permanent removal
+validates inside ordinary admission, while cleanup, reset and both restores
+check identity when their transfer queue turn starts, before staging, recovery
+writes or the exclusive reservation. Programmatic queued requests without an
+explicit identity bind to the installation at submission.
+
+The temporary regression holds a same-revision restore in final publication
+while four destructive operations queue. All refuse after the installation
+changes. Old permanent-removal approvals also refuse, leaving deleted records
+and the revision intact. Current-installation removal and cleanup still work.
+Native Settings dialog interactions were not exercised.
+
+The 50 focused tests, 289 Debug tests, 278 Release tests and Swift build passed.
+Whitespace, declaration inventory and audit link checks passed. Logs are at
+`/private/tmp/musiclibrary-ra3-maintenance-approval-{focused,debug,release,build}.log`.
+
+Next review **explicit FLAC execution**. Carry the approved preview's identity
+to execution, define the admission lifetime and preserve the existing opt-in
+backup and journal protections. The latest runnable artifact is Music Library
+0.72 build 73 with schema 17.
+See [the migration inventory](CATALOGUE_USE_MIGRATION.md).
+
+## Previous resume — RA3 deferred metadata and file actions
 
 Import MusicBrainz selection and field application, physical album creation
 and its inline location creation, relink confirmation and replacement-file

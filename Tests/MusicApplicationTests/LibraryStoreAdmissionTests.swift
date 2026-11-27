@@ -1452,6 +1452,64 @@ struct LibraryStoreAdmissionTests {
         #expect(try await store.addAlbum(.init(title: "Fresh draft"), expectedInstallationID: current).title == "Fresh draft")
     }
 
+    @Test("Maintenance queued behind a same-revision restore refuses its old catalogue approval")
+    func queuedMaintenanceInstallation() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "MaintenanceApproval-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let probe = Probe()
+        defer { probe.gate.open() }
+        let store = try await LibraryStore(recoveryFixtureDirectory: root, albumSearch: { db, term in
+            try await probe.load(db, term)
+        })
+        _ = try await store.addAlbum(.init(title: "Retained album"))
+        let removedAlbum = try await store.addAlbum(.init(title: "Deleted album"))
+        try await store.softDeleteAlbum(removedAlbum.id)
+        try await store.addPlaylist(name: "Deleted playlist")
+        let removedPlaylist = try #require(store.playlists.first)
+        try await store.deletePlaylist(removedPlaylist.id)
+        let archive = try await store.exportCompleteCatalogueArchive(to: root.appending(path: "Exports"))
+        let installation = store.catalogueInstallationID
+        let revision = store.catalogueRevision
+        await store.search("album")
+
+        probe.holdNext = true
+        let firstRestore = Task { try await store.restoreCompleteCatalogueArchive(from: archive, expectedInstallationID: installation) }
+        try await until { probe.gate.started }
+        #expect(store.catalogueAdmission.phase == .exclusive)
+        let cleanup = Task { try await store.performCatalogueCleanup(.init()) }
+        let reset = Task { try await store.resetCatalogue(confirmation: "RESET", expectedInstallationID: installation) }
+        let archiveRestore = Task { try await store.restoreCompleteCatalogueArchive(from: archive, expectedInstallationID: installation) }
+        let databaseRestore = Task {
+            try await store.restoreMasterBackup(from: root.appending(path: "unused.json"), expectedInstallationID: installation)
+        }
+        try await until { store.transferActivity.waiting.count == 4 }
+        probe.gate.open()
+        try await firstRestore.value
+
+        let stale = DatabaseError.invalidOperation("The catalogue changed. Reopen this action and try again.")
+        await #expect(throws: stale) { _ = try await cleanup.value }
+        await #expect(throws: stale) { _ = try await reset.value }
+        await #expect(throws: stale) { try await archiveRestore.value }
+        await #expect(throws: stale) { try await databaseRestore.value }
+        await #expect(throws: stale) {
+            try await store.permanentlyDeleteAlbum(removedAlbum.id, expectedInstallationID: installation)
+        }
+        await #expect(throws: stale) {
+            try await store.permanentlyDeletePlaylist(removedPlaylist.id, expectedInstallationID: installation)
+        }
+        #expect(store.catalogueRevision == revision && store.catalogueInstallationID != installation)
+        #expect(store.deletedAlbums.map(\.id) == [removedAlbum.id])
+        #expect(store.deletedPlaylists.map(\.id) == [removedPlaylist.id])
+        #expect(store.catalogueAdmission.phase == .open && !store.transferActivity.isBusy)
+        let recovery = root.appending(path: "Recovery/CatalogueArchives")
+        #expect(try FileManager.default.contentsOfDirectory(atPath: recovery.path) == ["before-archive-restore"])
+        let current = store.catalogueInstallationID
+        try await store.permanentlyDeleteAlbum(removedAlbum.id, expectedInstallationID: current)
+        try await store.permanentlyDeletePlaylist(removedPlaylist.id, expectedInstallationID: current)
+        #expect(store.deletedAlbums.isEmpty && store.deletedPlaylists.isEmpty)
+        #expect(try await store.performCatalogueCleanup(.init(), expectedInstallationID: current).totalCount == 0)
+    }
+
     private func until(_ predicate: @MainActor () -> Bool) async throws {
         let deadline = ContinuousClock.now.advanced(by: .seconds(5))
         while !predicate() {

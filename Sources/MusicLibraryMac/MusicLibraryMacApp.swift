@@ -1638,6 +1638,11 @@ private func relinkConfirmationMessage(_ proposal: AssetRelinkProposal) -> Strin
 }
 
 private struct StorageRootList: View {
+    private struct Approval<Value> {
+        let value: Value
+        let installationID: UUID
+    }
+
     @ObservedObject var library: LibraryStore
     @ObservedObject var playback: PlaybackController
     let category: LibrarySettingsCategory?
@@ -1647,21 +1652,23 @@ private struct StorageRootList: View {
     @State private var rootToRename: StorageRoot?
     @State private var relinkProposalToApply: AssetRelinkProposal?
     @State private var relinkConfirmationInstallationID: UUID?
-    @State private var restoreManifestURL: URL?
-    @State private var albumToPurge: Album?
-    @State private var playlistToPurge: Playlist?
+    @State private var restoreManifestURL: Approval<URL>?
+    @State private var albumToPurge: Approval<Album>?
+    @State private var playlistToPurge: Approval<Playlist>?
     @State private var showsSnapshotDestinationPicker = false
     @State private var showsMasterRestorePicker = false
+    @State private var masterRestorePickerInstallationID: UUID?
     @State private var dsfCacheMaximumGiB = DSFPlaybackCachePreferences.maximumGiB()
     @State private var dsfCacheStatus: DSFPlaybackCacheStatus?
     @State private var isManagingDSFCache = false
     @State private var showsClearDSFCacheConfirmation = false
-    @State private var cleanupPreview: CatalogueCleanupPreview?
+    @State private var cleanupPreview: Approval<CatalogueCleanupPreview>?
     @State private var cleanupOptions = CatalogueCleanupOptions()
     @State private var showsCleanupReview = false
-    @State private var completeArchiveToRestore: URL?
+    @State private var completeArchiveToRestore: Approval<URL>?
     @StateObject private var transferTasks = SettingsTransferTasks()
     @State private var showsCatalogueReset = false
+    @State private var resetInstallationID: UUID?
     @State private var isRunningCatalogueMaintenance = false
 
     init(
@@ -1784,7 +1791,10 @@ private struct StorageRootList: View {
                             return library.masterBackupStatus
                         }
                     },
-                    onRestoreDatabase: { showsMasterRestorePicker = true }
+                    onRestoreDatabase: {
+                        masterRestorePickerInstallationID = library.catalogueInstallationID
+                        showsMasterRestorePicker = true
+                    }
                 )
             }
 
@@ -1813,6 +1823,7 @@ private struct StorageRootList: View {
                     loadCleanupPreview()
                 }
                 Button("Reset Catalogue…", systemImage: "trash.slash", role: .destructive) {
+                    resetInstallationID = library.catalogueInstallationID
                     showsCatalogueReset = true
                 }
                 Text("Safe Cleanup removes only superseded scan history and records that are not linked anywhere. Reset preserves registered music folders and never changes source audio.")
@@ -1924,7 +1935,7 @@ private struct StorageRootList: View {
                             VStack(alignment: .leading) { Text(album.displayTitle); Text("Restore returns this album and its existing catalogue relationships.").font(.caption).foregroundStyle(.secondary) }
                             Spacer()
                             Button("Restore") { Task { do { try await library.restoreAlbum(album.id) } catch { library.presentError(error) } } }
-                            Button("Permanently Remove…", role: .destructive) { albumToPurge = album }
+                            Button("Permanently Remove…", role: .destructive) { albumToPurge = .init(value: album, installationID: library.catalogueInstallationID) }
                         }
                     }
                 }
@@ -1936,7 +1947,7 @@ private struct StorageRootList: View {
                             VStack(alignment: .leading) { Text(playlist.name); Text("Restore returns this playlist with its saved ordered items.").font(.caption).foregroundStyle(.secondary) }
                             Spacer()
                             Button("Restore") { Task { do { try await library.restorePlaylist(playlist.id) } catch { library.presentError(error) } } }
-                            Button("Permanently Remove…", role: .destructive) { playlistToPurge = playlist }
+                            Button("Permanently Remove…", role: .destructive) { playlistToPurge = .init(value: playlist, installationID: library.catalogueInstallationID) }
                         }
                     }
                 }
@@ -2055,13 +2066,17 @@ private struct StorageRootList: View {
             if case let .success(url) = result { do { try library.setSnapshotDestination(url) } catch { library.presentError(error) } }
         }
         .fileImporter(isPresented: $showsMasterRestorePicker, allowedContentTypes: [.json]) { result in
-            if case let .success(url) = result { restoreManifestURL = url }
+            let installationID = masterRestorePickerInstallationID
+            masterRestorePickerInstallationID = nil
+            if case let .success(url) = result, let installationID, installationID == library.catalogueInstallationID {
+                restoreManifestURL = .init(value: url, installationID: installationID)
+            }
         }
         .confirmationDialog("Permanently remove catalogue record?", isPresented: Binding(get: { albumToPurge != nil }, set: { if !$0 { albumToPurge = nil } }), titleVisibility: .visible) {
-            if let album = albumToPurge {
+            if let approval = albumToPurge {
                 Button("Remove Album, Tracks, and Asset References", role: .destructive) {
                     Task {
-                        do { try await library.permanentlyDeleteAlbum(album.id); albumToPurge = nil }
+                        do { try await library.permanentlyDeleteAlbum(approval.value.id, expectedInstallationID: approval.installationID); albumToPurge = nil }
                         catch { library.presentError(error) }
                     }
                 }
@@ -2070,10 +2085,10 @@ private struct StorageRootList: View {
             Text("This permanently removes the deleted catalogue album, its tracks, and its stored NAS file references. It never deletes or changes the source audio files.")
         }
         .confirmationDialog("Permanently remove playlist?", isPresented: Binding(get: { playlistToPurge != nil }, set: { if !$0 { playlistToPurge = nil } }), titleVisibility: .visible) {
-            if let playlist = playlistToPurge {
+            if let approval = playlistToPurge {
                 Button("Remove Playlist and Its Items", role: .destructive) {
                     Task {
-                        do { try await library.permanentlyDeletePlaylist(playlist.id); playlistToPurge = nil }
+                        do { try await library.permanentlyDeletePlaylist(approval.value.id, expectedInstallationID: approval.installationID); playlistToPurge = nil }
                         catch { library.presentError(error) }
                     }
                 }
@@ -2082,12 +2097,12 @@ private struct StorageRootList: View {
             Text("This permanently removes the deleted playlist and its ordered entries. It never removes catalogue tracks or source audio files.")
         }
         .confirmationDialog("Restore database-only backup?", isPresented: Binding(get: { restoreManifestURL != nil }, set: { if !$0 { restoreManifestURL = nil } }), titleVisibility: .visible) {
-            if let manifestURL = restoreManifestURL {
+            if let approval = restoreManifestURL {
                 Button("Restore Verified Database Backup", role: .destructive) {
                     guard !isRunningCatalogueMaintenance, !transferTasks.isRunning else { return }
                     isRunningCatalogueMaintenance = true
                     Task {
-                        do { try await library.restoreMasterBackup(from: manifestURL); restoreManifestURL = nil }
+                        do { try await library.restoreMasterBackup(from: approval.value, expectedInstallationID: approval.installationID); restoreManifestURL = nil }
                         catch { library.presentError(error) }
                         isRunningCatalogueMaintenance = false
                     }
@@ -2097,7 +2112,7 @@ private struct StorageRootList: View {
             Text("The selected database backup will be verified first. The current database will be kept in the local Recovery folder before replacement. Managed artwork and source audio are not restored by this database-only backup.")
         }
         .confirmationDialog("Restore complete catalogue archive?", isPresented: Binding(get: { completeArchiveToRestore != nil }, set: { if !$0 { completeArchiveToRestore = nil } }), titleVisibility: .visible) {
-            if let archiveURL = completeArchiveToRestore {
+            if let approval = completeArchiveToRestore {
                 Button("Verify and Restore Archive", role: .destructive) {
                     guard !isRunningCatalogueMaintenance, !transferTasks.isRunning else { return }
                     isRunningCatalogueMaintenance = true
@@ -2106,7 +2121,7 @@ private struct StorageRootList: View {
                             completeArchiveToRestore = nil
                             isRunningCatalogueMaintenance = false
                         }
-                        try await library.restoreCompleteCatalogueArchive(from: archiveURL)
+                        try await library.restoreCompleteCatalogueArchive(from: approval.value, expectedInstallationID: approval.installationID)
                         return library.catalogueMaintenanceStatus
                     }
                 }
@@ -2141,20 +2156,22 @@ private struct StorageRootList: View {
         .sheet(isPresented: $showsCleanupReview) {
             if let cleanupPreview {
                 CatalogueCleanupEditor(
-                    preview: cleanupPreview,
+                    preview: cleanupPreview.value,
                     options: $cleanupOptions,
                     isRunning: isRunningCatalogueMaintenance,
                     onCancel: { showsCleanupReview = false },
-                    onCleanup: { performCleanup() }
+                    onCleanup: { performCleanup(installationID: cleanupPreview.installationID) }
                 )
             }
         }
         .sheet(isPresented: $showsCatalogueReset) {
-            CatalogueResetEditor(
-                isRunning: isRunningCatalogueMaintenance,
-                onCancel: { showsCatalogueReset = false },
-                onReset: { confirmation in resetCatalogue(confirmation: confirmation) }
-            )
+            if let installationID = resetInstallationID {
+                CatalogueResetEditor(
+                    isRunning: isRunningCatalogueMaintenance,
+                    onCancel: { showsCatalogueReset = false },
+                    onReset: { confirmation in resetCatalogue(confirmation: confirmation, installationID: installationID) }
+                )
+            }
         }
         .onChange(of: library.catalogueInstallationID) { _, _ in
             rootToRename = nil
@@ -2163,6 +2180,12 @@ private struct StorageRootList: View {
             playlistToPurge = nil
             cleanupPreview = nil
             showsCleanupReview = false
+            showsCatalogueReset = false
+            resetInstallationID = nil
+            showsMasterRestorePicker = false
+            masterRestorePickerInstallationID = nil
+            restoreManifestURL = nil
+            completeArchiveToRestore = nil
         }
         .task(id: category) {
             if shows(.playback) { await refreshDSFCacheStatus() }
@@ -2250,24 +2273,28 @@ private struct StorageRootList: View {
     }
 
     private func loadCleanupPreview() {
+        let installationID = library.catalogueInstallationID
         isRunningCatalogueMaintenance = true
         Task {
+            defer { isRunningCatalogueMaintenance = false }
             do {
-                cleanupPreview = try await library.catalogueCleanupPreview()
+                let preview = try await library.catalogueCleanupPreview()
+                guard installationID == library.catalogueInstallationID else { return }
+                cleanupPreview = .init(value: preview, installationID: installationID)
                 cleanupOptions = .init()
                 showsCleanupReview = true
             } catch {
                 library.presentError(error)
             }
-            isRunningCatalogueMaintenance = false
         }
     }
 
-    private func performCleanup() {
+    private func performCleanup(installationID: UUID) {
+        let options = cleanupOptions
         isRunningCatalogueMaintenance = true
         Task {
             do {
-                _ = try await library.performCatalogueCleanup(cleanupOptions)
+                _ = try await library.performCatalogueCleanup(options, expectedInstallationID: installationID)
                 showsCleanupReview = false
                 cleanupPreview = nil
             } catch {
@@ -2297,6 +2324,7 @@ private struct StorageRootList: View {
 
     private func chooseCompleteCatalogueArchive() {
         guard !isRunningCatalogueMaintenance, !transferTasks.isRunning else { return }
+        let installationID = library.catalogueInstallationID
         let panel = NSOpenPanel()
         panel.title = "Choose Complete Catalogue Archive"
         panel.prompt = "Choose Archive"
@@ -2304,14 +2332,15 @@ private struct StorageRootList: View {
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        completeArchiveToRestore = url
+        guard installationID == library.catalogueInstallationID else { return }
+        completeArchiveToRestore = .init(value: url, installationID: installationID)
     }
 
-    private func resetCatalogue(confirmation: String) {
+    private func resetCatalogue(confirmation: String, installationID: UUID) {
         isRunningCatalogueMaintenance = true
         Task {
             do {
-                _ = try await library.resetCatalogue(confirmation: confirmation)
+                _ = try await library.resetCatalogue(confirmation: confirmation, expectedInstallationID: installationID)
                 showsCatalogueReset = false
             } catch {
                 library.presentError(error)
