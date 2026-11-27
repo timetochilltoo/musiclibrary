@@ -3144,6 +3144,7 @@ private struct TagWritePreviewSheet: View {
     let tracksByDisc: [DiscID: [Track]]
     let albumCredits: [ContributorCredit]
     let trackCredits: [TrackID: [ContributorCredit]]
+    let installationID: UUID
     @State private var previews: [FLACTagWriteCoordinator.Preview] = []
     @State private var isLoading = true
     @State private var isWriting = false
@@ -3184,7 +3185,7 @@ private struct TagWritePreviewSheet: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Back Up and Write \(previews.filter(\.isWritable).count) FLAC File(s)") { write() }
-                        .disabled(isLoading || isWriting || previews.filter(\.isWritable).isEmpty)
+                        .disabled(isLoading || isWriting || installationID != library.catalogueInstallationID || previews.filter(\.isWritable).isEmpty)
                 }
             }
         }
@@ -3192,15 +3193,17 @@ private struct TagWritePreviewSheet: View {
     }
 
     private func load() async {
-        do { previews = try await library.tagWritePreviews(album: album, discs: discs, tracksByDisc: tracksByDisc, albumCredits: albumCredits, trackCredits: trackCredits) }
+        do { previews = try await library.tagWritePreviews(album: album, discs: discs, tracksByDisc: tracksByDisc, albumCredits: albumCredits, trackCredits: trackCredits, expectedInstallationID: installationID) }
         catch { errorMessage = error.localizedDescription }
         isLoading = false
     }
     private func write() {
+        guard !isWriting, installationID == library.catalogueInstallationID else { return }
+        let approvedPreviews = previews
         isWriting = true
         Task {
             do {
-                let journal = try await library.executeTagWrite(previews: previews)
+                let journal = try await library.executeTagWrite(previews: approvedPreviews, expectedInstallationID: installationID)
                 let completed = journal.entries.filter { $0.status == "completed" }.count
                 let failed = journal.entries.filter { $0.status == "failed" }.count
                 result = "Completed \(completed) file(s)\(failed == 0 ? "" : "; \(failed) failed"). The batch journal and untouched backups were retained for recovery."
@@ -3454,6 +3457,7 @@ private struct AlbumDetail: View {
     @State private var artworkToMigrate: Artwork?
     @State private var discPendingDeletion: Disc?
     @State private var showsTagWritePreview = false
+    @State private var tagWriteInstallationID: UUID?
     @State private var showsArtworkManagement = false
     @State private var artworkToView: Artwork?
     @State private var isOrganizeMode = false
@@ -3564,7 +3568,10 @@ private struct AlbumDetail: View {
                     }
                     if !discs.isEmpty {
                         Divider()
-                        Button("Preview FLAC Tag Changes…", systemImage: "tag") { showsTagWritePreview = true }
+                        Button("Preview FLAC Tag Changes…", systemImage: "tag") {
+                            tagWriteInstallationID = library.catalogueInstallationID
+                            showsTagWritePreview = true
+                        }
                         Text("FLAC only; preview and backup are required before writing.")
                     }
                 }
@@ -3599,7 +3606,11 @@ private struct AlbumDetail: View {
                 onMigrate: { artworkToMigrate = $0 }
             )
         }
-        .sheet(isPresented: $showsTagWritePreview) { TagWritePreviewSheet(library: library, album: album, discs: discs, tracksByDisc: tracksByDisc, albumCredits: credits, trackCredits: trackCredits) }
+        .sheet(isPresented: $showsTagWritePreview) {
+            if let installationID = tagWriteInstallationID {
+                TagWritePreviewSheet(library: library, album: album, discs: discs, tracksByDisc: tracksByDisc, albumCredits: credits, trackCredits: trackCredits, installationID: installationID)
+            }
+        }
         .sheet(item: $contributorToEdit) { contributor in EditContributorEditor(library: library, contributor: contributor, onSaved: { await loadContent() }) }
         .sheet(item: $albumCreditToEdit) { credit in EditAlbumCreditedNameEditor(library: library, albumID: album.id, credit: credit, onSaved: { await loadContent() }) }
         .sheet(item: $trackCreditToEdit) { selection in EditTrackCreditedNameEditor(library: library, track: selection.track, credit: selection.credit, onSaved: { await loadContent() }) }

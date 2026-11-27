@@ -8,7 +8,7 @@ struct FLACTagWriteCoordinatorTests {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }
         let source = folder.appending(path: "sample.flac")
-        try fixtureFLAC(title: "Old").write(to: source)
+        try Self.fixtureFLAC(title: "Old").write(to: source)
         let writer = FLACTagWriteCoordinator()
         let plan = FLACTagWriteCoordinator.PlannedWrite(trackID: UUID(), trackTitle: "New", sourcePath: source.path, changes: ["TITLE": "New", "ALBUM": "Album"])
         let preview = try writer.preview(plan)
@@ -32,7 +32,7 @@ struct FLACTagWriteCoordinatorTests {
         #expect(unchanged == Data("unchanged".utf8))
     }
 
-    private func fixtureFLAC(title: String) -> Data {
+    static func fixtureFLAC(title: String) -> Data {
         func uint32(_ value: UInt32) -> [UInt8] { [UInt8(value & 255), UInt8((value >> 8) & 255), UInt8((value >> 16) & 255), UInt8((value >> 24) & 255)] }
         let vendor = Array("test".utf8); let entry = Array("TITLE=\(title)".utf8)
         var comment = Data(uint32(UInt32(vendor.count))); comment.append(contentsOf: vendor); comment.append(contentsOf: uint32(1)); comment.append(contentsOf: uint32(UInt32(entry.count))); comment.append(contentsOf: entry)

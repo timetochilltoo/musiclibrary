@@ -14,6 +14,7 @@ Current baseline: inspect `main` with `git log --oneline -5`; [HANDOFF.md](HANDO
 
 Completed and verified:
 
+- RA3 explicit FLAC write-back requires the approved preview's installation identity and holds ordinary admission through the awaited backup, source replacement and journal worker. One writer per store can run at a time. Maintenance drains an active writer, including after caller cancellation.
 - RA3 destructive Settings confirmations retain the catalogue installation they were reviewed against. Permanent album and playlist removal check it inside ordinary admission. Cleanup, reset and both restores check it after the transfer queue wait and before staging or recovery work.
 - RA3 deferred MusicBrainz, physical entry, relink and catalogue file-picker actions carry their originating installation identity to the store. The store validates it under admission before downloads, bookmark changes, scan start, managed copies or SQL writes.
 - RA3 session-local catalogue installation identity changes on successful restore, committed reset or incomplete rollback. The Mac clears catalogue routes, open drafts and player presentation caches while keeping the playback controller and Settings transfer state. An import attachment review carries the installation identity into the admitted write, which refuses stale reviews independently of revision.

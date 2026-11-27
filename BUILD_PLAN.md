@@ -349,8 +349,11 @@ to the admitted write.
 
 RA3 Settings approvals checkpoint. Permanent removal, cleanup, reset and
 both restores carry the installation identity from review to execution.
-Queued destructive requests recheck it when their turn starts. Explicit FLAC
-write-back is the next separate boundary.
+Queued destructive requests recheck it when their turn starts.
+
+RA3 FLAC checkpoint. Explicit write-back requires the preview's installation
+identity and holds admission through backup, replacement and journal completion.
+Next align the master backup manifest revision with its SQLite payload.
 
 Store more than an absolute path:
 

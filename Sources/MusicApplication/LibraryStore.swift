@@ -67,6 +67,7 @@ public final class LibraryStore: ObservableObject {
     private var database: MusicDatabase?
     private var startGate = LibraryStartGate()
     private var scanTasks: [ImportBatchID: Task<Void, Never>] = [:]
+    private var isTagWriteRunning = false
     private var snapshotPublishTask: Task<Void, Never>?
     private var dailyMasterBackupTask: Task<Void, Never>?
     private var scheduledDailyBackupRevision: Int64?
@@ -1210,8 +1211,9 @@ public final class LibraryStore: ObservableObject {
 
     /// Builds a dry-run only. The caller must explicitly confirm before any source
     /// file is copied, backed up, or changed.
-    public func tagWritePreviews(album: Album, discs: [Disc], tracksByDisc: [DiscID: [Track]], albumCredits: [ContributorCredit], trackCredits: [TrackID: [ContributorCredit]]) async throws -> [FLACTagWriteCoordinator.Preview] {
+    public func tagWritePreviews(album: Album, discs: [Disc], tracksByDisc: [DiscID: [Track]], albumCredits: [ContributorCredit], trackCredits: [TrackID: [ContributorCredit]], expectedInstallationID: UUID? = nil) async throws -> [FLACTagWriteCoordinator.Preview] {
         try await withCatalogueUse { database, context in
+            try validateInstallation(expectedInstallationID)
             let albumArtist = albumCredits.first(where: { $0.role == .albumArtist }).map { $0.creditedName ?? $0.contributor.name }
             var previews: [FLACTagWriteCoordinator.Preview] = []
             for disc in discs {
@@ -1234,12 +1236,34 @@ public final class LibraryStore: ObservableObject {
         }
     }
 
-    public func executeTagWrite(previews: [FLACTagWriteCoordinator.Preview]) async throws -> FLACTagWriteCoordinator.Journal {
-        let directory = try applicationSupportDirectory().appending(path: "TagWriteBackups", directoryHint: .isDirectory)
-        let journal = try await Task.detached(priority: .userInitiated) {
-            try FLACTagWriteCoordinator().execute(previews, backupRoot: directory)
-        }.value
-        return journal
+    public func executeTagWrite(
+        previews: [FLACTagWriteCoordinator.Preview], expectedInstallationID: UUID
+    ) async throws -> FLACTagWriteCoordinator.Journal {
+        try await executeTagWrite(previews: previews, expectedInstallationID: expectedInstallationID) {}
+    }
+
+    func executeTagWrite(
+        previews: [FLACTagWriteCoordinator.Preview], expectedInstallationID: UUID,
+        beforeWrite: @escaping @Sendable () async -> Void
+    ) async throws -> FLACTagWriteCoordinator.Journal {
+        try await withCatalogueUse { _, _ in
+            try validateInstallation(expectedInstallationID)
+            guard !isTagWriteRunning else {
+                throw DatabaseError.invalidOperation("Wait for the active FLAC tag write to finish, then preview the changes again.")
+            }
+            for preview in previews where preview.isWritable {
+                try validateRecoveryFixtureURL(URL(fileURLWithPath: preview.planned.sourcePath))
+            }
+            let directory = try tagWriteBackupDirectory()
+            isTagWriteRunning = true
+            defer { isTagWriteRunning = false }
+            // Once started, let the worker finish its backups and journal even
+            // if the presenting task is cancelled.
+            return try await Task.detached(priority: .userInitiated) {
+                await beforeWrite()
+                return try FLACTagWriteCoordinator().execute(previews, backupRoot: directory)
+            }.value
+        }
     }
 
     public func tagWriteBackupDirectory() throws -> URL {

@@ -1,11 +1,11 @@
 # Catalogue-use migration inventory
 
-Snapshot: 27 November 2026, RA3 destructive Settings approvals. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
+Snapshot: 27 November 2026, RA3 explicit FLAC write-back. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
 Operational state: [HANDOFF.md](HANDOFF.md). Safety design: [recovery admission audit](RECOVERY_WRITER_ADMISSION_AUDIT.md).
 
 ## Coverage and lifetime contract
 
-The 111 public declarations below currently use catalogue admission. A call to
+The 112 public declarations below currently use catalogue admission. A call to
 public reload from an otherwise unscoped mutation does not cover the earlier
 mutation or its retained database. Complete archive capture reserves maintenance
 inside a transfer queue turn. Cleanup holds the reservation through
@@ -106,6 +106,7 @@ is a Debug temporary-data factory; its seeding is separate from production uses.
 - `softDeleteAlbum`
 - `softDeleteEmptyBoxSet`
 - `tagWritePreviews`
+- `executeTagWrite`
 - `trackContributors`
 - `tracks`
 - `updateAlbumContributorCredit`
@@ -194,7 +195,10 @@ refresh.
 Cleanup preview borrows the database under admission. JSON and CSV exports
 keep admission through serialization and the atomic destination write. FLAC
 tag-write preview retains one scope across all tracks, including root refresh,
-playback path resolution and dry-run reads.
+playback path resolution and dry-run reads. Explicit write-back requires the
+preview installation identity and retains ordinary admission through detached
+backup, writing and journal completion. A store refuses another write while
+one is active.
 
 ### Queued capture entry points
 
@@ -235,14 +239,12 @@ owns the worker's catalogue scope until it exits and publishes.
 
 - `cancelImportScan`
 
-## Remaining queued services, maintenance and source-writing policy
+## Preference and directory helpers
 
-Some already use LibraryTransferQueue, but none reserves catalogue admission.
-Preserve acquisition order: transfer queue first, admission second. Never await
-these services while holding an ordinary scope they need to drain. Explicit FLAC
-execution keeps its independent opt-in backup/journal and safe-finish policy.
+These helpers have no independent catalogue scope. Destination changes use the
+existing transfer-queue busy check. The tag backup directory helper resolves
+the location used by the scoped writer.
 
-- `executeTagWrite`
 - `setSnapshotDestination`
 - `tagWriteBackupDirectory`
 
@@ -308,6 +310,6 @@ identity inside admission. Cleanup, reset and both restores capture the
 request identity at submission and check it after the transfer queue wait,
 before staging, recovery writes or the exclusive reservation.
 
-Next review explicit FLAC execution. Validate the approved preview's identity
-and define its admission lifetime while preserving opt-in backup and journal
-protections.
+Next make the database-only backup manifest revision come from the same
+SQLite copy as its payload. Verify that a concurrent edit cannot produce
+a revision and payload mismatch.

@@ -1510,6 +1510,63 @@ struct LibraryStoreAdmissionTests {
         #expect(try await store.performCatalogueCleanup(.init(), expectedInstallationID: current).totalCount == 0)
     }
 
+    @Test("FLAC write keeps admission through backup and journal and refuses an old approval")
+    func explicitTagWriteDrain() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "TagWriteAdmission-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try await LibraryStore(recoveryFixtureDirectory: root)
+        _ = try await store.addAlbum(.init(title: "Saved album"))
+        let archive = try await store.exportCompleteCatalogueArchive(to: root.appending(path: "Exports"))
+        let installation = store.catalogueInstallationID
+        let revision = store.catalogueRevision
+        let source = root.appending(path: "source.flac")
+        let original = FLACTagWriteCoordinatorTests.fixtureFLAC(title: "Old")
+        try original.write(to: source)
+        let writer = FLACTagWriteCoordinator()
+        let preview = try writer.preview(.init(trackID: UUID(), trackTitle: "New", sourcePath: source.path, changes: ["TITLE": "New"]))
+        let backupDirectory = try store.tagWriteBackupDirectory()
+        let gate = Gate()
+        defer { gate.open() }
+        let write = Task {
+            try await store.executeTagWrite(previews: [preview], expectedInstallationID: installation) {
+                await gate.hold()
+            }
+        }
+        try await until { gate.started }
+        await #expect(throws: DatabaseError.invalidOperation("Wait for the active FLAC tag write to finish, then preview the changes again.")) {
+            _ = try await store.executeTagWrite(previews: [preview], expectedInstallationID: installation)
+        }
+
+        let restore = Task { try await store.restoreCompleteCatalogueArchive(from: archive) }
+        try await until { store.catalogueAdmission.phase == .draining }
+        write.cancel()
+        await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
+            _ = try await store.executeTagWrite(previews: [preview], expectedInstallationID: installation)
+        }
+        #expect(store.catalogueAdmission.activeOperationCount == 1)
+        #expect(!FileManager.default.fileExists(atPath: backupDirectory.path))
+        #expect(!FileManager.default.fileExists(atPath: root.appending(path: "Recovery").path))
+        #expect(try Data(contentsOf: source) == original)
+
+        gate.open()
+        let journal = try await write.value
+        try await restore.value
+        #expect(journal.status == "completed" && journal.entries.first?.status == "completed")
+        #expect(store.catalogueRevision == revision && store.catalogueInstallationID != installation)
+        #expect(try FLACMetadataReader().read(url: source)?.tags["TITLE"] == "New")
+        let backupPath = try #require(journal.entries.first?.backupPath)
+        #expect(try Data(contentsOf: URL(fileURLWithPath: backupPath)) == original)
+        let journalURL = backupDirectory.appending(path: journal.id.uuidString).appending(path: "journal.json")
+        let recorded = try JSONDecoder().decode(FLACTagWriteCoordinator.Journal.self, from: Data(contentsOf: journalURL))
+        #expect(recorded.id == journal.id && recorded.status == "completed")
+
+        await #expect(throws: DatabaseError.invalidOperation("The catalogue changed. Reopen this action and try again.")) {
+            _ = try await store.executeTagWrite(previews: [preview], expectedInstallationID: installation)
+        }
+        #expect(try FileManager.default.contentsOfDirectory(atPath: backupDirectory.path) == [journal.id.uuidString])
+        #expect(store.catalogueAdmission.activeOperationCount == 0 && !store.transferActivity.isBusy)
+    }
+
     private func until(_ predicate: @MainActor () -> Bool) async throws {
         let deadline = ContinuousClock.now.advanced(by: .seconds(5))
         while !predicate() {

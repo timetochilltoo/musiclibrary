@@ -4,7 +4,32 @@ Last updated: 27 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — RA3 destructive Settings approvals
+## Current resume — RA3 explicit FLAC write-back
+
+The Mac carries the installation identity from the FLAC preview into the
+explicit Back Up and Write action. Execution checks it under ordinary catalogue
+admission and refuses a second active writer in the same store. Admission stays
+held through detached backup, source replacement and journal completion, even
+when the caller cancels. A restore or reset waits for the worker to finish.
+Coverage is 112 of 125 LibraryStore declarations.
+
+The disposable regression gates a real synthetic FLAC write, starts restore,
+and cancels the write caller. It verifies that new writes refuse during drain,
+the original bytes are backed up, the final journal is retained, and the
+completed write remains after same-revision restore. A prior approval refuses
+without creating a new batch. The Mac sheet compiled; native interaction was
+outside this verification.
+
+The 57 focused tests, 290 Debug tests, 279 Release tests and Swift build passed.
+Whitespace, declaration inventory and audit link checks passed. Logs are at
+`/private/tmp/musiclibrary-ra3-flac-write-{focused,debug,release,build}.log`.
+
+Next address **master backup manifest revision coherence**. Derive the revision
+from the captured SQLite payload and verify it under interleaved catalogue
+edits. The latest runnable artifact is Music Library 0.72 build 73 with schema 17.
+See [the migration inventory](CATALOGUE_USE_MIGRATION.md).
+
+## Previous resume — RA3 destructive Settings approvals
 
 Settings now retains the catalogue installation used for permanent album and
 playlist removal, cleanup preview, typed reset and both restore pickers and
