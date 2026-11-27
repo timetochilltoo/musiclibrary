@@ -1,6 +1,6 @@
 # Catalogue-use migration inventory
 
-Snapshot: 27 November 2026, RA3 explicit FLAC write-back. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
+Snapshot: 27 November 2026, RA4 master backup revision coherence. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
 Operational state: [HANDOFF.md](HANDOFF.md). Safety design: [recovery admission audit](RECOVERY_WRITER_ADMISSION_AUDIT.md).
 
 ## Coverage and lifetime contract
@@ -206,6 +206,8 @@ Snapshot publication captures revision and JSON under admission, then publishes
 the values under the existing transfer queue turn. Manual and background
 publication, including a pending flush, delegate to that capture. Master backup
 holds admission through its awaited detached backup and retention work.
+It names the backup and writes the manifest revision using a read-only
+immutable inspection of the captured SQLite payload.
 
 Complete archive export and pre-recovery archive creation drain ordinary users
 and hold exclusive admission until the archive is published. The SQLite copy
@@ -310,6 +312,5 @@ identity inside admission. Cleanup, reset and both restores capture the
 request identity at submission and check it after the transfer queue wait,
 before staging, recovery writes or the exclusive reservation.
 
-Next make the database-only backup manifest revision come from the same
-SQLite copy as its payload. Verify that a concurrent edit cannot produce
-a revision and payload mismatch.
+Next review checkpoint and connection-close safeguards before restore replaces
+a SQLite file. Keep the verified recovery and rollback paths intact.

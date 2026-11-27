@@ -353,7 +353,10 @@ Queued destructive requests recheck it when their turn starts.
 
 RA3 FLAC checkpoint. Explicit write-back requires the preview's installation
 identity and holds admission through backup, replacement and journal completion.
-Next align the master backup manifest revision with its SQLite payload.
+
+RA4 master backup checkpoint. The captured SQLite payload supplies the backup
+filename and manifest revision even if the live catalogue changes around
+capture. Restore checkpoint and connection-close safeguards come next.
 
 Store more than an absolute path:
 

@@ -38,20 +38,34 @@ public enum MasterBackupArchive {
     }
 
     public static func create(database: MusicDatabase, in directory: URL, now: Date = .now) async throws -> MasterBackupManifest {
+        try await create(database: database, in: directory, now: now) { database, destination in
+            try await database.createConsistentBackup(at: destination)
+        }
+    }
+
+    static func create(
+        database: MusicDatabase, in directory: URL, now: Date,
+        capture: @Sendable (MusicDatabase, URL) async throws -> Void
+    ) async throws -> MasterBackupManifest {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let revision = try await database.currentRevision()
+        let temporary = directory.appending(path: ".MusicLibrary-master-\(UUID().uuidString).tmp")
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        try await capture(database, temporary)
+        let revision = try MusicDatabase.standaloneBackupCatalogueMetadata(at: temporary).revision
         let stamp = Int64((now.timeIntervalSince1970 * 1_000).rounded())
         let fileName = "MusicLibrary-master-r\(revision)-\(stamp).sqlite"
         let destination = directory.appending(path: fileName)
-        let temporary = directory.appending(path: ".\(fileName).tmp")
-        defer { try? FileManager.default.removeItem(at: temporary) }
-        try await database.createConsistentBackup(at: temporary)
         let data = try Data(contentsOf: temporary)
         let checksum = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
         try FileManager.default.moveItem(at: temporary, to: destination)
         let manifest = MasterBackupManifest(revision: revision, createdAt: now, fileName: fileName, sha256: checksum)
         let manifestURL = directory.appending(path: "\(fileName).manifest.json")
-        try JSONEncoder().encode(manifest).write(to: manifestURL, options: .atomic)
+        do {
+            try JSONEncoder().encode(manifest).write(to: manifestURL, options: .atomic)
+        } catch {
+            try? FileManager.default.removeItem(at: destination)
+            throw error
+        }
         return manifest
     }
 

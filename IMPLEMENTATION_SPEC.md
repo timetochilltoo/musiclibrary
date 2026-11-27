@@ -14,6 +14,7 @@ Current baseline: inspect `main` with `git log --oneline -5`; [HANDOFF.md](HANDO
 
 Completed and verified:
 
+- RA4 master backup creation reads the revision from the immutable SQLite copy before final naming and manifest publication. New backups report the captured revision even when live edits surround the backup. The existing backup format and verification path remain compatible.
 - RA3 explicit FLAC write-back requires the approved preview's installation identity and holds ordinary admission through the awaited backup, source replacement and journal worker. One writer per store can run at a time. Maintenance drains an active writer, including after caller cancellation.
 - RA3 destructive Settings confirmations retain the catalogue installation they were reviewed against. Permanent album and playlist removal check it inside ordinary admission. Cleanup, reset and both restores check it after the transfer queue wait and before staging or recovery work.
 - RA3 deferred MusicBrainz, physical entry, relink and catalogue file-picker actions carry their originating installation identity to the store. The store validates it under admission before downloads, bookmark changes, scan start, managed copies or SQL writes.

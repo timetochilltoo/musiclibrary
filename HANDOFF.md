@@ -4,7 +4,30 @@ Last updated: 27 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — RA3 explicit FLAC write-back
+## Current resume — RA4 master backup revision coherence
+
+Database-only master backup creation takes the SQLite copy before determining
+its revision. The copy is opened read-only and immutable, and its revision
+supplies the final filename and manifest. The payload checksum and backup
+format are preserved. Temporary filename uniqueness is independent of revision,
+and a manifest write failure removes the unpublished copy where possible.
+Existing backups continue through the same verification path.
+
+The focused regression updates the album immediately before and after the
+SQLite copy. It verifies that the filename and manifest use the revision in
+the payload and that the backup contains the captured edit. Queue and restore
+fixtures continue to exercise the public backup path.
+
+The 51 focused tests, 290 Debug tests, 279 Release tests and Swift build passed.
+Whitespace and audit link checks passed. Logs are at
+`/private/tmp/musiclibrary-ra4-master-coherence-{focused,debug,release,build}.log`.
+
+Next review **checkpoint and connection-close safeguards** before restore
+replaces a SQLite file. Preserve verified recovery archives and rollback.
+The latest runnable artifact is Music Library 0.72 build 73 with schema 17.
+See [the migration inventory](CATALOGUE_USE_MIGRATION.md).
+
+## Previous resume — RA3 explicit FLAC write-back
 
 The Mac carries the installation identity from the FLAC preview into the
 explicit Back Up and Write action. Execution checks it under ordinary catalogue

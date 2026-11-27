@@ -85,8 +85,9 @@ recovery archive entry points hold exclusive admission through the database and
 managed artwork copies and final archive publication. The interleaving
 regression verifies drain, edit refusal, and manifest metadata against the copy.
 Cleanup, reset and complete archive restore extend the reservation through
-writes and publication. Database-only backup still reads revision separately
-before backup.
+writes and publication. Database-only backup now derives the filename and
+manifest revision from the captured SQLite payload as well. The regression
+edits the live database immediately before and after the SQLite copy.
 
 ### D. Cancellation and stale results — required lifecycle coverage
 
@@ -206,14 +207,15 @@ startup. Do not add passing tests that require unsafe admission to remain allowe
   file pickers now check their originating installation too. Destructive
   Settings approvals validate identity inside admission or at the start
   of the transfer queue turn. Explicit FLAC execution checks identity and holds
-  admission through its detached worker. Master backup revision coherence is next.
+  admission through its detached worker.
   Production maintenance reservation depends on accounting for all holders and nested helper
   paths. Calling maintenance while holding an ordinary lease can deadlock.
 - **RA3:** integrate queued recovery/capture boundaries and epoch invalidation;
   add the interleaving regressions above. Recheck every existing rollback/archive
   and root-preserving reset test before claiming exclusion.
-- **RA4:** audit coherent archive metadata and explicit connection-close defense;
-  complete native busy/retry feedback and opt-in tag-write conflict policy.
+- **RA4:** complete and database-only archive metadata now comes from the
+  captured SQLite payload. Review checkpoint and explicit connection-close
+  safeguards next. Native busy/retry feedback remains to be exercised.
 
 RA2–RA4 are a proposed sequence, not completed work or permission for FR2. A
 coordinator primitive passing its tests will not fix the present call-site gaps.

@@ -377,20 +377,35 @@ struct ImportScannerTests {
         #expect(!store.contains(source))
     }
 
-    @Test("Master archive writes a checksummed verified SQLite backup")
+    @Test("Master backup revision and payload agree across edits around capture")
     func writesMasterArchive() async throws {
         let directory = temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let database = try MusicDatabase(url: directory.appending(path: "source.sqlite"))
         try await database.migrate()
-        _ = try await database.createAlbum(.init(title: "Archived"))
+        let album = try await database.createAlbum(.init(title: "Before capture"))
+        let initialRevision = try await database.currentRevision()
 
         let archiveDirectory = directory.appending(path: "Backups")
-        let manifest = try await MasterBackupArchive.create(database: database, in: archiveDirectory, now: Date(timeIntervalSince1970: 1_700_000_000))
+        let manifest = try await MasterBackupArchive.create(
+            database: database, in: archiveDirectory, now: Date(timeIntervalSince1970: 1_700_000_000)
+        ) { database, destination in
+            _ = try await database.updateAlbum(album.id, with: .init(title: "Captured"))
+            try await database.createConsistentBackup(at: destination)
+            _ = try await database.updateAlbum(album.id, with: .init(title: "After capture"))
+        }
 
-        #expect(FileManager.default.fileExists(atPath: archiveDirectory.appending(path: manifest.fileName).path))
+        #expect(manifest.revision == initialRevision + 1)
+        #expect(manifest.fileName == "MusicLibrary-master-r\(manifest.revision)-1700000000000.sqlite")
+        #expect(try await database.currentRevision() == initialRevision + 2)
         try await MasterBackupArchive.verify(manifest, in: archiveDirectory)
+        let payload = try MasterBackupArchive.validatedBackupURL(for: manifest, in: archiveDirectory)
+        #expect(try MusicDatabase.standaloneBackupCatalogueMetadata(at: payload).revision == manifest.revision)
+        let inspection = directory.appending(path: "Backup inspection.sqlite")
+        try FileManager.default.copyItem(at: payload, to: inspection)
+        let captured = try MusicDatabase(url: inspection)
+        #expect(try await captured.album(id: album.id)?.title == "Captured")
     }
 
     @Test("Master backup verification rejects traversal and non-canonical manifest names")
