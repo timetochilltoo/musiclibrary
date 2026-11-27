@@ -529,6 +529,46 @@ struct RecoveryTransferIntegrationTests {
         _ = try CompleteCatalogueArchive.verify(at: saved)
     }
 
+    @Test("Same-revision archive restore republishes changed content for existing companions")
+    func sameRevisionRestoreRepublishes() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try await LibraryStore(recoveryFixtureDirectory: root, sharesFixtureSnapshot: true)
+        try await seedPublishedAlbum(in: root)
+        try await store.reload()
+        let album = try #require(store.catalogueAlbums.first)
+        let exports = root.appending(path: "Exports")
+        let base = try await store.exportCompleteCatalogueArchive(to: exports)
+        try await store.updateAlbum(album.id, with: .init(title: "Archived branch"))
+        let archive = try await store.exportCompleteCatalogueArchive(to: exports)
+        let revision = store.catalogueRevision
+        try await store.restoreCompleteCatalogueArchive(from: base)
+        try await store.updateAlbum(album.id, with: .init(title: "Published branch"))
+        #expect(store.catalogueRevision == revision)
+
+        let destination = root.appending(path: "Shared")
+        let manifestURL = destination.appending(path: "manifest.json")
+        try await store.publishSnapshotNow()
+        let first = try JSONDecoder().decode(SnapshotManifest.self, from: Data(contentsOf: manifestURL))
+        #expect(first.revision == revision && first.sourceCatalogueRevision == revision)
+        try await store.restoreCompleteCatalogueArchive(from: archive)
+        #expect(store.catalogueRevision == revision && store.lastPublishedRevision == revision)
+        await store.flushPendingSnapshotPublication()
+
+        let restored = try JSONDecoder().decode(SnapshotManifest.self, from: Data(contentsOf: manifestURL))
+        #expect(restored.revision > first.revision)
+        #expect(restored.sourceCatalogueRevision == revision && store.lastPublishedRevision == revision)
+        let restoredData = try Data(contentsOf: destination.appending(path: restored.fileName))
+        let restoredPayload = try #require(JSONSerialization.jsonObject(with: restoredData) as? [String: Any])
+        #expect(restoredPayload["schemaVersion"] as? Int == 10)
+        #expect(restoredPayload["catalogueRevision"] as? Int64 == revision)
+        #expect(String(decoding: restoredData, as: UTF8.self).contains("Archived branch"))
+        #expect(try String(contentsOf: destination.appending(path: first.fileName), encoding: .utf8).contains("Published branch"))
+        try await store.publishSnapshotNow()
+        let repeated = try JSONDecoder().decode(SnapshotManifest.self, from: Data(contentsOf: manifestURL))
+        #expect(repeated.revision == restored.revision && repeated.sha256 == restored.sha256)
+    }
+
     private func seedPublishedAlbum(in root: URL) async throws {
         let database = try MusicDatabase(url: root.appending(path: "MusicLibrary.sqlite"))
         let storage = try await database.createStorageRoot(.init(displayName: "Synthetic published root", lastKnownPath: root.appending(path: "AudioReferences").path, bookmarkData: nil, scope: .nasPublished))

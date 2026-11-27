@@ -4,7 +4,33 @@ Last updated: 27 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — RA4 Mac maintenance feedback
+## Current resume — RA4 shared snapshot freshness
+
+Restore and reset invalidate automatic snapshot freshness independently of
+the SQLite revision. Invalidation persists across Mac relaunch until a
+successful publication. Shared manifests order publications within the
+destination and carry the captured catalogue revision separately. Changed
+content can advance publication order when SQLite revisions repeat or move
+backwards. Identical content reuses its publication number. The companion
+detects freshness by manifest order and caches the same bytes it decoded.
+
+The published JSON uses the existing companion v1 schema version 10. SQLite
+and standalone JSON exports retain schema 17. Temporary tests restore a
+same-revision catalogue with a different title and flush its shared snapshot,
+publish behind a higher legacy revision, and verify companion refresh with
+an older source file timestamp.
+
+The 19 focused tests, 294 Debug tests, 283 Release tests and Swift build passed.
+Whitespace and audit link checks passed. Logs are at
+`/private/tmp/musiclibrary-ra4-snapshot-freshness-{focused,debug,release,build}.log`.
+
+Next review **companion cache behaviour when the selected sharing folder
+changes**. Each destination has an independent publication sequence. Physical
+iPad and live SMB checks remain deferred. The latest runnable packaged Mac
+app is Music Library 0.72 build 73 with SQLite schema 17.
+See [the migration inventory](CATALOGUE_USE_MIGRATION.md).
+
+## Previous resume — RA4 Mac maintenance feedback
 
 The Mac window now distinguishes waiting for existing catalogue work,
 exclusive maintenance and recovery requiring review. The window points

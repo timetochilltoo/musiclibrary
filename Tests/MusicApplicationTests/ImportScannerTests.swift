@@ -476,6 +476,16 @@ struct ImportScannerTests {
         #expect(try String(contentsOf: directory.appending(path: "catalogue-7.json"), encoding: .utf8) == "one")
     }
 
+    @Test("Snapshot publication advances beyond legacy manifests after restoring an older revision")
+    func restoredSnapshotSequence() throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let old = try SnapshotPublisher.publish(json: "legacy", revision: 12, to: directory)
+        let restored = try SnapshotPublisher.publishCatalogue(json: "restored", revision: 8, to: directory)
+        #expect(restored.revision == old.revision + 1 && restored.sourceCatalogueRevision == 8)
+        #expect(try String(contentsOf: directory.appending(path: old.fileName), encoding: .utf8) == "legacy")
+    }
+
     @Test("Publication scheduling ignores initial and read-only observations but coalesces mutations")
     func publicationScheduling() {
         var schedule = SnapshotPublicationSchedule()
@@ -492,6 +502,15 @@ struct ImportScannerTests {
         #expect(!sameRevision)
         let nextMutation = schedule.observe(6)
         #expect(nextMutation)
+        schedule.markPublished(6)
+        schedule.invalidatePublication()
+        #expect(schedule.needsPublication)
+        schedule.markPublished(6)
+        #expect(!schedule.needsPublication)
+
+        var reopened = SnapshotPublicationSchedule(publishedRevision: 6)
+        reopened.invalidatePublication()
+        #expect(reopened.observe(6) && reopened.needsPublication)
     }
 
     private func temporaryDirectory() -> URL {

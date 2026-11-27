@@ -74,6 +74,7 @@ public final class LibraryStore: ObservableObject {
     private var scheduledDailyBackupRevision: Int64?
     private var managedArtworkStore: ManagedArtworkStore?
     private let snapshotDestinationBookmarkKey = "MusicLibrary.snapshotDestinationBookmark"
+    private let snapshotPublicationInvalidatedKey = "MusicLibrary.snapshotPublicationInvalidated"
     private let lastPublishedRevisionKey = "MusicLibrary.lastPublishedRevision"
     private let lastPublishedAtKey = "MusicLibrary.lastPublishedAt"
     private let lastSnapshotPublishFailureKey = "MusicLibrary.lastSnapshotPublishFailure"
@@ -145,6 +146,7 @@ public final class LibraryStore: ObservableObject {
     #endif
     private var catalogueURL: URL?
     private var recoveryFixtureDirectory: URL?
+    private var snapshotFixtureDestination: URL?
     private var failRecoveryFixtureInstallation = false
     private var failRecoveryFixtureRollback = false
     private var failRecoveryFixtureDatabaseCopy = false
@@ -191,7 +193,7 @@ public final class LibraryStore: ObservableObject {
     }
 
     /// Internal integration composition, confined to a disposable temporary child.
-    convenience init(recoveryFixtureDirectory directory: URL, failRecoveryInstallation: Bool = false, failRecoveryRollback: Bool = false, failRecoveryDatabaseCopy: Bool = false, failRecoveryArtworkCopy: Bool = false, failRecoveryMove: RecoveryFixtureMoveFailure? = nil, failRecoveryRollbackAt: RecoveryFixtureRollbackFailure? = nil, albumSearch: (@Sendable (MusicDatabase, String) async throws -> [Album])? = nil) async throws {
+    convenience init(recoveryFixtureDirectory directory: URL, failRecoveryInstallation: Bool = false, failRecoveryRollback: Bool = false, failRecoveryDatabaseCopy: Bool = false, failRecoveryArtworkCopy: Bool = false, failRecoveryMove: RecoveryFixtureMoveFailure? = nil, failRecoveryRollbackAt: RecoveryFixtureRollbackFailure? = nil, albumSearch: (@Sendable (MusicDatabase, String) async throws -> [Album])? = nil, sharesFixtureSnapshot: Bool = false) async throws {
         guard RegisteredPathSecurity.relativePath(of: directory, within: FileManager.default.temporaryDirectory)?.isEmpty == false else {
             throw DatabaseError.invalidOperation("Recovery fixtures require a temporary child directory.")
         }
@@ -201,6 +203,7 @@ public final class LibraryStore: ObservableObject {
         try await database.migrate()
         self.init(database: database, albumSearch: albumSearch)
         self.recoveryFixtureDirectory = directory
+        if sharesFixtureSnapshot { snapshotFixtureDestination = directory.appending(path: "Shared") }
         self.failRecoveryFixtureInstallation = failRecoveryInstallation
         self.failRecoveryFixtureRollback = failRecoveryRollback
         self.failRecoveryFixtureDatabaseCopy = failRecoveryDatabaseCopy
@@ -1490,7 +1493,7 @@ public final class LibraryStore: ObservableObject {
             try await reloadAfterMaintenanceCommit(using: context)
             try? FileManager.default.removeItem(at: rollbackDirectory)
             catalogueMaintenanceStatus = "Restored revision \(staged.manifest.revision); previous catalogue archived as \(recoveryArchive.lastPathComponent)"
-            catalogueInstallationID = UUID()
+            catalogueDidReplace()
         } catch {
             let restoreFailure = error.localizedDescription
             do {
@@ -1590,7 +1593,7 @@ public final class LibraryStore: ObservableObject {
             throw resetError
         }
         if hadArtwork { try? manager.removeItem(at: displacedArtwork) }
-        defer { catalogueInstallationID = UUID() }
+        defer { catalogueDidReplace() }
         try await reloadAfterMaintenanceCommit(using: context)
         catalogueMaintenanceStatus = "Catalogue reset; music folders preserved and recovery archive kept at \(recoveryArchive.lastPathComponent)"
         return recoveryArchive
@@ -1615,7 +1618,7 @@ public final class LibraryStore: ObservableObject {
             let accessed = directory.startAccessingSecurityScopedResource()
             defer { if accessed { directory.stopAccessingSecurityScopedResource() } }
             guard accessed || fixtureAccess else { throw DatabaseError.invalidOperation("Permission to access the snapshot destination was not available.") }
-            return try SnapshotPublisher.publish(json: json, revision: revision, to: directory)
+            return try SnapshotPublisher.publishCatalogue(json: json, revision: revision, to: directory)
         }.value
     }
     public func setSnapshotDestination(_ url: URL) throws {
@@ -1636,15 +1639,19 @@ public final class LibraryStore: ObservableObject {
     private func publishSnapshotNowUncoordinated() async throws {
         guard let destination = resolvedSnapshotDestination() else { throw DatabaseError.invalidOperation("Choose a snapshot destination first.") }
         let manifest = try await publishSnapshotUncoordinated(to: destination)
-        lastPublishedRevision = manifest.revision
-        publicationSchedule.markPublished(manifest.revision)
-        UserDefaults.standard.set(manifest.revision, forKey: lastPublishedRevisionKey)
-        lastPublishedAt = Date()
-        UserDefaults.standard.set(lastPublishedAt, forKey: lastPublishedAtKey)
-        snapshotPublishStatus = "Published revision \(manifest.revision)"
+        let revision = manifest.sourceCatalogueRevision
+        lastPublishedRevision = revision
+        publicationSchedule.markPublished(revision)
+        lastPublishedAt = manifest.createdAt
+        snapshotPublishStatus = "Published revision \(revision)"
         lastSnapshotPublishFailure = nil
-        UserDefaults.standard.removeObject(forKey: lastSnapshotPublishFailureKey)
-        isSnapshotPublishPending = false
+        if permitsBackgroundServices {
+            UserDefaults.standard.set(revision, forKey: lastPublishedRevisionKey)
+            UserDefaults.standard.set(lastPublishedAt, forKey: lastPublishedAtKey)
+            UserDefaults.standard.removeObject(forKey: snapshotPublicationInvalidatedKey)
+            UserDefaults.standard.removeObject(forKey: lastSnapshotPublishFailureKey)
+        }
+        isSnapshotPublishPending = publicationSchedule.needsPublication
     }
 
     public func createMasterBackupNow() async throws {
@@ -1736,7 +1743,7 @@ public final class LibraryStore: ObservableObject {
             try await restored.migrate()
             try await reloadAfterMaintenanceCommit(using: context)
             masterBackupStatus = "Restored revision \(revision); previous master kept in Recovery"
-            catalogueInstallationID = UUID()
+            catalogueDidReplace()
         } catch {
             let restoreFailure = error.localizedDescription
             do {
@@ -2010,6 +2017,15 @@ public final class LibraryStore: ObservableObject {
         errorMessage = error.localizedDescription
     }
 
+    private func catalogueDidReplace() {
+        catalogueInstallationID = UUID()
+        publicationSchedule.invalidatePublication()
+        if permitsBackgroundServices {
+            UserDefaults.standard.set(true, forKey: snapshotPublicationInvalidatedKey)
+        }
+        scheduleSnapshotPublication()
+    }
+
     private func loadSnapshotDestination() {
         guard let destination = resolvedSnapshotDestination() else { return }
         snapshotDestinationPath = destination.path
@@ -2018,6 +2034,9 @@ public final class LibraryStore: ObservableObject {
             lastPublishedRevision = revision
             publicationSchedule.markPublished(revision)
         }
+        if UserDefaults.standard.bool(forKey: snapshotPublicationInvalidatedKey) {
+            publicationSchedule.invalidatePublication()
+        }
         lastPublishedAt = UserDefaults.standard.object(forKey: lastPublishedAtKey) as? Date
         lastSnapshotPublishFailure = UserDefaults.standard.string(forKey: lastSnapshotPublishFailureKey)
         snapshotPublishStatus = "Ready to publish"
@@ -2025,6 +2044,7 @@ public final class LibraryStore: ObservableObject {
     }
 
     private func resolvedSnapshotDestination() -> URL? {
+        if let snapshotFixtureDestination { return snapshotFixtureDestination }
         guard permitsBackgroundServices else { return nil }
         guard let bookmark = UserDefaults.standard.data(forKey: snapshotDestinationBookmarkKey) else { return nil }
         var stale = false

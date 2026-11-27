@@ -366,7 +366,10 @@ subsequent access.
 RA4 Mac feedback checkpoint. The window distinguishes catalogue drain,
 exclusive maintenance and review-required recovery. Settings labels an
 active transfer that is waiting for catalogue operations accordingly.
-Next review snapshot publication freshness after same-revision restore.
+RA4 shared snapshot checkpoint. A restored catalogue can republish at the
+same or an earlier SQLite revision. Share manifests advance independently
+of the captured revision, and the companion detects updates by publication
+order. Published JSON uses the companion v1 schema version.
 
 Store more than an absolute path:
 

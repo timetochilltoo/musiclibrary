@@ -14,6 +14,7 @@ Current baseline: inspect `main` with `git log --oneline -5`; [HANDOFF.md](HANDO
 
 Completed and verified:
 
+- RA4 successful restore and committed reset invalidate pending snapshot freshness independently of SQLite revision. The v1 manifest revision orders publications at a destination and its optional catalogueRevision names the captured SQLite revision. The companion compares manifest sequences and installs the manifest bytes it verified. Published JSON uses the v1 companion schema version 10 independently of SQLite migrations.
 - RA4 catalogue admission publishes phase changes. The Mac window uses them for maintenance and retry feedback, and Settings shows when the active transfer is still waiting for ordinary work to finish. The Debug-only maintenance fixture performs real restore against a temporary catalogue.
 - RA4 both restore paths use a checked truncate WAL checkpoint and explicitly close the old SQLite handle before file replacement. Busy checkpoint or failed close leaves the live connection in place. Closed actors refuse reads and writes; rollback explicitly closes a replacement connection before restoring files.
 - RA4 master backup creation reads the revision from the immutable SQLite copy before final naming and manifest publication. New backups report the captured revision even when live edits surround the backup. The existing backup format and verification path remain compatible.

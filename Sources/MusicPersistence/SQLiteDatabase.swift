@@ -1117,7 +1117,10 @@ public actor MusicDatabase {
             row["discs"] = try snapshotDiscRows(albumID: $0.id, assetScope: assetScope)
             return row
         }
-        let data = try JSONSerialization.data(withJSONObject: ["format": "music-library-json", "schemaVersion": try schemaVersion(), "catalogueRevision": try currentRevision(), "albums": rows], options: [.prettyPrinted, .sortedKeys])
+        // The v1 companion payload has its own compatibility version. Full
+        // catalogue exports still report the underlying SQLite schema.
+        let exportSchemaVersion = try (assetScope == nil ? schemaVersion() : 10)
+        let data = try JSONSerialization.data(withJSONObject: ["format": "music-library-json", "schemaVersion": exportSchemaVersion, "catalogueRevision": try currentRevision(), "albums": rows], options: [.prettyPrinted, .sortedKeys])
         return String(decoding: data, as: UTF8.self)
     }
 

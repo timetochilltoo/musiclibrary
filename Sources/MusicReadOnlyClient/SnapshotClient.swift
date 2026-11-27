@@ -20,15 +20,14 @@ public final class SnapshotClient {
         guard FileManager.default.fileExists(atPath: sourceManifest.path) else { return false }
         let localManifest = cacheDirectory.appending(path: "manifest.json")
         guard FileManager.default.fileExists(atPath: localManifest.path) else { return true }
-        let sourceDate = try sourceManifest.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
-        let localDate = try localManifest.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
-        guard let sourceDate else { return false }
-        guard let localDate else { return true }
-        return sourceDate > localDate
+        let source = try JSONDecoder().decode(ReadOnlySnapshotManifest.self, from: Data(contentsOf: sourceManifest))
+        guard let local = try? JSONDecoder().decode(ReadOnlySnapshotManifest.self, from: Data(contentsOf: localManifest)) else { return true }
+        return source.revision > local.revision
     }
     public func update(from directory: URL) throws -> Bool {
         let manifestURL = directory.appending(path: "manifest.json")
-        let manifest = try JSONDecoder().decode(ReadOnlySnapshotManifest.self, from: Data(contentsOf: manifestURL))
+        let manifestData = try Data(contentsOf: manifestURL)
+        let manifest = try JSONDecoder().decode(ReadOnlySnapshotManifest.self, from: manifestData)
         guard manifest.format == "music-library-snapshot-json-v1" else { throw SnapshotClientError.incompatibleFormat }
         guard Self.isSafeSnapshotFileName(manifest.fileName) else { throw SnapshotClientError.unsafeFileName }
         try FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
@@ -50,7 +49,7 @@ public final class SnapshotClient {
         }
         let manifestTemp = cacheDirectory.appending(path: ".manifest.json.tmp")
         defer { try? FileManager.default.removeItem(at: manifestTemp) }
-        try Data(contentsOf: manifestURL).write(to: manifestTemp, options: .atomic)
+        try manifestData.write(to: manifestTemp, options: .atomic)
         if FileManager.default.fileExists(atPath: localManifest.path) {
             _ = try FileManager.default.replaceItemAt(localManifest, withItemAt: manifestTemp, backupItemName: nil, options: .usingNewMetadataOnly)
         } else {

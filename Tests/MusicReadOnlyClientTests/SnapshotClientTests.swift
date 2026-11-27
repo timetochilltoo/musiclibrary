@@ -136,21 +136,40 @@ func companionPlayableURL() {
     #expect(ReadOnlyTrack(id: "offline", number: 2, title: "Offline", assets: [.init(storageRootID: "root-a", relativePath: "Song.flac", availability: "rootOffline")]).playableURL(using: mappings) == nil)
 }
 
-@Test("Source manifest modification date prompts refresh without changing local cache")
-func sourceManifestDateCheck() throws {
-    let source = FileManager.default.temporaryDirectory.appending(path: "date-source-\(UUID().uuidString)")
-    let cache = FileManager.default.temporaryDirectory.appending(path: "date-cache-\(UUID().uuidString)")
+@Test("Companion accepts a later publication of the same catalogue revision regardless of file timestamps")
+func sourceManifestSequenceCheck() throws {
+    let source = FileManager.default.temporaryDirectory.appending(path: "sequence-source-\(UUID())")
+    let cache = FileManager.default.temporaryDirectory.appending(path: "sequence-cache-\(UUID())")
     defer { try? FileManager.default.removeItem(at: source); try? FileManager.default.removeItem(at: cache) }
     try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
-    try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
     let sourceManifest = source.appending(path: "manifest.json")
-    let cacheManifest = cache.appending(path: "manifest.json")
-    try Data("source".utf8).write(to: sourceManifest)
-    try Data("cache".utf8).write(to: cacheManifest)
-    let now = Date()
-    try FileManager.default.setAttributes([.modificationDate: now.addingTimeInterval(-60)], ofItemAtPath: cacheManifest.path)
-    try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: sourceManifest.path)
     let client = SnapshotClient(cacheDirectory: cache)
+
+    func publish(_ title: String, sequence: Int) throws -> String {
+        let payload = try JSONSerialization.data(withJSONObject: [
+            "format": "music-library-json", "schemaVersion": 10, "catalogueRevision": 7,
+            "albums": [["id": "album", "title": title, "hasCD": false, "hasDigital": true, "discs": []]]
+        ])
+        let name = "catalogue-\(sequence).json"
+        let digest = SHA256.hash(data: payload).map { String(format: "%02x", $0) }.joined()
+        try payload.write(to: source.appending(path: name))
+        let manifest = try JSONSerialization.data(withJSONObject: [
+            "format": "music-library-snapshot-json-v1", "revision": sequence, "catalogueRevision": 7,
+            "fileName": name, "sha256": digest
+        ])
+        try manifest.write(to: sourceManifest)
+        return name
+    }
+
+    _ = try publish("Before restore", sequence: 7)
+    #expect(try client.update(from: source))
+    #expect(try client.localCatalogue()?.albums.first?.title == "Before restore")
+    let restored = try publish("After restore", sequence: 8)
+    try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 10)], ofItemAtPath: sourceManifest.path)
     #expect(try client.sourceManifestIsNewer(from: source))
-    #expect(try Data(contentsOf: cacheManifest) == Data("cache".utf8))
+    #expect(try client.localCatalogue()?.albums.first?.title == "Before restore")
+    #expect(try client.update(from: source))
+    #expect(try client.localCatalogue()?.albums.first?.title == "After restore")
+    #expect(FileManager.default.fileExists(atPath: cache.appending(path: restored).path))
+    #expect(try !client.sourceManifestIsNewer(from: source))
 }

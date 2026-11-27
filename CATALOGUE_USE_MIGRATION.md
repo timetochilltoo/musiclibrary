@@ -1,6 +1,6 @@
 # Catalogue-use migration inventory
 
-Snapshot: 27 November 2026, RA4 Mac maintenance feedback. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
+Snapshot: 27 November 2026, RA4 shared snapshot freshness. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
 Operational state: [HANDOFF.md](HANDOFF.md). Safety design: [recovery admission audit](RECOVERY_WRITER_ADMISSION_AUDIT.md).
 
 ## Coverage and lifetime contract
@@ -324,5 +324,10 @@ The Mac observes admission phase separately from the transfer queue. Its
 window banner distinguishes drain, exclusive work and recovery review.
 The Debug-only recovery fixture holds an ordinary reader to exercise drain.
 
-Next review snapshot publication freshness after a restore reuses the
-last published revision.
+Committed resets and successful restores invalidate the scheduled shared
+snapshot independently of revision equality. The publisher orders snapshots
+within the sharing destination and records the captured catalogue revision
+separately. The companion compares the publication order.
+
+Next review companion cache behaviour when the selected sharing folder changes.
+Each destination has its own publication history.

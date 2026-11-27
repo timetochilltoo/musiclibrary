@@ -4,9 +4,11 @@ import Foundation
 public struct SnapshotManifest: Codable, Sendable {
     public let format: String
     public let revision: Int64
+    public let catalogueRevision: Int64?
     public let createdAt: Date
     public let fileName: String
     public let sha256: String
+    public var sourceCatalogueRevision: Int64 { catalogueRevision ?? revision }
 }
 
 public enum SnapshotPublishError: Error, Equatable, LocalizedError {
@@ -22,9 +24,46 @@ public enum SnapshotPublishError: Error, Equatable, LocalizedError {
 
 public enum SnapshotPublisher {
     public static func publish(json: String, revision: Int64, to directory: URL, retainRevisions: Int = 4) throws -> SnapshotManifest {
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let data = Data(json.utf8)
-        let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        return try publish(data: data, hash: digest(data), revision: revision, catalogueRevision: nil, to: directory, retainRevisions: retainRevisions)
+    }
+
+    // The manifest revision orders publications for existing companions. The
+    // source catalogue revision can repeat or move backwards after restore.
+    static func publishCatalogue(json: String, revision: Int64, to directory: URL) throws -> SnapshotManifest {
+        let data = Data(json.utf8)
+        let hash = digest(data)
+        let manifestURL = directory.appending(path: "manifest.json")
+        var sequence = revision
+        if FileManager.default.fileExists(atPath: manifestURL.path) {
+            let current = try JSONDecoder().decode(SnapshotManifest.self, from: Data(contentsOf: manifestURL))
+            guard current.format == "music-library-snapshot-json-v1", current.revision >= 0,
+                  current.fileName == "catalogue-\(current.revision).json" else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            if current.sha256 == hash && current.sourceCatalogueRevision == revision {
+                sequence = current.revision
+                return try publish(data: data, hash: hash, revision: sequence, catalogueRevision: revision, to: directory, retainRevisions: 4)
+            }
+            sequence = max(revision, try nextRevision(after: current.revision))
+        }
+        while FileManager.default.fileExists(atPath: directory.appending(path: "catalogue-\(sequence).json").path) {
+            sequence = try nextRevision(after: sequence)
+        }
+        return try publish(data: data, hash: hash, revision: sequence, catalogueRevision: revision, to: directory, retainRevisions: 4)
+    }
+
+    private static func nextRevision(after revision: Int64) throws -> Int64 {
+        guard revision < Int64.max else { throw SnapshotPublishError.conflictingRevision(revision) }
+        return revision + 1
+    }
+
+    private static func digest(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func publish(data: Data, hash: String, revision: Int64, catalogueRevision: Int64?, to directory: URL, retainRevisions: Int) throws -> SnapshotManifest {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let fileName = "catalogue-\(revision).json"
         let temporary = directory.appending(path: ".\(fileName).tmp")
         let destination = directory.appending(path: fileName)
@@ -32,12 +71,12 @@ public enum SnapshotPublisher {
         try data.write(to: temporary, options: .atomic)
         if FileManager.default.fileExists(atPath: destination.path) {
             let existing = try Data(contentsOf: destination)
-            let existingHash = SHA256.hash(data: existing).map { String(format: "%02x", $0) }.joined()
+            let existingHash = digest(existing)
             guard existingHash == hash else { throw SnapshotPublishError.conflictingRevision(revision) }
         } else {
             try FileManager.default.moveItem(at: temporary, to: destination)
         }
-        let manifest = SnapshotManifest(format: "music-library-snapshot-json-v1", revision: revision, createdAt: Date(), fileName: fileName, sha256: hash)
+        let manifest = SnapshotManifest(format: "music-library-snapshot-json-v1", revision: revision, catalogueRevision: catalogueRevision, createdAt: Date(), fileName: fileName, sha256: hash)
         let manifestData = try JSONEncoder().encode(manifest)
         let manifestTemp = directory.appending(path: ".manifest.json.tmp")
         let manifestURL = directory.appending(path: "manifest.json")
