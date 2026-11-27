@@ -37,9 +37,9 @@ Before integrating a gate, enumerate every public use case and private worker.
 | Root renewal/scope/deletion and access refresh | [renewStorageRootAccess](Sources/MusicApplication/LibraryStore.swift#L732) and refreshStorageRootAccess | Root writes now use admission. Restore holds admission through installation and publication. |
 | Metadata analysis, proposal confirmation/attachment and corrections | [analyzeImportBatch](Sources/MusicApplication/LibraryStore.swift#L890) and confirmImportReleaseProposal | Metadata analysis now holds admission through extraction and proposal writes. Proposal confirmation and attachment also hold admission through reload. |
 | Missing-asset and relink decisions | [applyRelinkProposal](Sources/MusicApplication/LibraryStore.swift#L793) and related decision methods | Scoped through root refresh, verification, catalogue writes and publication. Restore holds admission through replacement and publication. |
-| Scan startup and detached scan persistence | [startImportScan](Sources/MusicApplication/LibraryStore.swift#L1820) | Scan admission now covers candidate and error writes, completion, reconciliation and final publication after the detached task exits. |
-| Scan cancellation | [cancelImportScan](Sources/MusicApplication/LibraryStore.swift#L1920) | Signals the worker during drain. The completion task releases admission after worker exit and publication. Archive capture drains the scan worker. |
-| Fingerprinting and availability health | [verifyFingerprints](Sources/MusicApplication/LibraryStore.swift#L1762) | Fingerprint verification and availability checks now hold admission through their result writes and reloads. Hash recording need not increment revision. |
+| Scan startup and detached scan persistence | [startImportScan](Sources/MusicApplication/LibraryStore.swift#L1824) | Scan admission now covers candidate and error writes, completion, reconciliation and final publication after the detached task exits. |
+| Scan cancellation | [cancelImportScan](Sources/MusicApplication/LibraryStore.swift#L1924) | Signals the worker during drain. The completion task releases admission after worker exit and publication. Archive capture drains the scan worker. |
+| Fingerprinting and availability health | [verifyFingerprints](Sources/MusicApplication/LibraryStore.swift#L1766) | Fingerprint verification and availability checks now hold admission through their result writes and reloads. Hash recording need not increment revision. |
 | Catalogue reads, reload, search, playback resolution, FR1 manifest reads | [reload](Sources/MusicApplication/LibraryStore.swift#L324), search and folderRecoveryManifest | RA2 scopes reload/search, but Mac catalogue and player presentation state is invalidated on installation change. Attachment, MusicBrainz, physical entry, relink and mutating file-picker actions validate their originating identity under admission. Destructive Settings approvals also validate identity before writes or queued maintenance starts. |
 | Cleanup and tag previews, JSON/CSV exports | [catalogueCleanupPreview](Sources/MusicApplication/LibraryStore.swift#L1327) and related reader entry points | Scoped through catalogue or dry-run reads and export destination writes. Production recovery still uses the transfer queue. |
 | Explicit FLAC tag execution | [executeTagWrite](Sources/MusicApplication/LibraryStore.swift#L1239) | Checks the approved preview identity under ordinary admission. An active writer drains through backup, replacement and journal even on caller cancellation. The opt-in and manual recovery protections remain. |
@@ -53,28 +53,27 @@ and verifies the recovery archive, checkpoints, releases the old database,
 replaces the database and artwork, and publishes either the restored or rolled
 back catalogue. See [restore](Sources/MusicApplication/LibraryStore.swift#L1390).
 The disposable regression confirms the recovery archive includes an admitted
-edit that finishes during drain. [Database-only restore](Sources/MusicApplication/LibraryStore.swift#L1660)
+edit that finishes during drain. [Database-only restore](Sources/MusicApplication/LibraryStore.swift#L1665)
 verifies a staged SQLite copy before draining ordinary users. The corresponding
 regression verifies the last admitted edit in the retained previous database
 and publication after cancellation during final refresh.
 
-[Reset](Sources/MusicApplication/LibraryStore.swift#L1518) and cleanup now keep
+[Reset](Sources/MusicApplication/LibraryStore.swift#L1523) and cleanup now keep
 a single reservation from recovery capture through final publication. Reset
 retains exact RESET confirmation and registered roots. A failed artwork
 rollback keeps the verified archive and requires review before further edits.
 
 ### B. Old connection lifetime — high priority
 
-[SQLiteHandle](Sources/MusicPersistence/SQLiteDatabase.swift#L23) closes SQLite in
-`deinit`. The store dropping its reference is not a close acknowledgement from
-all other holders. Detached scans, metadata/fingerprint work, ordinary reads and
-other service helpers can retain the actor. Per-actor SQL serialization does not
-serialize filesystem moves performed outside that actor.
-
-Consequences can include late writes to displaced files, SQLite errors or stale
-cache publication. Their exact manifestation needs deterministic fixture tests;
-this report does not assert which filesystem/SQLite failure will occur first.
-A checkpoint alone neither drains holders nor prevents the next actor message.
+Both restore paths drain catalogue operations before calling
+SQLite's checked truncate checkpoint and a synchronous close in the database
+actor. A busy or failed checkpoint aborts replacement. The app drops its
+reference only after the close succeeds, and retained actors reject later
+database operations. Rollback explicitly closes an opened replacement before
+removing sidecars or moving the original back. Disposable fixtures pin a
+second SQLite reader to verify refusal and successful retry on both paths.
+[SQLite checkpoint API](https://sqlite.org/c3ref/wal_checkpoint_v2.html)
+[SQLite close API](https://sqlite.org/c3ref/close.html)
 
 ### C. Complete archive coherence — high priority
 
@@ -214,8 +213,9 @@ startup. Do not add passing tests that require unsafe admission to remain allowe
   add the interleaving regressions above. Recheck every existing rollback/archive
   and root-preserving reset test before claiming exclusion.
 - **RA4:** complete and database-only archive metadata now comes from the
-  captured SQLite payload. Review checkpoint and explicit connection-close
-  safeguards next. Native busy/retry feedback remains to be exercised.
+  captured SQLite payload. Both restore paths require a successful checkpoint
+  and close before file replacement. Next review Mac busy/retry feedback and
+  exercise the disposable native recovery workflow.
 
 RA2–RA4 are a proposed sequence, not completed work or permission for FR2. A
 coordinator primitive passing its tests will not fix the present call-site gaps.

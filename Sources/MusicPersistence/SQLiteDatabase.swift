@@ -22,20 +22,35 @@ public enum DatabaseError: Error, Equatable, LocalizedError, Sendable {
 private let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
 private final class SQLiteHandle: @unchecked Sendable {
-    let pointer: OpaquePointer
+    private(set) var pointer: OpaquePointer?
 
     init(_ pointer: OpaquePointer) {
         self.pointer = pointer
     }
 
+    func close() throws {
+        guard let pointer else { return }
+        guard sqlite3_close(pointer) == SQLITE_OK else {
+            throw DatabaseError.sqlite(message: "SQLite could not close the catalogue: \(String(cString: sqlite3_errmsg(pointer)))")
+        }
+        self.pointer = nil
+    }
+
     deinit {
-        sqlite3_close(pointer)
+        sqlite3_close_v2(pointer)
     }
 }
 
 public actor MusicDatabase {
     private let connectionHandle: SQLiteHandle
-    private var connection: OpaquePointer { connectionHandle.pointer }
+    private var connection: OpaquePointer {
+        get throws {
+            guard let pointer = connectionHandle.pointer else {
+                throw DatabaseError.invalidOperation("This catalogue connection is closed.")
+            }
+            return pointer
+        }
+    }
 
     private struct RevisionChange {
         let entityType: String
@@ -134,13 +149,14 @@ public actor MusicDatabase {
     }
 
     public func createConsistentBackup(at url: URL) throws {
+        let source = try connection
         var destination: OpaquePointer?
         guard sqlite3_open_v2(url.path, &destination, SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX, nil) == SQLITE_OK, let destination else {
             defer { if let destination { sqlite3_close(destination) } }
             throw DatabaseError.sqlite(message: "Unable to create backup database at \(url.path).")
         }
         defer { sqlite3_close(destination) }
-        guard let backup = sqlite3_backup_init(destination, "main", connection, "main") else {
+        guard let backup = sqlite3_backup_init(destination, "main", source, "main") else {
             throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(destination)))
         }
         let stepResult = sqlite3_backup_step(backup, -1)
@@ -233,16 +249,16 @@ public actor MusicDatabase {
         try transaction {
             if options.removeSupersededImportBatches {
                 try Self.execute(Self.deleteSupersededImportBatchesSQL, on: connection)
-                removedImportBatches = Int(sqlite3_changes(connection))
+                removedImportBatches = Int(sqlite3_changes(try connection))
             }
             if options.removeOrphanContributors {
                 try Self.execute("DELETE FROM contributor WHERE NOT EXISTS (SELECT 1 FROM album_contributor WHERE album_contributor.contributor_id = contributor.id) AND NOT EXISTS (SELECT 1 FROM track_contributor WHERE track_contributor.contributor_id = contributor.id);", on: connection)
-                removedContributors = Int(sqlite3_changes(connection))
+                removedContributors = Int(sqlite3_changes(try connection))
             }
             if options.removeUnusedLocations {
                 while true {
                     try Self.execute(Self.deleteUnusedLeafLocationsSQL, on: connection)
-                    let removed = Int(sqlite3_changes(connection))
+                    let removed = Int(sqlite3_changes(try connection))
                     removedLocations += removed
                     if removed == 0 { break }
                 }
@@ -315,7 +331,24 @@ public actor MusicDatabase {
     }
 
     public func checkpointWAL() throws {
-        try Self.execute("PRAGMA wal_checkpoint(TRUNCATE);", on: connection)
+        let connection = try self.connection
+        let result = sqlite3_wal_checkpoint_v2(connection, "main", SQLITE_CHECKPOINT_TRUNCATE, nil, nil)
+        if result == SQLITE_BUSY || result == SQLITE_LOCKED {
+            throw DatabaseError.invalidOperation("SQLite could not checkpoint the catalogue because it is in use. Close other catalogue connections and try again.")
+        }
+        guard result == SQLITE_OK else {
+            throw DatabaseError.sqlite(message: "SQLite could not checkpoint the catalogue: \(String(cString: sqlite3_errmsg(connection)))")
+        }
+    }
+
+    public func checkpointAndCloseForReplacement() throws {
+        try checkpointWAL()
+        try Task.checkCancellation()
+        try close()
+    }
+
+    public func close() throws {
+        try connectionHandle.close()
     }
 
     public func createStorageRoot(_ draft: NewStorageRoot) throws -> StorageRoot {
@@ -358,7 +391,7 @@ public actor MusicDatabase {
         try transaction {
             let statement = try Self.prepare("UPDATE storage_root SET display_name = ? WHERE id = ?;", on: connection)
             defer { sqlite3_finalize(statement) }; try Self.bind(displayName, at: 1, to: statement); try Self.bind(id.description, at: 2, to: statement); try Self.stepDone(statement, connection: connection)
-            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Storage root") }; try incrementRevision()
+            guard try sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Storage root") }; try incrementRevision()
         }
     }
 
@@ -367,7 +400,7 @@ public actor MusicDatabase {
             let statement = try Self.prepare("UPDATE storage_root SET scope = ? WHERE id = ?;", on: connection)
             defer { sqlite3_finalize(statement) }
             try Self.bind(scope.rawValue, at: 1, to: statement); try Self.bind(id.description, at: 2, to: statement); try Self.stepDone(statement, connection: connection)
-            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Storage root") }
+            guard try sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Storage root") }
             try incrementRevision()
         }
     }
@@ -376,7 +409,7 @@ public actor MusicDatabase {
         try transaction {
             let statement = try Self.prepare("UPDATE storage_root SET status = ?, last_known_path = COALESCE(?, last_known_path), bookmark_data = COALESCE(?, bookmark_data), bookmark_needs_refresh = ?, last_seen_at = ? WHERE id = ?;", on: connection)
             defer { sqlite3_finalize(statement) }; try Self.bind(status.rawValue, at: 1, to: statement); try Self.bind(lastKnownPath, at: 2, to: statement); try Self.bind(bookmarkData, at: 3, to: statement); try Self.bind(bookmarkNeedsRefresh ? 1 : 0, at: 4, to: statement); try Self.bind(status == .available ? Self.milliseconds(Date()) : nil, at: 5, to: statement); try Self.bind(id.description, at: 6, to: statement); try Self.stepDone(statement, connection: connection)
-            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Storage root") }; try incrementRevision()
+            guard try sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Storage root") }; try incrementRevision()
         }
     }
 
@@ -390,7 +423,7 @@ public actor MusicDatabase {
             try Self.bind(id.description, at: 3, to: statement)
             try Self.bind(expectedPath, at: 4, to: statement)
             try Self.stepDone(statement, connection: connection)
-            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.invalidOperation("The registered folder changed or was removed. Reopen Music Folders and try again.") }
+            guard try sqlite3_changes(connection) == 1 else { throw DatabaseError.invalidOperation("The registered folder changed or was removed. Reopen Music Folders and try again.") }
             try incrementRevision()
         }
     }
@@ -405,7 +438,7 @@ public actor MusicDatabase {
             let rootResult = sqlite3_step(rootStatement)
             guard rootResult == SQLITE_ROW else {
                 if rootResult == SQLITE_DONE { throw DatabaseError.notFound("Storage root") }
-                throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(connection)))
+                throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(try connection)))
             }
             guard let name = Self.text(at: 0, from: rootStatement), let path = Self.text(at: 1, from: rootStatement),
                   let scopeValue = Self.text(at: 3, from: rootStatement), let scope = StorageRootScope(rawValue: scopeValue),
@@ -429,7 +462,7 @@ public actor MusicDatabase {
                     expectedContentHash: Self.text(at: 3, from: statement), cueStartMilliseconds: Self.int(at: 4, from: statement), cueEndMilliseconds: Self.int(at: 5, from: statement)))
                 result = sqlite3_step(statement)
             }
-            guard result == SQLITE_DONE else { throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(connection))) }
+            guard result == SQLITE_DONE else { throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(try connection))) }
             try Self.execute("COMMIT;", on: connection)
             return .init(root: root, catalogueRevision: revision, references: references)
         } catch {
@@ -443,7 +476,7 @@ public actor MusicDatabase {
             guard !(try Self.exists("SELECT 1 FROM digital_asset WHERE storage_root_id = ? LIMIT 1;", value: id.description, on: connection)) else { throw DatabaseError.invalidOperation("A storage root with digital assets cannot be removed.") }
             let statement = try Self.prepare("DELETE FROM storage_root WHERE id = ?;", on: connection)
             defer { sqlite3_finalize(statement) }; try Self.bind(id.description, at: 1, to: statement); try Self.stepDone(statement, connection: connection)
-            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Storage root") }; try incrementRevision()
+            guard try sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Storage root") }; try incrementRevision()
         }
     }
 
@@ -600,7 +633,7 @@ public actor MusicDatabase {
         try transaction {
             let statement = try Self.prepare("UPDATE import_candidate SET status = 'proposed', metadata_payload = ?, error_message = NULL WHERE id = ? AND status IN ('pending', 'proposed');", on: connection)
             defer { sqlite3_finalize(statement) }; try Self.bind(data, at: 1, to: statement); try Self.bind(candidateID.description, at: 2, to: statement); try Self.stepDone(statement, connection: connection)
-            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Import candidate") }
+            guard try sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Import candidate") }
         }
     }
 
@@ -637,7 +670,7 @@ public actor MusicDatabase {
         try transaction {
             let statement = try Self.prepare("UPDATE import_release_proposal SET status = ?, updated_at = ? WHERE id = ?;", on: connection)
             defer { sqlite3_finalize(statement) }; try Self.bind(status.rawValue, at: 1, to: statement); try Self.bind(Self.milliseconds(Date()), at: 2, to: statement); try Self.bind(id.uuidString.lowercased(), at: 3, to: statement); try Self.stepDone(statement, connection: connection)
-            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Import release proposal") }
+            guard try sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Import release proposal") }
         }
     }
 
@@ -664,7 +697,7 @@ public actor MusicDatabase {
             let statement = try Self.prepare("UPDATE external_metadata_selection SET artwork_local_path = ?, updated_at = ? WHERE id = ?;", on: connection)
             defer { sqlite3_finalize(statement) }
             try Self.bind(path, at: 1, to: statement); try Self.bind(Self.milliseconds(Date()), at: 2, to: statement); try Self.bind(selectionID.uuidString.lowercased(), at: 3, to: statement); try Self.stepDone(statement, connection: connection)
-            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("External metadata selection") }
+            guard try sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("External metadata selection") }
         }
     }
 
@@ -801,7 +834,7 @@ public actor MusicDatabase {
             try Self.bind(now, at: 4, to: confirm)
             try Self.bind(proposalID.uuidString.lowercased(), at: 5, to: confirm)
             try Self.stepDone(confirm, connection: connection)
-            guard sqlite3_changes(connection) == 1 else {
+            guard try sqlite3_changes(connection) == 1 else {
                 throw DatabaseError.invalidOperation("The proposal changed while it was being attached. Review it again.")
             }
             try incrementRevision(changes: [
@@ -919,7 +952,7 @@ public actor MusicDatabase {
             result.insert(.init(rawValue: uuid))
             status = sqlite3_step(statement)
         }
-        guard status == SQLITE_DONE else { throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(connection))) }
+        guard status == SQLITE_DONE else { throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(try connection))) }
         return result
     }
 
@@ -949,7 +982,7 @@ public actor MusicDatabase {
             values.append(.init(id: id, trackID: trackID, language: Self.text(at: 1, from: statement), kind: kind, text: text, source: source, providerID: Self.text(at: 5, from: statement), isUserEdited: Self.int(at: 6, from: statement) != 0))
             status = sqlite3_step(statement)
         }
-        guard status == SQLITE_DONE else { throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(connection))) }
+        guard status == SQLITE_DONE else { throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(try connection))) }
         return values
     }
 
@@ -973,7 +1006,7 @@ public actor MusicDatabase {
             values.append(.init(contributorID: ContributorID(rawValue: contributor), albumID: AlbumID(rawValue: album), role: role))
             status = sqlite3_step(statement)
         }
-        guard status == SQLITE_DONE else { throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(connection))) }
+        guard status == SQLITE_DONE else { throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(try connection))) }
         return values
     }
 
@@ -984,7 +1017,7 @@ public actor MusicDatabase {
             defer { sqlite3_finalize(owner) }
             try Self.bind(entry.id.uuidString, at: 1, to: owner)
             let result = sqlite3_step(owner)
-            guard result == SQLITE_DONE || result == SQLITE_ROW else { throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(connection))) }
+            guard result == SQLITE_DONE || result == SQLITE_ROW else { throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(try connection))) }
             guard result == SQLITE_DONE || (result == SQLITE_ROW && Self.text(at: 0, from: owner) == entry.trackID.description) else {
                 throw DatabaseError.invalidOperation("Lyrics cannot be reassigned to another track.")
             }
@@ -999,10 +1032,10 @@ public actor MusicDatabase {
     }
 
     public func softDeleteAlbum(_ id: AlbumID) throws {
-        try transaction { let statement = try Self.prepare("UPDATE album SET deleted_at = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL;", on: connection); defer { sqlite3_finalize(statement) }; let now = Self.milliseconds(Date()); try Self.bind(now, at: 1, to: statement); try Self.bind(now, at: 2, to: statement); try Self.bind(id.description, at: 3, to: statement); try Self.stepDone(statement, connection: connection); guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Album") }; try incrementRevision() }
+        try transaction { let statement = try Self.prepare("UPDATE album SET deleted_at = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL;", on: connection); defer { sqlite3_finalize(statement) }; let now = Self.milliseconds(Date()); try Self.bind(now, at: 1, to: statement); try Self.bind(now, at: 2, to: statement); try Self.bind(id.description, at: 3, to: statement); try Self.stepDone(statement, connection: connection); guard try sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Album") }; try incrementRevision() }
     }
     public func restoreAlbum(_ id: AlbumID) throws {
-        try transaction { let statement = try Self.prepare("UPDATE album SET deleted_at = NULL, updated_at = ? WHERE id = ? AND deleted_at IS NOT NULL;", on: connection); defer { sqlite3_finalize(statement) }; try Self.bind(Self.milliseconds(Date()), at: 1, to: statement); try Self.bind(id.description, at: 2, to: statement); try Self.stepDone(statement, connection: connection); guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Deleted album") }; try incrementRevision() }
+        try transaction { let statement = try Self.prepare("UPDATE album SET deleted_at = NULL, updated_at = ? WHERE id = ? AND deleted_at IS NOT NULL;", on: connection); defer { sqlite3_finalize(statement) }; try Self.bind(Self.milliseconds(Date()), at: 1, to: statement); try Self.bind(id.description, at: 2, to: statement); try Self.stepDone(statement, connection: connection); guard try sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Deleted album") }; try incrementRevision() }
     }
     public func permanentlyDeleteAlbum(_ id: AlbumID) throws {
         try transaction {
@@ -1025,7 +1058,7 @@ public actor MusicDatabase {
             defer { sqlite3_finalize(deleteAlbum) }
             try Self.bind(id.description, at: 1, to: deleteAlbum)
             try Self.stepDone(deleteAlbum, connection: connection)
-            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Deleted album") }
+            guard try sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Deleted album") }
             try incrementRevision()
         }
     }
@@ -1134,7 +1167,7 @@ public actor MusicDatabase {
     }
 
     public func recordAssetFingerprint(_ assetID: DigitalAssetID, contentHash: String, quickSignature: String) throws {
-        try transaction { let statement = try Self.prepare("UPDATE digital_asset SET content_hash = ?, quick_signature = ? WHERE id = ?;", on: connection); defer { sqlite3_finalize(statement) }; try Self.bind(contentHash, at: 1, to: statement); try Self.bind(quickSignature, at: 2, to: statement); try Self.bind(assetID.description, at: 3, to: statement); try Self.stepDone(statement, connection: connection); guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Digital asset") } }
+        try transaction { let statement = try Self.prepare("UPDATE digital_asset SET content_hash = ?, quick_signature = ? WHERE id = ?;", on: connection); defer { sqlite3_finalize(statement) }; try Self.bind(contentHash, at: 1, to: statement); try Self.bind(quickSignature, at: 2, to: statement); try Self.bind(assetID.description, at: 3, to: statement); try Self.stepDone(statement, connection: connection); guard try sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Digital asset") } }
     }
     public func updateAssetAvailability(_ assetID: DigitalAssetID, to availability: DigitalAssetAvailability) throws {
         let statement = try Self.prepare("UPDATE digital_asset SET availability = ? WHERE id = ?;", on: connection)
@@ -1142,7 +1175,7 @@ public actor MusicDatabase {
         try Self.bind(availability.rawValue, at: 1, to: statement)
         try Self.bind(assetID.description, at: 2, to: statement)
         try Self.stepDone(statement, connection: connection)
-        guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Digital asset") }
+        guard try sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Digital asset") }
     }
     public func duplicateAssets() throws -> [AssetDuplicate] {
         let statement = try Self.prepare("SELECT content_hash, group_concat(relative_path, '|') FROM digital_asset WHERE content_hash IS NOT NULL GROUP BY content_hash HAVING COUNT(*) > 1;", on: connection); defer { sqlite3_finalize(statement) }; var values: [AssetDuplicate] = []
@@ -1216,7 +1249,7 @@ public actor MusicDatabase {
         defer { sqlite3_finalize(statement) }
         try Self.bind(id.uuidString.lowercased(), at: 1, to: statement)
         try Self.stepDone(statement, connection: connection)
-        guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Relink proposal") }
+        guard try sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Relink proposal") }
     }
     public func digitalAssetIDs(albumID: AlbumID) throws -> [DigitalAssetID] {
         let statement = try Self.prepare("SELECT digital_asset.id FROM digital_asset JOIN track ON track.id = digital_asset.track_id JOIN disc ON disc.id = track.disc_id WHERE disc.album_id = ? ORDER BY digital_asset.id;", on: connection); defer { sqlite3_finalize(statement) }; try Self.bind(albumID.description, at: 1, to: statement); var values: [DigitalAssetID] = []
@@ -1272,7 +1305,7 @@ public actor MusicDatabase {
             try Self.bind(Self.milliseconds(Date()), at: 2, to: statement)
             try Self.bind(id.description, at: 3, to: statement)
             try Self.stepDone(statement, connection: connection)
-            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Playlist") }
+            guard try sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Playlist") }
             let changes = [Self.revisionChange(entityType: "playlist", entityID: id.description, fieldName: "name", oldValue: oldName, newValue: trimmed)].compactMap { $0 }
             try incrementRevision(changes: changes)
         }
@@ -1287,7 +1320,7 @@ public actor MusicDatabase {
             try Self.bind(now, at: 2, to: statement)
             try Self.bind(id.description, at: 3, to: statement)
             try Self.stepDone(statement, connection: connection)
-            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Playlist") }
+            guard try sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Playlist") }
             let changes = [Self.revisionChange(entityType: "playlist", entityID: id.description, fieldName: "status", oldValue: "active", newValue: "deleted")].compactMap { $0 }
             try incrementRevision(changes: changes)
         }
@@ -1299,7 +1332,7 @@ public actor MusicDatabase {
             defer { sqlite3_finalize(statement) }
             try Self.bind(Self.milliseconds(Date()), at: 1, to: statement); try Self.bind(id.description, at: 2, to: statement)
             try Self.stepDone(statement, connection: connection)
-            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Deleted playlist") }
+            guard try sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Deleted playlist") }
             let changes = [Self.revisionChange(entityType: "playlist", entityID: id.description, fieldName: "status", oldValue: "deleted", newValue: "active")].compactMap { $0 }
             try incrementRevision(changes: changes)
         }
@@ -1310,7 +1343,7 @@ public actor MusicDatabase {
             let statement = try Self.prepare("DELETE FROM playlist WHERE id = ? AND deleted_at IS NOT NULL;", on: connection)
             defer { sqlite3_finalize(statement) }
             try Self.bind(id.description, at: 1, to: statement); try Self.stepDone(statement, connection: connection)
-            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Deleted playlist") }
+            guard try sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Deleted playlist") }
             let changes = [Self.revisionChange(entityType: "playlist", entityID: id.description, fieldName: "status", oldValue: "deleted", newValue: "permanently deleted")].compactMap { $0 }
             try incrementRevision(changes: changes)
         }
@@ -1337,7 +1370,7 @@ public actor MusicDatabase {
                           Self.text(at: 1, from: existing) == addition.trackID.description else { throw DatabaseError.invalidOperation("Playlist entry identity belongs to another selection.") }
                     saved += 1
                 } else if status != SQLITE_DONE {
-                    throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(connection)))
+                    throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(try connection)))
                 }
             }
             if saved == additions.count { return }
@@ -1454,7 +1487,7 @@ public actor MusicDatabase {
         while true {
             let status = sqlite3_step(statement)
             if status == SQLITE_DONE { return values }
-            guard status == SQLITE_ROW else { throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(connection))) }
+            guard status == SQLITE_ROW else { throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(try connection))) }
             guard let raw = Self.text(at: 0, from: statement), let id = UUID(uuidString: raw), let rawTrack = Self.text(at: 1, from: statement), let trackUUID = UUID(uuidString: rawTrack) else { throw DatabaseError.invalidIdentifier("playlist_item") }
             values.append(.init(id: id, playlistID: playlistID, trackID: .init(rawValue: trackUUID), position: Int(Self.int(at: 2, from: statement) ?? 0), title: Self.text(at: 3, from: statement) ?? ""))
         }
@@ -1474,7 +1507,7 @@ public actor MusicDatabase {
         while true {
             let status = sqlite3_step(statement)
             if status == SQLITE_DONE { return result }
-            guard status == SQLITE_ROW else { throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(connection))) }
+            guard status == SQLITE_ROW else { throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(try connection))) }
             guard let track = Self.text(at: 0, from: statement).flatMap(UUID.init(uuidString:)),
                   let album = Self.text(at: 1, from: statement).flatMap(UUID.init(uuidString:)) else { throw DatabaseError.invalidIdentifier("Track browse summary") }
             let audioStatus = TrackAudioStatus.derive(hasAsset: Self.text(at: 7, from: statement) != nil,
@@ -1497,7 +1530,7 @@ public actor MusicDatabase {
         while true {
             let status = sqlite3_step(statement)
             if status == SQLITE_DONE { return result }
-            guard status == SQLITE_ROW else { throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(connection))) }
+            guard status == SQLITE_ROW else { throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(try connection))) }
             guard let playlist = Self.text(at: 0, from: statement).flatMap(UUID.init(uuidString:)),
                   let item = Self.text(at: 1, from: statement).flatMap(UUID.init(uuidString:)),
                   let track = Self.text(at: 2, from: statement).flatMap(UUID.init(uuidString:)) else { throw DatabaseError.invalidIdentifier("Playlist contents") }
@@ -1514,7 +1547,7 @@ public actor MusicDatabase {
         while true {
             let status = sqlite3_step(statement)
             if status == SQLITE_DONE { return values }
-            guard status == SQLITE_ROW else { throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(connection))) }
+            guard status == SQLITE_ROW else { throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(try connection))) }
             guard let raw = Self.text(at: 0, from: statement), let id = UUID(uuidString: raw) else { throw DatabaseError.invalidIdentifier("playlist_item") }
             values.append(id)
         }
@@ -1541,7 +1574,7 @@ public actor MusicDatabase {
         try transaction {
             let statement = try Self.prepare("UPDATE import_batch SET status = ?, completed_at = ?, error_summary = ? WHERE id = ? AND status = 'scanning';", on: connection)
             defer { sqlite3_finalize(statement) }; try Self.bind(status.rawValue, at: 1, to: statement); try Self.bind(Self.milliseconds(Date()), at: 2, to: statement); try Self.bind(errorSummary, at: 3, to: statement); try Self.bind(batchID.description, at: 4, to: statement); try Self.stepDone(statement, connection: connection)
-            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Active import batch") }
+            guard try sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Active import batch") }
         }
     }
 
@@ -1603,7 +1636,7 @@ public actor MusicDatabase {
             try Self.bind(draft.name, at: 1, to: statement)
             try Self.bind(id.description, at: 2, to: statement)
             try Self.stepDone(statement, connection: connection)
-            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Physical location") }
+            guard try sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Physical location") }
             try incrementRevision()
         }
     }
@@ -1640,7 +1673,7 @@ public actor MusicDatabase {
             try Self.bind(parentID?.description, at: 1, to: statement)
             try Self.bind(id.description, at: 2, to: statement)
             try Self.stepDone(statement, connection: connection)
-            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Physical location") }
+            guard try sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Physical location") }
             try incrementRevision()
         }
     }
@@ -1663,7 +1696,7 @@ public actor MusicDatabase {
             defer { sqlite3_finalize(statement) }
             try Self.bind(id.description, at: 1, to: statement)
             try Self.stepDone(statement, connection: connection)
-            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Physical location") }
+            guard try sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Physical location") }
             try incrementRevision()
         }
     }
@@ -1781,7 +1814,7 @@ public actor MusicDatabase {
                     try Self.bind(timestamp, at: 4, to: contributor)
                     try Self.stepDone(contributor, connection: connection)
                 } else {
-                    throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(connection)))
+                    throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(try connection)))
                 }
 
                 let creditPosition = nextPositions[credit.role, default: 0]
@@ -1865,7 +1898,7 @@ public actor MusicDatabase {
             result[AlbumID(rawValue: uuid)] = value
             status = sqlite3_step(statement)
         }
-        guard status == SQLITE_DONE else { throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(connection))) }
+        guard status == SQLITE_DONE else { throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(try connection))) }
         return result
     }
 
@@ -1922,7 +1955,7 @@ public actor MusicDatabase {
             try Self.bind(Self.milliseconds(Date()), at: 18, to: statement)
             try Self.bind(id.description, at: 19, to: statement)
             try Self.stepDone(statement, connection: connection)
-            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Album") }
+            guard try sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Album") }
             try incrementRevision(changes: changes)
         }
         guard let updated = try album(id: id) else { throw DatabaseError.notFound("Album") }
@@ -2013,7 +2046,7 @@ public actor MusicDatabase {
             defer { sqlite3_finalize(statement) }
             try Self.bind(Self.milliseconds(Date()), at: 1, to: statement); try Self.bind(id.description, at: 2, to: statement)
             try Self.stepDone(statement, connection: connection)
-            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Deleted box set") }
+            guard try sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Deleted box set") }
             try incrementRevision()
         }
     }
@@ -2221,7 +2254,7 @@ public actor MusicDatabase {
         try Self.bind(id.description, at: 1, to: statement)
         let result = sqlite3_step(statement)
         guard result != SQLITE_DONE else { return nil }
-        guard result == SQLITE_ROW else { throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(connection))) }
+        guard result == SQLITE_ROW else { throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(try connection))) }
         guard let rawDisc = Self.text(at: 0, from: statement), let uuid = UUID(uuidString: rawDisc) else { throw DatabaseError.invalidIdentifier("Track disc") }
         return .init(id: id, discID: .init(rawValue: uuid), number: Int(Self.int(at: 1, from: statement) ?? 0),
                      title: Self.text(at: 2, from: statement) ?? "", displayPosition: Self.text(at: 3, from: statement),
@@ -2282,7 +2315,7 @@ public actor MusicDatabase {
             try Self.bind(Self.milliseconds(Date()), at: 3, to: statement)
             try Self.bind(contributorID.description, at: 4, to: statement)
             try Self.stepDone(statement, connection: connection)
-            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Contributor") }
+            guard try sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Contributor") }
             try incrementRevision()
         }
         return .init(id: contributorID, name: valid.name, sortName: valid.sortName)
@@ -2318,7 +2351,7 @@ public actor MusicDatabase {
             try Self.bind(role.rawValue, at: 3, to: statement)
             try Self.bind(Int64(position), at: 4, to: statement)
             try Self.stepDone(statement, connection: connection)
-            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Album contributor credit") }
+            guard try sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Album contributor credit") }
             try incrementRevision()
         }
     }
@@ -2331,13 +2364,13 @@ public actor MusicDatabase {
                 defer { sqlite3_finalize(statement) }
                 try Self.bind(creditedName, at: 1, to: statement); try Self.bind(albumID.description, at: 2, to: statement); try Self.bind(contributorID.description, at: 3, to: statement); try Self.bind(role.rawValue, at: 4, to: statement); try Self.bind(Int64(position), at: 5, to: statement)
                 try Self.stepDone(statement, connection: connection)
-                guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Album contributor credit") }
+                guard try sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Album contributor credit") }
             } else {
                 let delete = try Self.prepare("DELETE FROM album_contributor WHERE album_id = ? AND contributor_id = ? AND role = ? AND position = ?;", on: connection)
                 defer { sqlite3_finalize(delete) }
                 try Self.bind(albumID.description, at: 1, to: delete); try Self.bind(contributorID.description, at: 2, to: delete); try Self.bind(role.rawValue, at: 3, to: delete); try Self.bind(Int64(position), at: 4, to: delete)
                 try Self.stepDone(delete, connection: connection)
-                guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Album contributor credit") }
+                guard try sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Album contributor credit") }
                 let targetPosition = try Self.nextNumber("SELECT COALESCE(MAX(position), -1) + 1 FROM album_contributor WHERE album_id = ? AND role = ?;", ownerID: albumID.description, on: connection, additionalValue: targetRole.rawValue)
                 let insert = try Self.prepare("INSERT INTO album_contributor (album_id, contributor_id, role, credited_name, position) VALUES (?, ?, ?, ?, ?);", on: connection)
                 defer { sqlite3_finalize(insert) }
@@ -2378,7 +2411,7 @@ public actor MusicDatabase {
             try Self.bind(role.rawValue, at: 3, to: statement)
             try Self.bind(Int64(position), at: 4, to: statement)
             try Self.stepDone(statement, connection: connection)
-            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Track contributor credit") }
+            guard try sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Track contributor credit") }
             try incrementRevision()
         }
     }
@@ -2391,13 +2424,13 @@ public actor MusicDatabase {
                 defer { sqlite3_finalize(statement) }
                 try Self.bind(creditedName, at: 1, to: statement); try Self.bind(trackID.description, at: 2, to: statement); try Self.bind(contributorID.description, at: 3, to: statement); try Self.bind(role.rawValue, at: 4, to: statement); try Self.bind(Int64(position), at: 5, to: statement)
                 try Self.stepDone(statement, connection: connection)
-                guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Track contributor credit") }
+                guard try sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Track contributor credit") }
             } else {
                 let delete = try Self.prepare("DELETE FROM track_contributor WHERE track_id = ? AND contributor_id = ? AND role = ? AND position = ?;", on: connection)
                 defer { sqlite3_finalize(delete) }
                 try Self.bind(trackID.description, at: 1, to: delete); try Self.bind(contributorID.description, at: 2, to: delete); try Self.bind(role.rawValue, at: 3, to: delete); try Self.bind(Int64(position), at: 4, to: delete)
                 try Self.stepDone(delete, connection: connection)
-                guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Track contributor credit") }
+                guard try sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Track contributor credit") }
                 let targetPosition = try Self.nextNumber("SELECT COALESCE(MAX(position), -1) + 1 FROM track_contributor WHERE track_id = ? AND role = ?;", ownerID: trackID.description, on: connection, additionalValue: targetRole.rawValue)
                 let insert = try Self.prepare("INSERT INTO track_contributor (track_id, contributor_id, role, credited_name, position) VALUES (?, ?, ?, ?, ?);", on: connection)
                 defer { sqlite3_finalize(insert) }
@@ -2463,7 +2496,7 @@ public actor MusicDatabase {
             try Self.bind(source, at: 2, to: update)
             try Self.bind(artworkID.uuidString.lowercased(), at: 3, to: update)
             try Self.stepDone(update, connection: connection)
-            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Album artwork") }
+            guard try sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Album artwork") }
             let changes = [
                 Self.revisionChange(entityType: "artwork", entityID: artworkID.uuidString.lowercased(), fieldName: "local_path", oldValue: oldPath, newValue: trimmedPath),
                 Self.revisionChange(entityType: "artwork", entityID: artworkID.uuidString.lowercased(), fieldName: "source", oldValue: oldSource, newValue: source)
@@ -2511,7 +2544,7 @@ public actor MusicDatabase {
                 values[TrackID(rawValue: trackUUID)] = AlbumID(rawValue: albumUUID)
                 result = sqlite3_step(statement)
             }
-            guard result == SQLITE_DONE else { throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(connection))) }
+            guard result == SQLITE_DONE else { throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(try connection))) }
         }
         return values
     }
@@ -2645,7 +2678,7 @@ public actor MusicDatabase {
             }
             let statement = try Self.prepare("DELETE FROM album_alias WHERE id = ?;", on: connection)
             defer { sqlite3_finalize(statement) }; try Self.bind(aliasID.uuidString.lowercased(), at: 1, to: statement); try Self.stepDone(statement, connection: connection)
-            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Album alias") }
+            guard try sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Album alias") }
             let changes = [
                 Self.revisionChange(entityType: "album_alias", entityID: aliasID.uuidString.lowercased(), fieldName: "album_id", oldValue: albumID, newValue: nil),
                 Self.revisionChange(entityType: "album_alias", entityID: aliasID.uuidString.lowercased(), fieldName: "name", oldValue: name, newValue: nil),
@@ -2669,7 +2702,7 @@ public actor MusicDatabase {
         while true {
             let step = sqlite3_step(statement)
             if step == SQLITE_DONE { return result }
-            guard step == SQLITE_ROW else { throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(connection))) }
+            guard step == SQLITE_ROW else { throw DatabaseError.sqlite(message: String(cString: sqlite3_errmsg(try connection))) }
             guard let boxRaw = Self.text(at: 0, from: statement), let box = UUID(uuidString: boxRaw),
                   let albumRaw = Self.text(at: 1, from: statement), let album = UUID(uuidString: albumRaw) else {
                 throw DatabaseError.invalidIdentifier("box_set_album")
@@ -2733,7 +2766,7 @@ public actor MusicDatabase {
             try Self.bind(boxSetID.description, at: 1, to: delete)
             try Self.bind(albumID.description, at: 2, to: delete)
             try Self.stepDone(delete, connection: connection)
-            guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Box-set membership") }
+            guard try sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Box-set membership") }
             let update = try Self.prepare("UPDATE album SET physical_location_id = ?, physical_location_unknown = ?, updated_at = ? WHERE id = ?;", on: connection)
             defer { sqlite3_finalize(update) }
             try Self.bind(locationID?.description, at: 1, to: update)
@@ -2875,7 +2908,7 @@ public actor MusicDatabase {
     private func incrementImportProgress(batchID: ImportBatchID, candidates: Int64, errors: Int64) throws {
         let statement = try Self.prepare("UPDATE import_batch SET processed_count = processed_count + 1, candidate_count = candidate_count + ?, error_count = error_count + ? WHERE id = ? AND status = 'scanning';", on: connection)
         defer { sqlite3_finalize(statement) }; try Self.bind(candidates, at: 1, to: statement); try Self.bind(errors, at: 2, to: statement); try Self.bind(batchID.description, at: 3, to: statement); try Self.stepDone(statement, connection: connection)
-        guard sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Active import batch") }
+        guard try sqlite3_changes(connection) == 1 else { throw DatabaseError.notFound("Active import batch") }
     }
 
     private static let albumSelect = "SELECT id, title, edition_label, release_year, country_code, label_name, catalogue_number, barcode, remaster_year, media_format, disc_count, has_cd, physical_location_id, physical_location_unknown, physical_note, notes, rating, is_favourite, created_at, updated_at, deleted_at FROM album"

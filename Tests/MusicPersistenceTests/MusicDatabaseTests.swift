@@ -5,6 +5,30 @@ import Testing
 
 @Suite("Music database")
 struct MusicDatabaseTests {
+    @Test("An explicitly closed catalogue actor refuses later work while its file is reopened")
+    func closedConnectionRefusesWork() async throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: "ClosedCatalogue-\(UUID())")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appending(path: "Catalogue.sqlite")
+        let database = try MusicDatabase(url: url)
+        try await database.migrate()
+        let album = try await database.createAlbum(.init(title: "Saved"))
+        try await database.checkpointAndCloseForReplacement()
+        try await database.close()
+
+        let closed = DatabaseError.invalidOperation("This catalogue connection is closed.")
+        await #expect(throws: closed) { _ = try await database.albums() }
+        await #expect(throws: closed) { _ = try await database.updateAlbum(album.id, with: .init(title: "Stale write")) }
+        let backup = directory.appending(path: "Stale backup.sqlite")
+        await #expect(throws: closed) { try await database.createConsistentBackup(at: backup) }
+        #expect(!FileManager.default.fileExists(atPath: backup.path))
+
+        let reopened = try MusicDatabase(url: url)
+        #expect(try await reopened.album(id: album.id)?.title == "Saved")
+        try await reopened.close()
+    }
+
     @Test("Playback album lookup is batched, read-only and excludes deleted or unknown identities")
     func playbackAlbumIdentity() async throws {
         let database = try MusicDatabase(url: temporaryDatabaseURL())

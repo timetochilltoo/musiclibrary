@@ -1420,15 +1420,18 @@ public final class LibraryStore: ObservableObject {
         let liveArtworkDirectory = managedArtworkStore.directory
         let recoveryArchive = try await createLocalRecoveryArchive(reason: "before-archive-restore", using: context)
         try CompleteCatalogueArchive.verify(at: recoveryArchive)
-        try await database?.checkpointWAL()
         try Task.checkCancellation()
         let rollbackDirectory = supportDirectory.appending(path: "RestoreRollback-\(UUID().uuidString)", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: rollbackDirectory, withIntermediateDirectories: true)
         let rollbackDatabase = rollbackDirectory.appending(path: CompleteCatalogueArchive.databaseFileName)
         let rollbackArtwork = rollbackDirectory.appending(path: CompleteCatalogueArchive.artworkDirectoryName, directoryHint: .isDirectory)
         let hadArtwork = FileManager.default.fileExists(atPath: liveArtworkDirectory.path)
-        self.database = nil
-        removeSQLiteSidecars(for: catalogueURL)
+        do {
+            try await closeDatabaseForReplacement()
+        } catch {
+            try? FileManager.default.removeItem(at: rollbackDirectory)
+            throw error
+        }
         let partialCopyFixtureRoot = takePartialCopyFixtureRoot()
         let partialArtworkCopyFixtureRoot = takePartialArtworkCopyFixtureRoot()
         let moveFailure = takeRecoveryFixtureMoveFailure()
@@ -1436,6 +1439,7 @@ public final class LibraryStore: ObservableObject {
         var databaseMoved = false
         var artworkMoved = false
         do {
+            try removeRecoverySidecars(for: catalogueURL)
             try await Task.detached(priority: .userInitiated) {
                 try Self.moveRecoveryOriginal(from: catalogueURL, to: rollbackDatabase, failureFixtureRoot: moveFailure == .database ? moveFixtureRoot : nil)
             }.value
@@ -1452,9 +1456,9 @@ public final class LibraryStore: ObservableObject {
             }.value
             try checkRecoveryFixtureInstallation()
             let restored = try MusicDatabase(url: catalogueURL)
+            self.database = restored
             try await restored.migrate()
             try await restored.remapManagedArtworkPaths(staged.artworkPathMappings)
-            self.database = restored
             self.managedArtworkStore = .init(directory: managedArtworkStore.directory)
             try await reloadAfterMaintenanceCommit(using: context)
             try? FileManager.default.removeItem(at: rollbackDirectory)
@@ -1462,8 +1466,9 @@ public final class LibraryStore: ObservableObject {
             catalogueInstallationID = UUID()
         } catch {
             let restoreFailure = error.localizedDescription
-            self.database = nil
             do {
+                try await self.database?.close()
+                self.database = nil
                 try checkRecoveryFixtureRollback()
                 let manager = FileManager.default
                 guard databaseMoved
@@ -1685,32 +1690,31 @@ public final class LibraryStore: ObservableObject {
     ) async throws {
         guard let catalogueURL, database != nil else { throw DatabaseError.notFound("Catalogue database") }
         let recoveryDirectory = catalogueURL.deletingLastPathComponent().appending(path: "Recovery", directoryHint: .isDirectory)
-        try await database?.checkpointWAL()
         try Task.checkCancellation()
         try FileManager.default.createDirectory(at: recoveryDirectory, withIntermediateDirectories: true)
         let recoveryURL = recoveryDirectory.appending(path: "MusicLibrary-before-restore-\(Int64(Date.now.timeIntervalSince1970))-\(UUID().uuidString).sqlite")
-        database = nil
-        try? FileManager.default.removeItem(at: URL(fileURLWithPath: catalogueURL.path + "-wal"))
-        try? FileManager.default.removeItem(at: URL(fileURLWithPath: catalogueURL.path + "-shm"))
+        try await closeDatabaseForReplacement()
         let partialCopyFixtureRoot = takePartialCopyFixtureRoot()
         let moveFailure = takeRecoveryFixtureMoveFailure()
         var databaseMoved = false
         do {
+            try removeRecoverySidecars(for: catalogueURL)
             try Self.moveRecoveryOriginal(from: catalogueURL, to: recoveryURL, failureFixtureRoot: moveFailure == .database ? recoveryFixtureDirectory : nil)
             databaseMoved = true
             try MusicDatabase.verifyStandaloneBackupFile(at: recoveryURL)
             try Self.copyRecoveryDatabase(from: backupURL, to: catalogueURL, partialCopyFixtureRoot: partialCopyFixtureRoot)
             try checkRecoveryFixtureInstallation()
             let restored = try MusicDatabase(url: catalogueURL)
-            try await restored.migrate()
             database = restored
+            try await restored.migrate()
             try await reloadAfterMaintenanceCommit(using: context)
             masterBackupStatus = "Restored revision \(revision); previous master kept in Recovery"
             catalogueInstallationID = UUID()
         } catch {
             let restoreFailure = error.localizedDescription
-            database = nil
             do {
+                try await database?.close()
+                database = nil
                 try checkRecoveryFixtureRollback()
                 let manager = FileManager.default
                 guard databaseMoved
@@ -2091,9 +2095,10 @@ public final class LibraryStore: ObservableObject {
         }
     }
 
-    private func removeSQLiteSidecars(for databaseURL: URL) {
-        try? FileManager.default.removeItem(at: URL(fileURLWithPath: databaseURL.path + "-wal"))
-        try? FileManager.default.removeItem(at: URL(fileURLWithPath: databaseURL.path + "-shm"))
+    private func closeDatabaseForReplacement() async throws {
+        guard let database else { throw DatabaseError.notFound("Catalogue database") }
+        try await database.checkpointAndCloseForReplacement()
+        self.database = nil
     }
 
     private func removeRecoverySidecars(for databaseURL: URL) throws {

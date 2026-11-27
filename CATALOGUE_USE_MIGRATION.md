@@ -1,6 +1,6 @@
 # Catalogue-use migration inventory
 
-Snapshot: 27 November 2026, RA4 master backup revision coherence. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
+Snapshot: 27 November 2026, RA4 SQLite replacement safeguards. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
 Operational state: [HANDOFF.md](HANDOFF.md). Safety design: [recovery admission audit](RECOVERY_WRITER_ADMISSION_AUDIT.md).
 
 ## Coverage and lifetime contract
@@ -312,5 +312,11 @@ identity inside admission. Cleanup, reset and both restores capture the
 request identity at submission and check it after the transfer queue wait,
 before staging, recovery writes or the exclusive reservation.
 
-Next review checkpoint and connection-close safeguards before restore replaces
-a SQLite file. Keep the verified recovery and rollback paths intact.
+Both restore paths check the truncate checkpoint result and explicitly close
+the live SQLite connection before moving the database file. An incomplete
+checkpoint leaves the original connection available. Closed actors refuse
+subsequent database work. Rollback closes any replacement connection before
+moving the original back.
+
+Next review Mac maintenance busy and retry feedback, including the
+disposable native recovery workflow.

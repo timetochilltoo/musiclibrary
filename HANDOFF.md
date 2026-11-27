@@ -4,7 +4,31 @@ Last updated: 27 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — RA4 master backup revision coherence
+## Current resume — RA4 SQLite replacement safeguards
+
+Complete archive and database-only restore now require a successful SQLite
+truncate checkpoint and acknowledged close before replacing the database.
+The checkpoint and close run in one database actor call. A blocked checkpoint
+leaves the live connection available, and a closed actor rejects later work.
+Rollback explicitly closes any opened replacement before moving files. Both
+paths retain their exclusive admission, recovery verification and rollback
+policies.
+
+Temporary fixtures pin a second SQLite reader during a live edit on each
+restore path. They verify that replacement refuses while the checkpoint is
+blocked, the live catalogue stays writable, and retry succeeds after closing
+the reader. A persistence test checks that a retained closed actor refuses
+reads, edits and backup creation while the file can be opened normally.
+
+The 52 focused tests, 292 Debug tests, 281 Release tests and Swift build passed.
+Whitespace and audit link checks passed. Logs are at
+`/private/tmp/musiclibrary-ra4-sqlite-close-{focused,debug,release,build}.log`.
+
+Next review **Mac maintenance busy and retry feedback** and the disposable
+native recovery workflow. The latest runnable artifact is Music Library
+0.72 build 73 with schema 17. See [the migration inventory](CATALOGUE_USE_MIGRATION.md).
+
+## Previous resume — RA4 master backup revision coherence
 
 Database-only master backup creation takes the SQLite copy before determining
 its revision. The copy is opened read-only and immutable, and its revision

@@ -1,4 +1,5 @@
 import Foundation
+import SQLite3
 import Testing
 import MusicDomain
 import MusicPersistence
@@ -566,6 +567,48 @@ struct RecoveryTransferIntegrationTests {
         do { _ = try await store.publishSnapshot(to: root.deletingLastPathComponent()); Issue.record("Outside path accepted") } catch {}
         do { _ = try await LibraryStore(recoveryFixtureDirectory: FileManager.default.temporaryDirectory); Issue.record("Temporary root accepted") } catch {}
         #expect(!store.transferActivity.isBusy)
+    }
+
+    @Test("A pinned WAL reader prevents file replacement until the checkpoint can finish", arguments: [false, true])
+    func restoreWaitsForExternalWALReader(archive: Bool) async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try await LibraryStore(recoveryFixtureDirectory: root)
+        let album = try await store.addAlbum(.init(title: "Backup title"))
+        let backup = archive
+            ? try await store.exportCompleteCatalogueArchive(to: root.appending(path: "Exports"))
+            : try await createDatabaseBackup(in: root)
+        try await store.updateAlbum(album.id, with: .init(title: "Pinned title"))
+        let installation = store.catalogueInstallationID
+        let database = root.appending(path: "MusicLibrary.sqlite")
+        var handle: OpaquePointer?
+        let opened = sqlite3_open_v2(database.path, &handle, SQLITE_OPEN_READONLY, nil)
+        defer { sqlite3_close(handle) }
+        try #require(opened == SQLITE_OK)
+        let reader = try #require(handle)
+        try #require(sqlite3_exec(reader, "BEGIN; SELECT catalogue_revision FROM catalogue_state;", nil, nil, nil) == SQLITE_OK)
+        try await store.updateAlbum(album.id, with: .init(title: "Latest live title"))
+
+        let busy = DatabaseError.invalidOperation("SQLite could not checkpoint the catalogue because it is in use. Close other catalogue connections and try again.")
+        await #expect(throws: busy) {
+            if archive { try await store.restoreCompleteCatalogueArchive(from: backup) }
+            else { try await store.restoreMasterBackup(from: backup) }
+        }
+        #expect(store.catalogueInstallationID == installation)
+        #expect(store.catalogueAdmission.phase == .open && !store.transferActivity.isBusy)
+        #expect(store.catalogueAlbums.first?.title == "Latest live title")
+        let recovery = root.appending(path: "Recovery")
+        #expect(try FileManager.default.contentsOfDirectory(atPath: recovery.path).allSatisfy { !$0.hasSuffix(".sqlite") })
+        #expect(try FileManager.default.contentsOfDirectory(atPath: root.path).allSatisfy { !$0.hasPrefix("RestoreRollback-") })
+        try await store.updateAlbum(album.id, with: .init(title: "Still writable"))
+
+        try #require(sqlite3_exec(reader, "ROLLBACK;", nil, nil, nil) == SQLITE_OK)
+        try #require(sqlite3_close(reader) == SQLITE_OK)
+        handle = nil
+        if archive { try await store.restoreCompleteCatalogueArchive(from: backup) }
+        else { try await store.restoreMasterBackup(from: backup) }
+        #expect(store.catalogueAlbums.first?.title == "Backup title")
+        #expect(store.catalogueInstallationID != installation)
     }
 
     private func temporaryDirectory() -> URL {

@@ -356,7 +356,12 @@ identity and holds admission through backup, replacement and journal completion.
 
 RA4 master backup checkpoint. The captured SQLite payload supplies the backup
 filename and manifest revision even if the live catalogue changes around
-capture. Restore checkpoint and connection-close safeguards come next.
+capture.
+
+RA4 SQLite replacement checkpoint. Both restore paths require a successful
+truncate checkpoint and acknowledged close before file replacement. Blocked
+checkpoints preserve the live catalogue, and retained closed actors refuse
+subsequent access. Mac maintenance feedback comes next.
 
 Store more than an absolute path:
 
