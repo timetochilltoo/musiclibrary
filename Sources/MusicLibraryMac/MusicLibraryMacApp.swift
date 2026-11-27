@@ -70,12 +70,16 @@ struct MusicLibraryMacApp: App {
 #if DEBUG
 private struct LibraryNavigationFixtureWorkspace: View {
     @State private var store: LibraryStore?
+    @State private var maintenanceArchive: URL?
     @State private var failure: String?
 
     var body: some View {
         Group {
             if let store {
                 VStack(spacing: 0) {
+                    if let maintenanceArchive {
+                        MaintenanceRecoveryFixtureControls(store: store, archive: maintenanceArchive)
+                    }
                     if ProcessInfo.processInfo.arguments.contains("--queue-activity-fixture") {
                         HStack {
                             Text("Synthetic queue — no file operations").font(.caption)
@@ -101,6 +105,12 @@ private struct LibraryNavigationFixtureWorkspace: View {
         .task {
             guard store == nil, failure == nil else { return }
             do {
+                if ProcessInfo.processInfo.arguments.contains("--maintenance-recovery-fixture") {
+                    let fixture = try await LibraryStore.makeMaintenanceFixture()
+                    maintenanceArchive = fixture.archive
+                    store = fixture.store
+                    return
+                }
                 let registeredFolder = ProcessInfo.processInfo.arguments.contains("--registered-folder-fixture")
                 store = try await LibraryStore.makeNavigationFixture(includeImportReview: ProcessInfo.processInfo.arguments.contains("--import-review-fixture"), emptyLibrary: ProcessInfo.processInfo.arguments.contains("--empty-library-fixture") || registeredFolder, includeMusicFolders: registeredFolder).store
             }
@@ -108,6 +118,35 @@ private struct LibraryNavigationFixtureWorkspace: View {
         }
     }
 }
+private struct MaintenanceRecoveryFixtureControls: View {
+    @ObservedObject var store: LibraryStore
+    let archive: URL
+    @State private var holdsReader = false
+
+    var body: some View {
+        HStack {
+            Button("Hold Catalogue Reader") {
+                holdsReader = true
+                Task {
+                    defer { holdsReader = false }
+                    do { try await store.holdMaintenanceFixtureReader() }
+                    catch { store.presentError(error) }
+                }
+            }.disabled(holdsReader)
+            Button("Restore Fixture Archive") {
+                Task {
+                    do { try await store.restoreCompleteCatalogueArchive(from: archive) }
+                    catch { store.presentError(error) }
+                }
+            }.disabled(store.transferActivity.isBusy)
+            Button("Release Reader") { store.releaseMaintenanceFixtureReader() }.disabled(!holdsReader)
+            Text(store.catalogueAlbums.first?.title ?? "No albums").font(.caption)
+        }
+        .padding(8)
+        .onDisappear { store.releaseMaintenanceFixtureReader() }
+    }
+}
+
 #endif
 
 private enum LibrarySettingsCategory: String, CaseIterable, Identifiable {
@@ -414,6 +453,17 @@ private struct LibraryShellView: View {
         } message: {
             Text(playback.errorMessage ?? "")
         }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if let feedback = maintenanceFeedback {
+                Label(feedback.message, systemImage: feedback.symbol)
+                    .font(.callout)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(.bar)
+                    .accessibilityElement(children: .combine)
+            }
+        }
         .safeAreaInset(edge: .bottom) {
             if playback.isPlaying || playback.currentTitle != "Nothing playing" {
                 MiniPlayerBar(library: library, playback: playback, openAlbum: { selectedAlbumID = $0 }) {
@@ -423,6 +473,15 @@ private struct LibraryShellView: View {
                 }
                 .id(library.catalogueInstallationID)
             }
+        }
+    }
+
+    private var maintenanceFeedback: (message: String, symbol: String)? {
+        switch library.catalogueMaintenancePhase {
+        case .open: nil
+        case .draining: ("Waiting for active catalogue work to finish. Try your catalogue action again after maintenance.", "clock")
+        case .exclusive: ("Catalogue maintenance is in progress. Try your catalogue action again when it finishes.", "wrench.and.screwdriver")
+        case .reviewRequired: ("Catalogue recovery needs review. Open Settings → Backup & Restore for details.", "exclamationmark.triangle")
         }
     }
 
@@ -1739,7 +1798,11 @@ private struct StorageRootList: View {
             if shows(.sharing, .backupRestore, .advanced), library.transferActivity.isBusy {
                 Section("Catalogue Activity") {
                     if let active = library.transferActivity.active {
-                        ProgressView("Running: \(active.rawValue)").controlSize(.small)
+                        if library.catalogueMaintenancePhase == .draining {
+                            ProgressView("Preparing \(active.rawValue.lowercased()) — waiting for active catalogue work").controlSize(.small)
+                        } else {
+                            ProgressView("Running: \(active.rawValue)").controlSize(.small)
+                        }
                     }
                     ForEach(Array(library.transferActivity.waiting.enumerated()), id: \.offset) { _, kind in
                         Label("Waiting: \(kind.rawValue)", systemImage: "clock")

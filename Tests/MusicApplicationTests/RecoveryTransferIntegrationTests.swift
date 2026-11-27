@@ -380,7 +380,7 @@ struct RecoveryTransferIntegrationTests {
         }
         #expect(!store.transferActivity.isBusy)
         do { _ = try await store.addAlbum(.init(title: "Must refuse while recovery unresolved")); Issue.record("Unresolved catalogue accepted edits") } catch {}
-        #expect(store.catalogueAdmission.phase == .reviewRequired)
+        #expect(store.catalogueMaintenancePhase == .reviewRequired)
         await #expect(throws: CatalogueAdmission.Failure.reviewRequired) {
             _ = try await store.catalogueCleanupPreview()
         }

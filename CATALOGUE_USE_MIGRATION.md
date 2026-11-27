@@ -1,6 +1,6 @@
 # Catalogue-use migration inventory
 
-Snapshot: 27 November 2026, RA4 SQLite replacement safeguards. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
+Snapshot: 27 November 2026, RA4 Mac maintenance feedback. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
 Operational state: [HANDOFF.md](HANDOFF.md). Safety design: [recovery admission audit](RECOVERY_WRITER_ADMISSION_AUDIT.md).
 
 ## Coverage and lifetime contract
@@ -260,6 +260,8 @@ a managed-path membership check, and synthetic activity helpers are Debug-only.
 - `beginSyntheticQueueActivity`
 - `dismissError`
 - `finishSyntheticQueueTask`
+- `holdMaintenanceFixtureReader`
+- `releaseMaintenanceFixtureReader`
 - `isManagedArtwork`
 - `lookupMusicBrainz`
 - `musicBrainzReleaseDetails`
@@ -318,5 +320,9 @@ checkpoint leaves the original connection available. Closed actors refuse
 subsequent database work. Rollback closes any replacement connection before
 moving the original back.
 
-Next review Mac maintenance busy and retry feedback, including the
-disposable native recovery workflow.
+The Mac observes admission phase separately from the transfer queue. Its
+window banner distinguishes drain, exclusive work and recovery review.
+The Debug-only recovery fixture holds an ordinary reader to exercise drain.
+
+Next review snapshot publication freshness after a restore reuses the
+last published revision.

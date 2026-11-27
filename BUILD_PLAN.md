@@ -361,7 +361,12 @@ capture.
 RA4 SQLite replacement checkpoint. Both restore paths require a successful
 truncate checkpoint and acknowledged close before file replacement. Blocked
 checkpoints preserve the live catalogue, and retained closed actors refuse
-subsequent access. Mac maintenance feedback comes next.
+subsequent access.
+
+RA4 Mac feedback checkpoint. The window distinguishes catalogue drain,
+exclusive maintenance and review-required recovery. Settings labels an
+active transfer that is waiting for catalogue operations accordingly.
+Next review snapshot publication freshness after same-revision restore.
 
 Store more than an absolute path:
 

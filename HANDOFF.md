@@ -4,7 +4,34 @@ Last updated: 27 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — RA4 SQLite replacement safeguards
+## Current resume — RA4 Mac maintenance feedback
+
+The Mac window now distinguishes waiting for existing catalogue work,
+exclusive maintenance and recovery requiring review. The window points
+users to retry after maintenance or to Backup & Restore when review is
+required. Settings distinguishes an active transfer that is still draining
+catalogue work from a running transfer. Feedback observes the admission
+coordinator independently of transfer queue position.
+
+The Debug-only maintenance fixture holds an ordinary reader, restores a
+real archive against a disposable SQLite catalogue, and releases the reader
+on demand. Service regressions check the published drain, exclusive, open
+and review-required phases.
+
+The 67 focused tests, 292 Debug tests, 281 Release tests and Swift build passed.
+Whitespace, declaration inventory and audit link checks passed. Logs are at
+`/private/tmp/musiclibrary-ra4-maintenance-feedback-{focused,debug,release,build}.log`.
+The signed Debug fixture launched and created its temporary catalogue. Native
+verification stopped because Computer Use reported `cgWindowNotFound` while the
+fixture was running, including after retries by bundle ID and app path.
+
+Next review **snapshot publication freshness after a same-revision restore**.
+Automatic publishing currently compares revision numbers, which can repeat
+after replacement. The latest runnable packaged app is Music Library
+0.72 build 73 with schema 17.
+See [the migration inventory](CATALOGUE_USE_MIGRATION.md).
+
+## Previous resume — RA4 SQLite replacement safeguards
 
 Complete archive and database-only restore now require a successful SQLite
 truncate checkpoint and acknowledged close before replacing the database.

@@ -1,5 +1,9 @@
 import Foundation
 
+public enum CatalogueMaintenancePhase: Equatable, Sendable {
+    case open, draining, exclusive, reviewRequired
+}
+
 /// Operation lifetime coordination for ordinary catalogue use and exclusive
 /// work such as complete archive capture.
 /// Ordinary users share admission; maintenance closes admission and waits for
@@ -17,7 +21,7 @@ final class CatalogueAdmission {
             }
         }
     }
-    enum Phase: Equatable, Sendable { case open, draining, exclusive, reviewRequired }
+    typealias Phase = CatalogueMaintenancePhase
     struct Context: Equatable, Sendable {
         fileprivate enum Kind: Sendable { case ordinary, maintenance }
         fileprivate let owner: UUID
@@ -33,6 +37,8 @@ final class CatalogueAdmission {
     private var waiters: [Waiter] = []
     private var exclusive: UUID?
     private var needsReview = false
+    private var reportedPhase: Phase = .open
+    var onPhaseChange: ((Phase) -> Void)?
 
     var phase: Phase {
         if needsReview { return .reviewRequired }
@@ -86,6 +92,7 @@ final class CatalogueAdmission {
         // Reserve before any await, independently of the async continuation
         // helper's executor behavior. An unattached head also blocks admission.
         waiters.append(.init(id: id, continuation: nil))
+        publishPhase()
         let context = try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Context, any Error>) in
                 guard !Task.isCancelled else {
@@ -130,14 +137,23 @@ final class CatalogueAdmission {
         let pending = waiters
         waiters.removeAll()
         for waiter in pending { waiter.continuation?.resume(throwing: Failure.reviewRequired) }
+        publishPhase()
     }
 
     private func advance() {
+        defer { publishPhase() }
         guard !needsReview, exclusive == nil, users.isEmpty,
               let continuation = waiters.first?.continuation else { return }
         let next = waiters.removeFirst()
         exclusive = next.id
         continuation.resume(returning: .init(owner: owner, id: next.id, kind: .maintenance))
+    }
+
+    private func publishPhase() {
+        let current = phase
+        guard current != reportedPhase else { return }
+        reportedPhase = current
+        onPhaseChange?(current)
     }
     private func cancelWaiting(_ id: UUID) {
         guard let index = waiters.firstIndex(where: { $0.id == id }) else { return }

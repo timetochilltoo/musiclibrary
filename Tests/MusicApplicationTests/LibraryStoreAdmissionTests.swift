@@ -1245,7 +1245,7 @@ struct LibraryStoreAdmissionTests {
         try await until { writer.started }
         probe.holdNext = true
         let restore = Task { try await store.restoreCompleteCatalogueArchive(from: archive) }
-        try await until { store.catalogueAdmission.phase == .draining }
+        try await until { store.catalogueMaintenancePhase == .draining }
         #expect(store.transferActivity.active == .archiveRestore)
         #expect(!FileManager.default.fileExists(atPath: root.appending(path: "Recovery").path))
         await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
@@ -1255,7 +1255,7 @@ struct LibraryStoreAdmissionTests {
         writer.open()
         let edited = try await edit.value
         try await until { probe.gate.started }
-        #expect(store.catalogueAdmission.phase == .exclusive)
+        #expect(store.catalogueMaintenancePhase == .exclusive)
         #expect(store.catalogueAlbums.first?.title == "Archived album")
         #expect(store.albums.first?.title == "Live album")
         await #expect(throws: CatalogueAdmission.Failure.maintenancePending) {
@@ -1267,7 +1267,7 @@ struct LibraryStoreAdmissionTests {
         try await restore.value
         #expect(store.albums.first?.title == "Archived album")
         #expect(try Data(contentsOf: cover) == Data([1]))
-        #expect(store.catalogueAdmission.phase == .open && !store.transferActivity.isBusy)
+        #expect(store.catalogueMaintenancePhase == .open && !store.transferActivity.isBusy)
 
         let backups = root.appending(path: "Recovery/CatalogueArchives/before-archive-restore")
         let backup = try #require(FileManager.default.contentsOfDirectory(at: backups, includingPropertiesForKeys: nil).first)

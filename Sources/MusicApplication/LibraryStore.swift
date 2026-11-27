@@ -61,6 +61,7 @@ public final class LibraryStore: ObservableObject {
     @Published public private(set) var masterBackupStatus = "Master backup destination not configured"
     @Published public private(set) var catalogueMaintenanceStatus = "No catalogue cleanup has been run"
     @Published public private(set) var transferActivity = LibraryTransferActivity()
+    @Published public private(set) var catalogueMaintenancePhase: CatalogueMaintenancePhase = .open
     @Published public private(set) var recoveryReviewMessage: String?
     public var recoveryRequiresReview: Bool { recoveryReviewMessage != nil }
 
@@ -83,6 +84,30 @@ public final class LibraryStore: ObservableObject {
     // Restore, cleanup and reset reserve maintenance through publication.
     let catalogueAdmission = CatalogueAdmission()
     #if DEBUG
+    private var maintenanceFixtureRelease: CheckedContinuation<Void, Never>?
+
+    public static func makeMaintenanceFixture() async throws -> (store: LibraryStore, archive: URL) {
+        let directory = FileManager.default.temporaryDirectory.appending(path: "MusicLibraryMaintenanceFixture-\(UUID())")
+        let store = try await LibraryStore(recoveryFixtureDirectory: directory)
+        let album = try await store.addAlbum(.init(title: "Archived fixture album"))
+        let archive = try await store.exportCompleteCatalogueArchive(to: directory.appending(path: "Exports"))
+        try await store.updateAlbum(album.id, with: .init(title: "Live fixture album"))
+        return (store, archive)
+    }
+
+    public func holdMaintenanceFixtureReader() async throws {
+        guard recoveryFixtureDirectory != nil, maintenanceFixtureRelease == nil else { return }
+        try await withCatalogueUse { _, _ in
+            await withCheckedContinuation { maintenanceFixtureRelease = $0 }
+        }
+    }
+
+    public func releaseMaintenanceFixtureReader() {
+        let release = maintenanceFixtureRelease
+        maintenanceFixtureRelease = nil
+        release?.resume()
+    }
+
     @Published public private(set) var syntheticRecoveryFailure: RestoreRecoveryError?
 
     public func showSyntheticRecoveryFailure(incomplete: Bool) {
@@ -143,6 +168,7 @@ public final class LibraryStore: ObservableObject {
     public init(metadataLookupProvider: any MetadataLookupProviding = MusicBrainzMetadataProvider()) {
         self.metadataLookupProvider = metadataLookupProvider
         transferQueue.onChange = { [weak self] in self?.transferActivity = $0 }
+        catalogueAdmission.onPhaseChange = { [weak self] in self?.catalogueMaintenancePhase = $0 }
     }
 
     /// Isolated fixture composition: never starts Application Support or resolves
@@ -155,6 +181,7 @@ public final class LibraryStore: ObservableObject {
         self.database = database
         self.metadataLookupProvider = metadataLookupProvider
         transferQueue.onChange = { [weak self] in self?.transferActivity = $0 }
+        catalogueAdmission.onPhaseChange = { [weak self] in self?.catalogueMaintenancePhase = $0 }
         if let albumSearch { self.albumSearch = albumSearch }
         self.managedArtworkStore = managedArtworkStore
         if let coverDownload { self.coverDownload = coverDownload }
