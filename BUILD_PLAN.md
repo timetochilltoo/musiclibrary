@@ -371,6 +371,11 @@ same or an earlier SQLite revision. Share manifests advance independently
 of the captured revision, and the companion detects updates by publication
 order. Published JSON uses the companion v1 schema version.
 
+Companion source-switch checkpoint. A verified snapshot from another share
+can replace the cache at a lower or equal publication number. The cache
+retains its previous verified catalogue until the replacement passes checksum
+and schema checks. Next review same-publication repair of a damaged local cache.
+
 Store more than an absolute path:
 
 - storage-root ID plus relative path;

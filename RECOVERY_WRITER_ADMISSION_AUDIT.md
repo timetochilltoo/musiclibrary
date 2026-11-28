@@ -216,8 +216,9 @@ startup. Do not add passing tests that require unsafe admission to remain allowe
   captured SQLite payload. Both restore paths require a successful checkpoint
   and close before file replacement. The Mac distinguishes active-work drain,
   exclusive maintenance and recovery review. Snapshot freshness now survives a
-  restore that reuses the published revision. Next review companion cache
-  behaviour when the selected share changes.
+  restore that reuses the published revision. The companion now scopes
+  publication ordering to the selected folder and verifies a replacement
+  before activating it.
 
 RA2–RA4 are a proposed sequence, not completed work or permission for FR2. A
 coordinator primitive passing its tests will not fix the present call-site gaps.

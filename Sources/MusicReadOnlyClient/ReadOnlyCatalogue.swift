@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 
 public struct ReadOnlyCatalogue: Codable, Equatable, Sendable {
@@ -117,21 +116,5 @@ public extension ReadOnlyTrack {
             if case .mapped(let url) = asset.resolve(using: mappings) { return url }
         }
         return nil
-    }
-}
-
-public extension SnapshotClient {
-    func localCatalogue() throws -> ReadOnlyCatalogue? {
-        let manifestURL = cacheDirectory.appending(path: "manifest.json")
-        guard FileManager.default.fileExists(atPath: manifestURL.path) else { return nil }
-        let manifest = try JSONDecoder().decode(ReadOnlySnapshotManifest.self, from: Data(contentsOf: manifestURL))
-        guard manifest.format == "music-library-snapshot-json-v1" else { throw SnapshotClientError.incompatibleFormat }
-        guard SnapshotClient.isSafeSnapshotFileName(manifest.fileName) else { throw SnapshotClientError.unsafeFileName }
-        let data = try Data(contentsOf: cacheDirectory.appending(path: manifest.fileName))
-        let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-        guard hash == manifest.sha256 else { throw SnapshotClientError.checksumMismatch }
-        let catalogue = try JSONDecoder().decode(ReadOnlyCatalogue.self, from: data)
-        guard catalogue.format == "music-library-json", (1...ReadOnlyCatalogue.maximumSupportedSchemaVersion).contains(catalogue.schemaVersion) else { throw SnapshotClientError.incompatibleCatalogue }
-        return catalogue
     }
 }

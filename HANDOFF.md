@@ -1,10 +1,35 @@
 # Music Library — Project Handoff
 
-Last updated: 27 November 2026
+Last updated: 28 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — RA4 shared snapshot freshness
+## Current resume — companion snapshot source switching
+
+The companion records a device-local fingerprint of the selected folder
+path with the active cache manifest. It compares publication numbers only
+for that source. A different folder can install a verified lower or equal
+publication number. Local payloads use their verified checksum in the
+filename, and the active manifest switches only after checksum and catalogue
+validation. Legacy numeric caches remain readable and gain attribution on
+the next verified refresh.
+
+Selecting another folder leaves the previous verified snapshot usable until
+refresh succeeds. The companion labels the previous snapshot when the
+selected folder differs. Temporary tests cover lower and equal sequences,
+same-named payloads, failed checksum and schema validation, same-source
+downgrade refusal and migration from the old cache layout.
+
+The 20 focused tests, 296 Debug tests, 285 Release tests and Swift build passed.
+Whitespace checks passed. Logs are at
+`/private/tmp/musiclibrary-companion-source-switch-{focused,debug,release,build}.log`.
+
+Next address **same-publication repair of a missing or damaged local payload**.
+Physical iPad and live SMB checks remain deferred. The latest packaged Mac
+app is Music Library 0.72 build 73 with SQLite schema 17.
+See [the migration inventory](CATALOGUE_USE_MIGRATION.md).
+
+## Previous resume — RA4 shared snapshot freshness
 
 Restore and reset invalidate automatic snapshot freshness independently of
 the SQLite revision. Invalidation persists across Mac relaunch until a

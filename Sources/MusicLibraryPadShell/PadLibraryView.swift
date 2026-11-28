@@ -159,7 +159,7 @@ public struct PadLibraryView: View {
         catch { message = "Could not load device-local play counts: \(error.localizedDescription)" }
         do {
             catalogue = try client.localCatalogue()
-            snapshotStatus = catalogue == nil ? "No verified snapshot loaded" : "Verified local snapshot available"
+            updateSnapshotStatus()
             localSnapshotUpdatedAt = try client.localManifestModificationDate()
             if let catalogue {
                 resumePositionsByTrackID = Dictionary(uniqueKeysWithValues: catalogue.albums.flatMap(\.discs).flatMap(\.tracks).compactMap { track in
@@ -180,9 +180,22 @@ public struct PadLibraryView: View {
             let directory = try result.get()
             try sourceStore.set(selectedDirectory: directory)
             sourceDirectory = directory
+            updateSnapshotStatus()
             checkForNewerSource()
             message = "Snapshot source saved. Refresh when ready."
         } catch { message = "Could not save snapshot source: \(error.localizedDescription)" }
+    }
+
+    private func updateSnapshotStatus() {
+        guard catalogue != nil else {
+            snapshotStatus = "No verified snapshot loaded"
+            return
+        }
+        if let sourceDirectory, client.localSnapshotMatchesSource(sourceDirectory) == false {
+            snapshotStatus = "Showing the previous folder’s verified snapshot"
+        } else {
+            snapshotStatus = "Verified local snapshot available"
+        }
     }
 
     private func selectSMBRoot(_ result: Result<URL, Error>) {

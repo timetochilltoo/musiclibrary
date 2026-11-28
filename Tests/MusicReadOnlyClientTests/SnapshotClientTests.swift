@@ -39,8 +39,17 @@ func companionFavourites() throws {
 
 @Test("Snapshot client keeps last valid cache when checksum fails")
 func snapshotValidation() throws {
-    let source = FileManager.default.temporaryDirectory.appending(path: "snapshot-source-\(UUID().uuidString)"); let cache = FileManager.default.temporaryDirectory.appending(path: "snapshot-cache-\(UUID().uuidString)"); defer { try? FileManager.default.removeItem(at: source); try? FileManager.default.removeItem(at: cache) }; try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
-    let payload = Data("{}".utf8); try payload.write(to: source.appending(path: "catalogue-1.json")); let good = SHA256.hash(data: payload).map { String(format: "%02x", $0) }.joined(); let manifest = ReadOnlySnapshotManifest(format: "music-library-snapshot-json-v1", revision: 1, fileName: "catalogue-1.json", sha256: good); try JSONEncoder().encode(manifest).write(to: source.appending(path: "manifest.json")); let client = SnapshotClient(cacheDirectory: cache); #expect(try client.update(from: source)); #expect(try client.localManifestModificationDate() != nil); try JSONEncoder().encode(ReadOnlySnapshotManifest(format: manifest.format, revision: 2, fileName: "catalogue-1.json", sha256: "bad")).write(to: source.appending(path: "manifest.json")); #expect(throws: SnapshotClientError.checksumMismatch) { try client.update(from: source) }; #expect(FileManager.default.fileExists(atPath: cache.appending(path: "catalogue-1.json").path))
+    let root = FileManager.default.temporaryDirectory.appending(path: "SnapshotValidation-\(UUID())")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let source = root.appending(path: "Source")
+    let client = SnapshotClient(cacheDirectory: root.appending(path: "Cache"))
+    let good = try writeSnapshot("Verified", sequence: 1, to: source)
+    #expect(try client.update(from: source))
+    #expect(try client.localManifestModificationDate() != nil)
+    let bad = ReadOnlySnapshotManifest(format: good.format, revision: 2, fileName: good.fileName, sha256: "bad")
+    try JSONEncoder().encode(bad).write(to: source.appending(path: "manifest.json"))
+    #expect(throws: SnapshotClientError.checksumMismatch) { try client.update(from: source) }
+    #expect(try client.localCatalogue()?.albums.first?.title == "Verified")
 }
 
 @Test("Snapshot client rejects non-canonical payload names before touching its cache")
@@ -111,8 +120,8 @@ func unsupportedSnapshotSchema() throws {
     let manifest = ReadOnlySnapshotManifest(format: "music-library-snapshot-json-v1", revision: 1, fileName: fileName, sha256: checksum)
     try JSONEncoder().encode(manifest).write(to: source.appending(path: "manifest.json"))
     let client = SnapshotClient(cacheDirectory: cache)
-    #expect(try client.update(from: source))
-    #expect(throws: SnapshotClientError.incompatibleCatalogue) { try client.localCatalogue() }
+    #expect(throws: SnapshotClientError.incompatibleCatalogue) { try client.update(from: source) }
+    #expect(try client.localCatalogue() == nil)
 }
 
 @Test("Read-only assets resolve only through matching safe device-local roots")
@@ -164,12 +173,90 @@ func sourceManifestSequenceCheck() throws {
     _ = try publish("Before restore", sequence: 7)
     #expect(try client.update(from: source))
     #expect(try client.localCatalogue()?.albums.first?.title == "Before restore")
-    let restored = try publish("After restore", sequence: 8)
+    _ = try publish("After restore", sequence: 8)
     try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 10)], ofItemAtPath: sourceManifest.path)
     #expect(try client.sourceManifestIsNewer(from: source))
     #expect(try client.localCatalogue()?.albums.first?.title == "Before restore")
     #expect(try client.update(from: source))
     #expect(try client.localCatalogue()?.albums.first?.title == "After restore")
-    #expect(FileManager.default.fileExists(atPath: cache.appending(path: restored).path))
     #expect(try !client.sourceManifestIsNewer(from: source))
+}
+
+
+@Test("Switching shares permits lower or equal sequences and keeps the verified cache on failure")
+func switchesSnapshotSources() throws {
+    let root = FileManager.default.temporaryDirectory.appending(path: "SnapshotSwitch-\(UUID())")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let a = root.appending(path: "A")
+    let b = root.appending(path: "B")
+    let cache = root.appending(path: "Cache")
+    let client = SnapshotClient(cacheDirectory: cache)
+    try writeSnapshot("First share", sequence: 80, to: a)
+    #expect(try client.update(from: a))
+    #expect(client.localSnapshotMatchesSource(a) == true)
+
+    // Leave a same-named payload in the cache from a previous visit.
+    try writeSnapshot("Second share", sequence: 2, to: b)
+    #expect(try client.update(from: b))
+    #expect(try client.localCatalogue()?.albums.first?.title == "Second share")
+    #expect(try client.update(from: a))
+
+    let bad = try writeSnapshot("Bad schema", sequence: 2, to: b, schema: ReadOnlyCatalogue.maximumSupportedSchemaVersion + 1)
+    #expect(try client.sourceManifestIsNewer(from: b))
+    #expect(client.localSnapshotMatchesSource(b) == false)
+    #expect(throws: SnapshotClientError.incompatibleCatalogue) { try client.update(from: b) }
+    #expect(try client.localCatalogue()?.albums.first?.title == "First share")
+    #expect(client.localSnapshotMatchesSource(a) == true)
+
+    let corruptPayload = b.appending(path: bad.fileName)
+    try Data([0]).write(to: corruptPayload)
+    #expect(throws: SnapshotClientError.checksumMismatch) { try client.update(from: b) }
+    #expect(try client.localCatalogue()?.albums.first?.title == "First share")
+
+    try writeSnapshot("Updated second share", sequence: 2, to: b)
+    let reopened = SnapshotClient(cacheDirectory: cache)
+    #expect(try reopened.update(from: b))
+    #expect(reopened.localSnapshotMatchesSource(b) == true)
+    #expect(try reopened.localCatalogue()?.albums.first?.title == "Updated second share")
+    try writeSnapshot("Older second share", sequence: 1, to: b)
+    #expect(try !reopened.sourceManifestIsNewer(from: b))
+    #expect(try !reopened.update(from: b))
+
+    try writeSnapshot("Equal sequence first share", sequence: 2, to: a)
+    #expect(try reopened.update(from: a))
+    #expect(try reopened.localCatalogue()?.albums.first?.title == "Equal sequence first share")
+}
+
+@Test("Legacy numeric cache remains readable and acquires source attribution on refresh")
+func adoptsLegacySnapshotCache() throws {
+    let root = FileManager.default.temporaryDirectory.appending(path: "LegacySnapshot-\(UUID())")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let cache = root.appending(path: "Cache")
+    let source = root.appending(path: "Source")
+    try writeSnapshot("Legacy cache", sequence: 80, to: cache)
+    try writeSnapshot("Selected folder", sequence: 1, to: source)
+    let client = SnapshotClient(cacheDirectory: cache)
+    #expect(client.localSnapshotMatchesSource(source) == nil)
+    #expect(try client.localCatalogue()?.albums.first?.title == "Legacy cache")
+    #expect(try client.sourceManifestIsNewer(from: source))
+    #expect(try client.update(from: source))
+    #expect(client.localSnapshotMatchesSource(source) == true)
+    #expect(try client.localCatalogue()?.albums.first?.title == "Selected folder")
+}
+
+@discardableResult
+private func writeSnapshot(
+    _ title: String, sequence: Int64, to directory: URL, schema: Int = 10
+) throws -> ReadOnlySnapshotManifest {
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let catalogue = ReadOnlyCatalogue(format: "music-library-json", schemaVersion: schema, catalogueRevision: sequence, albums: [
+        .init(id: "album", title: title, hasCD: false, hasDigital: true)
+    ])
+    let data = try JSONEncoder().encode(catalogue)
+    let fileName = "catalogue-\(sequence).json"
+    let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    let manifest = ReadOnlySnapshotManifest(format: "music-library-snapshot-json-v1", revision: sequence, fileName: fileName, sha256: hash)
+    try data.write(to: directory.appending(path: fileName))
+    try JSONEncoder().encode(manifest).write(to: directory.appending(path: "manifest.json"))
+    return manifest
 }

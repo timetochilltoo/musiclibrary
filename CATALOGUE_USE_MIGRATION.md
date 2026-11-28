@@ -1,6 +1,6 @@
 # Catalogue-use migration inventory
 
-Snapshot: 27 November 2026, RA4 shared snapshot freshness. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
+Snapshot: 28 November 2026, companion snapshot source switching. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
 Operational state: [HANDOFF.md](HANDOFF.md). Safety design: [recovery admission audit](RECOVERY_WRITER_ADMISSION_AUDIT.md).
 
 ## Coverage and lifetime contract
@@ -329,5 +329,11 @@ snapshot independently of revision equality. The publisher orders snapshots
 within the sharing destination and records the captured catalogue revision
 separately. The companion compares the publication order.
 
-Next review companion cache behaviour when the selected sharing folder changes.
-Each destination has its own publication history.
+The companion compares publication numbers only when the selected folder
+matches the source recorded with its active cache. A new source can install a
+lower or equal publication after checksum and schema validation. Its manifest
+and source identity activate together, while the previous verified snapshot
+remains available on failure.
+
+Next address repair of a missing or damaged local payload when the selected
+source still advertises the same publication number.
