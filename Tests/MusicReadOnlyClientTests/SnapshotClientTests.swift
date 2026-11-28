@@ -195,7 +195,7 @@ func switchesSnapshotSources() throws {
     #expect(try client.update(from: a))
     #expect(client.localSnapshotMatchesSource(a) == true)
 
-    // Leave a same-named payload in the cache from a previous visit.
+    // Both shares can publish the same numeric filename.
     try writeSnapshot("Second share", sequence: 2, to: b)
     #expect(try client.update(from: b))
     #expect(try client.localCatalogue()?.albums.first?.title == "Second share")
@@ -283,6 +283,72 @@ func repairsCurrentSnapshot(damage: Bool) throws {
     #expect(client.localSnapshotMatchesSource(source) == true)
     #expect(try !client.sourceManifestIsNewer(from: source))
     #expect(try !client.update(from: source))
+}
+
+@Test("Verified activation prunes obsolete local payloads while preserving the share and unrelated entries")
+func snapshotCacheRetention() throws {
+    let root = FileManager.default.temporaryDirectory.appending(path: "SnapshotRetention-\(UUID())")
+    let files = FileManager.default
+    defer { try? files.removeItem(at: root) }
+    let cache = root.appending(path: "Cache")
+    let source = root.appending(path: "Source")
+    let client = SnapshotClient(cacheDirectory: cache)
+    let legacy = try writeSnapshot("Legacy cache", sequence: 50, to: cache)
+    let first = try writeSnapshot("First publication", sequence: 1, to: source)
+    let invalid = try writeSnapshot("Unsupported publication", sequence: 2, to: source, schema: 999)
+    let remotePayload = source.appending(path: invalid.fileName)
+    let legacyPayload = cache.appending(path: legacy.fileName)
+    let unrelated = cache.appending(path: "catalogue-notes.json")
+    let newline = cache.appending(path: "catalogue-90.json\n")
+    let nested = cache.appending(path: "catalogue-91.json", directoryHint: .isDirectory)
+    let link = cache.appending(path: "catalogue-92.json")
+    try Data([1]).write(to: unrelated)
+    try Data([2]).write(to: newline)
+    try files.createDirectory(at: nested, withIntermediateDirectories: false)
+    try files.createSymbolicLink(at: link, withDestinationURL: remotePayload)
+
+    #expect(throws: SnapshotClientError.incompatibleCatalogue) { try client.update(from: source) }
+    #expect(files.fileExists(atPath: legacyPayload.path))
+    #expect(try client.localCatalogue()?.albums.first?.title == "Legacy cache")
+
+    let sourceManifest = source.appending(path: "manifest.json")
+    try JSONEncoder().encode(first).write(to: sourceManifest)
+    #expect(try client.update(from: source))
+    #expect(!files.fileExists(atPath: legacyPayload.path))
+    let firstCachedPayload = cache.appending(path: "catalogue-\(first.sha256).json")
+    #expect(files.fileExists(atPath: firstCachedPayload.path))
+
+    let latest = try writeSnapshot("Latest publication", sequence: 3, to: source)
+    let publishedEntries = try files.contentsOfDirectory(atPath: source.path).sorted()
+    let publishedBytes = try publishedEntries.map { try Data(contentsOf: source.appending(path: $0)) }
+    #expect(try client.update(from: source))
+    #expect(!files.fileExists(atPath: firstCachedPayload.path))
+    #expect(try SnapshotClient(cacheDirectory: cache).localCatalogue()?.albums.first?.title == "Latest publication")
+    #expect(try files.contentsOfDirectory(atPath: cache.path).sorted() == [
+        "catalogue-\(latest.sha256).json", "manifest.json",
+        unrelated.lastPathComponent, newline.lastPathComponent, nested.lastPathComponent, link.lastPathComponent
+    ].sorted())
+    #expect(try files.destinationOfSymbolicLink(atPath: link.path) == remotePayload.path)
+    #expect(try files.contentsOfDirectory(atPath: source.path).sorted() == publishedEntries)
+    #expect(try publishedEntries.map { try Data(contentsOf: source.appending(path: $0)) } == publishedBytes)
+}
+
+@Test("Refresh refuses the cache directory as a source even through a symbolic link", arguments: [false, true])
+func snapshotCacheCannotBeItsOwnSource(viaLink: Bool) throws {
+    let root = FileManager.default.temporaryDirectory.appending(path: "SnapshotSourceAlias-\(UUID())")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let cache = root.appending(path: "Cache")
+    try writeSnapshot("Legacy cache", sequence: 1, to: cache)
+    let manifestURL = cache.appending(path: "manifest.json")
+    let manifest = try Data(contentsOf: manifestURL)
+    let source = viaLink ? root.appending(path: "Alias") : cache
+    if viaLink {
+        try FileManager.default.createSymbolicLink(at: source, withDestinationURL: cache)
+    }
+    let client = SnapshotClient(cacheDirectory: cache)
+    #expect(throws: SnapshotClientError.sourceIsCache) { try client.update(from: source) }
+    #expect(try Data(contentsOf: manifestURL) == manifest)
+    #expect(try client.localCatalogue()?.albums.first?.title == "Legacy cache")
 }
 
 @discardableResult

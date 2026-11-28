@@ -378,7 +378,11 @@ and schema checks.
 
 Companion cache repair checkpoint. Manual refresh can replace a missing or
 damaged local payload from the same publication if the checksum agrees with
-the active manifest. Local snapshot retention comes next.
+the active manifest.
+
+Companion cache retention checkpoint. A verified activation keeps the
+active local payload and reclaims obsolete snapshot files. Failed refreshes
+leave the cache available for offline browsing.
 
 Store more than an absolute path:
 

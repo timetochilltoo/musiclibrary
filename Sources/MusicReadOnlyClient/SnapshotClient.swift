@@ -19,16 +19,21 @@ public struct ReadOnlySnapshotManifest: Codable, Sendable {
     }
 }
 
-public enum SnapshotClientError: Error, Equatable { case incompatibleFormat, incompatibleCatalogue, unsafeFileName, checksumMismatch }
+public enum SnapshotClientError: Error, Equatable {
+    case incompatibleFormat, incompatibleCatalogue, unsafeFileName, checksumMismatch, sourceIsCache
+}
 
 public final class SnapshotClient {
+    // Separate client instances can use the same cache. Keep readers from
+    // capturing an old manifest while its payload is being pruned.
+    private static let cacheLock = NSLock()
     public let cacheDirectory: URL
     public init(cacheDirectory: URL) { self.cacheDirectory = cacheDirectory }
 
     private var localManifestURL: URL { cacheDirectory.appending(path: "manifest.json") }
 
     static func isSafeSnapshotFileName(_ fileName: String) -> Bool {
-        fileName.range(of: #"^catalogue-[0-9]+\.json$"#, options: .regularExpression) != nil
+        fileName.range(of: #"\Acatalogue-[0-9]+\.json\z"#, options: .regularExpression) != nil
     }
 
     public func localManifestModificationDate() throws -> Date? {
@@ -49,6 +54,10 @@ public final class SnapshotClient {
     }
 
     public func update(from directory: URL) throws -> Bool {
+        Self.cacheLock.lock()
+        defer { Self.cacheLock.unlock() }
+
+        guard !isCacheDirectory(directory) else { throw SnapshotClientError.sourceIsCache }
         let manifest = try Self.readSourceManifest(at: directory.appending(path: "manifest.json"))
         let sourceID = Self.sourceID(directory)
         if let current = cachedManifest(), current.cacheSourceID == sourceID {
@@ -76,10 +85,14 @@ public final class SnapshotClient {
         try FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
         try data.write(to: cacheDirectory.appending(path: name), options: .atomic)
         try JSONEncoder().encode(installed).write(to: localManifestURL, options: .atomic)
+        pruneInactivePayloads(keeping: name)
         return true
     }
 
     public func localCatalogue() throws -> ReadOnlyCatalogue? {
+        Self.cacheLock.lock()
+        defer { Self.cacheLock.unlock() }
+
         guard FileManager.default.fileExists(atPath: localManifestURL.path) else { return nil }
         let manifest = try JSONDecoder().decode(ReadOnlySnapshotManifest.self, from: Data(contentsOf: localManifestURL))
         return try readCachedCatalogue(manifest)
@@ -87,12 +100,42 @@ public final class SnapshotClient {
 
     private func readCachedCatalogue(_ manifest: ReadOnlySnapshotManifest) throws -> ReadOnlyCatalogue {
         guard manifest.format == "music-library-snapshot-json-v1" else { throw SnapshotClientError.incompatibleFormat }
-        let contentAddressed = manifest.sha256.range(of: #"^[0-9a-f]{64}$"#, options: .regularExpression) != nil
+        let contentAddressed = manifest.sha256.range(of: #"\A[0-9a-f]{64}\z"#, options: .regularExpression) != nil
             && manifest.fileName == Self.cachePayloadName(manifest.sha256)
         guard contentAddressed || Self.isSafeSnapshotFileName(manifest.fileName) else { throw SnapshotClientError.unsafeFileName }
         let data = try Data(contentsOf: cacheDirectory.appending(path: manifest.fileName))
         guard Self.digest(data) == manifest.sha256 else { throw SnapshotClientError.checksumMismatch }
         return try Self.decodeCatalogue(data)
+    }
+
+    private func isCacheDirectory(_ directory: URL) -> Bool {
+        if cacheDirectory.resolvingSymlinksInPath().path == directory.resolvingSymlinksInPath().path {
+            return true
+        }
+        let keys: Set<URLResourceKey> = [.fileResourceIdentifierKey]
+        guard let cacheID = (try? cacheDirectory.resourceValues(forKeys: keys))?.fileResourceIdentifier else {
+            return false
+        }
+        return cacheID.isEqual((try? directory.resourceValues(forKeys: keys))?.fileResourceIdentifier)
+    }
+
+    private func pruneInactivePayloads(keeping activeName: String) {
+        let files = FileManager.default
+        let keys: Set<URLResourceKey> = [.isRegularFileKey, .isSymbolicLinkKey]
+        guard let entries = try? files.contentsOfDirectory(
+            at: cacheDirectory, includingPropertiesForKeys: Array(keys)
+        ) else { return }
+        for entry in entries {
+            let name = entry.lastPathComponent
+            guard name != activeName,
+                  Self.isSafeSnapshotFileName(name) ||
+                  name.range(of: #"\Acatalogue-[0-9a-f]{64}\.json\z"#, options: .regularExpression) != nil,
+                  let values = try? entry.resourceValues(forKeys: keys),
+                  values.isRegularFile == true, values.isSymbolicLink == false else { continue }
+            // Activation already succeeded. An inaccessible stale copy can
+            // be retried on a later successful activation.
+            try? files.removeItem(at: entry)
+        }
     }
 
     private func cachedManifest() -> ReadOnlySnapshotManifest? {

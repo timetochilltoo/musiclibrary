@@ -4,7 +4,29 @@ Last updated: 28 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — companion snapshot cache repair
+## Current resume — companion snapshot cache retention
+
+`SnapshotClient` keeps the active local payload and prunes obsolete snapshot
+files after verification and atomic manifest activation. Cleanup covers both
+numeric and checksum-based names. It skips unrelated files, directories and
+symbolic links. Failed and skipped refreshes bypass cleanup. Pruning is
+best-effort and retries on a later verified activation. The client refuses
+to refresh from its own cache directory, including a symbolic-link alias.
+
+Temporary fixtures verify legacy cache migration, removal of superseded
+payloads, offline reopen, preservation on failed refresh, and unchanged
+sharing folder contents. The 23 focused tests, 299 Debug tests, 288 Release
+tests, Swift build and `git diff --check` passed. Logs are at
+`/private/tmp/musiclibrary-companion-cache-retention-{focused,debug,release,build}.log`.
+
+Next review **companion refresh responsiveness with slow or large snapshots**.
+The Pad shell currently performs refresh synchronously. Use a disposable
+fixture to exercise progress and repeated submission while preserving
+verified offline browsing. Physical iPad and live SMB checks remain deferred.
+The latest packaged Mac app is Music Library 0.72 build 73 with SQLite schema
+17. See [the migration inventory](CATALOGUE_USE_MIGRATION.md).
+
+## Previous resume — companion snapshot cache repair
 
 Manual refresh can restore a missing or damaged local payload while the
 selected source still advertises the same publication. The published

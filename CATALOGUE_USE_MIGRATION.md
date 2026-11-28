@@ -340,4 +340,10 @@ publication from the same source. Missing or damaged data can be replaced
 using the same checksum and catalogue validation. The publication number
 still prevents a downgrade.
 
-Next review local snapshot retention after verified activation.
+After verified activation the companion prunes obsolete local snapshot
+payloads, including files from the legacy numeric layout. It preserves the
+active payload, unrelated files and the published share. Failed refreshes
+preserve the prior catalogue for offline browsing.
+
+Next review refresh responsiveness while reading and verifying a large
+snapshot from a slow share.

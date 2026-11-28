@@ -14,6 +14,7 @@ Current baseline: inspect `main` with `git log --oneline -5`; [HANDOFF.md](HANDO
 
 Completed and verified:
 
+- Companion cache retention runs after verified payload activation and atomic manifest replacement. It keeps the active payload and best-effort removes obsolete numeric and content-addressed regular files from the local snapshot directory. Failed and skipped refreshes skip pruning. The client refuses its cache directory as a source and serializes activation with local catalogue reads within the process.
 - Companion manual refresh can repair missing or damaged local data at the exact publication number and checksum recorded in the active manifest. The source payload passes checksum, format and schema validation before installation.
 - Companion snapshot activation records a device-local fingerprint of the selected folder path with the cache manifest. Sequence comparison is scoped to that source. Cached payload names are derived from verified content, so two shares can use the same remote filename. A replacement is decoded and validated before its manifest is atomically activated. Legacy numeric caches remain readable.
 - RA4 successful restore and committed reset invalidate pending snapshot freshness independently of SQLite revision. The v1 manifest revision orders publications at a destination and its optional catalogueRevision names the captured SQLite revision. The companion compares manifest sequences and installs the manifest bytes it verified. Published JSON uses the v1 companion schema version 10 independently of SQLite migrations.
