@@ -244,6 +244,47 @@ func adoptsLegacySnapshotCache() throws {
     #expect(try client.localCatalogue()?.albums.first?.title == "Selected folder")
 }
 
+@Test("Refresh repairs a missing or damaged payload from the same publication", arguments: [false, true])
+func repairsCurrentSnapshot(damage: Bool) throws {
+    let root = FileManager.default.temporaryDirectory.appending(path: "SnapshotRepair-\(UUID())")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let source = root.appending(path: "Source")
+    let cache = root.appending(path: "Cache")
+    let client = SnapshotClient(cacheDirectory: cache)
+    let published = try writeSnapshot("Verified album", sequence: 7, to: source)
+    #expect(try client.update(from: source))
+    #expect(try !client.update(from: source))
+
+    let localManifest = cache.appending(path: "manifest.json")
+    let manifestBytes = try Data(contentsOf: localManifest)
+    let cached = try JSONDecoder().decode(ReadOnlySnapshotManifest.self, from: manifestBytes)
+    let localPayload = cache.appending(path: cached.fileName)
+    let original = try Data(contentsOf: localPayload)
+    if damage {
+        try Data("damaged".utf8).write(to: localPayload)
+    } else {
+        try FileManager.default.removeItem(at: localPayload)
+    }
+    #expect(throws: (any Error).self) { _ = try client.localCatalogue() }
+
+    try writeSnapshot("Older album", sequence: 6, to: source)
+    #expect(try !client.update(from: source))
+    try writeSnapshot("Conflicting album", sequence: 7, to: source)
+    #expect(throws: SnapshotClientError.checksumMismatch) { try client.update(from: source) }
+    #expect(try Data(contentsOf: localManifest) == manifestBytes)
+
+    let remotePayload = source.appending(path: published.fileName)
+    try JSONEncoder().encode(published).write(to: source.appending(path: "manifest.json"))
+    #expect(throws: SnapshotClientError.checksumMismatch) { try client.update(from: source) }
+    try original.write(to: remotePayload)
+    #expect(try client.update(from: source))
+    #expect(try client.localCatalogue()?.albums.first?.title == "Verified album")
+    #expect(try Data(contentsOf: localPayload) == original)
+    #expect(client.localSnapshotMatchesSource(source) == true)
+    #expect(try !client.sourceManifestIsNewer(from: source))
+    #expect(try !client.update(from: source))
+}
+
 @discardableResult
 private func writeSnapshot(
     _ title: String, sequence: Int64, to directory: URL, schema: Int = 10

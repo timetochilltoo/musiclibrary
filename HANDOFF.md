@@ -4,7 +4,31 @@ Last updated: 28 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — companion snapshot source switching
+## Current resume — companion snapshot cache repair
+
+Manual refresh can restore a missing or damaged local payload while the
+selected source still advertises the same publication. The published
+checksum must match the active cache manifest, and the remote payload must
+pass checksum and catalogue validation before activation. A healthy cache
+at that publication needs no copy. The companion still refuses older
+publications from the same source. Its refresh failure message distinguishes
+a loaded fallback from the case where no usable snapshot is displayed.
+
+Disposable tests remove or damage the cached payload, try an older
+publication and conflicting or corrupt source data, then verify successful
+repair from the original publication. They verify that failed attempts
+preserve the active manifest.
+
+The 21 focused tests, 297 Debug tests, 286 Release tests and Swift build passed.
+Whitespace checks passed. Logs are at
+`/private/tmp/musiclibrary-companion-cache-repair-{focused,debug,release,build}.log`.
+
+Next review **local snapshot retention after verified activation**. Physical
+iPad and live SMB checks remain deferred. The latest packaged Mac app is
+Music Library 0.72 build 73 with SQLite schema 17.
+See [the migration inventory](CATALOGUE_USE_MIGRATION.md).
+
+## Previous resume — companion snapshot source switching
 
 The companion records a device-local fingerprint of the selected folder
 path with the active cache manifest. It compares publication numbers only

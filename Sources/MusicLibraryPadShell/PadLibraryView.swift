@@ -215,7 +215,10 @@ public struct PadLibraryView: View {
             message = try client.update(from: sourceDirectory) ? "Snapshot updated." : "Already using the latest verified snapshot."
             updateAvailable = false
             loadState()
-        } catch { message = "Snapshot refresh failed; the prior verified cache remains in use. \(error.localizedDescription)" }
+        } catch {
+            let fallback = catalogue == nil ? "" : " The previous verified snapshot is still available."
+            message = "Snapshot refresh failed. \(error.localizedDescription)\(fallback)"
+        }
     }
 
     private func removeMappings(at offsets: IndexSet) {

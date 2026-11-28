@@ -1,6 +1,6 @@
 # Catalogue-use migration inventory
 
-Snapshot: 28 November 2026, companion snapshot source switching. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
+Snapshot: 28 November 2026, companion snapshot cache repair. Source: [LibraryStore.swift](Sources/MusicApplication/LibraryStore.swift).
 Operational state: [HANDOFF.md](HANDOFF.md). Safety design: [recovery admission audit](RECOVERY_WRITER_ADMISSION_AUDIT.md).
 
 ## Coverage and lifetime contract
@@ -335,5 +335,9 @@ lower or equal publication after checksum and schema validation. Its manifest
 and source identity activate together, while the previous verified snapshot
 remains available on failure.
 
-Next address repair of a missing or damaged local payload when the selected
-source still advertises the same publication number.
+Manual companion refresh verifies the active local payload for an equal
+publication from the same source. Missing or damaged data can be replaced
+using the same checksum and catalogue validation. The publication number
+still prevents a downgrade.
+
+Next review local snapshot retention after verified activation.

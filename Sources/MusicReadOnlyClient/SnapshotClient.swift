@@ -51,7 +51,15 @@ public final class SnapshotClient {
     public func update(from directory: URL) throws -> Bool {
         let manifest = try Self.readSourceManifest(at: directory.appending(path: "manifest.json"))
         let sourceID = Self.sourceID(directory)
-        guard shouldLoad(manifest, sourceID: sourceID) else { return false }
+        if let current = cachedManifest(), current.cacheSourceID == sourceID {
+            guard manifest.revision >= current.revision else { return false }
+            if manifest.revision == current.revision {
+                guard manifest.sha256 == current.sha256 else { throw SnapshotClientError.checksumMismatch }
+                // Refresh can repair this publication even when the share has
+                // no newer manifest. A readable current payload needs no copy.
+                guard (try? readCachedCatalogue(current)) == nil else { return false }
+            }
+        }
         let data = try Data(contentsOf: directory.appending(path: manifest.fileName))
         let hash = Self.digest(data)
         guard hash == manifest.sha256 else { throw SnapshotClientError.checksumMismatch }
@@ -74,6 +82,10 @@ public final class SnapshotClient {
     public func localCatalogue() throws -> ReadOnlyCatalogue? {
         guard FileManager.default.fileExists(atPath: localManifestURL.path) else { return nil }
         let manifest = try JSONDecoder().decode(ReadOnlySnapshotManifest.self, from: Data(contentsOf: localManifestURL))
+        return try readCachedCatalogue(manifest)
+    }
+
+    private func readCachedCatalogue(_ manifest: ReadOnlySnapshotManifest) throws -> ReadOnlyCatalogue {
         guard manifest.format == "music-library-snapshot-json-v1" else { throw SnapshotClientError.incompatibleFormat }
         let contentAddressed = manifest.sha256.range(of: #"^[0-9a-f]{64}$"#, options: .regularExpression) != nil
             && manifest.fileName == Self.cachePayloadName(manifest.sha256)
