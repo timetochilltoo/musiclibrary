@@ -85,6 +85,10 @@ public final class CompanionPreferenceStore {
         try preferences().resumePositionsByTrackID[trackID]
     }
 
+    public func resumePositions() throws -> [String: TimeInterval] {
+        try preferences().resumePositionsByTrackID
+    }
+
     public func setResumePosition(_ position: TimeInterval?, for trackID: String) throws {
         var updated = try preferences()
         guard let position, position > 0 else {

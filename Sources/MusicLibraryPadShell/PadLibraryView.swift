@@ -22,6 +22,9 @@ public struct PadLibraryView: View {
     @State private var isSelectingSMBRoot = false
     @State private var rootID = ""
     @State private var message: String?
+    @State private var isLoadingSnapshot = true
+    @State private var snapshotRefresh: SnapshotRefresh
+    @State private var sourceCheck: Task<Void, Never>?
     private let client: SnapshotClient
     private let mappingStore: SMBRootMappingStore
     private let sourceStore: SnapshotSourceStore
@@ -31,6 +34,7 @@ public struct PadLibraryView: View {
     public init(snapshotDirectory: URL, mappingStoreURL: URL, sourceStoreURL: URL? = nil, preferenceStoreURL: URL? = nil) {
         self.snapshotDirectory = snapshotDirectory
         client = SnapshotClient(cacheDirectory: snapshotDirectory)
+        _snapshotRefresh = State(initialValue: SnapshotRefresh(cacheDirectory: snapshotDirectory))
         mappingStore = SMBRootMappingStore(url: mappingStoreURL)
         sourceStore = SnapshotSourceStore(url: sourceStoreURL ?? mappingStoreURL.deletingLastPathComponent().appending(path: "snapshot-source.bookmark"))
         preferenceStore = CompanionPreferenceStore(url: preferenceStoreURL ?? mappingStoreURL.deletingLastPathComponent().appending(path: "companion-preferences.json"))
@@ -53,8 +57,16 @@ public struct PadLibraryView: View {
                         Text("Choose the published snapshot folder to refresh.").font(.caption).foregroundStyle(.secondary)
                     }
                     Button("Choose snapshot source") { isSelectingSnapshotSource = true }
-                    Button("Refresh snapshot") { refreshSnapshot() }.disabled(sourceDirectory == nil)
-                    if updateAvailable { Text("A newer published snapshot is available.").font(.caption).foregroundStyle(.orange) }
+                        .disabled(isLoadingSnapshot || snapshotRefresh.isRefreshing)
+                    Button("Refresh snapshot") { refreshSnapshot() }
+                        .disabled(sourceDirectory == nil || isLoadingSnapshot || snapshotRefresh.isRefreshing)
+                    if isLoadingSnapshot {
+                        ProgressView("Opening local snapshot…")
+                    } else if snapshotRefresh.isRefreshing {
+                        ProgressView("Refreshing snapshot…")
+                    } else if updateAvailable {
+                        Text("A newer published snapshot is available.").font(.caption).foregroundStyle(.orange)
+                    }
                 }
                 Section("This iPad") {
                     LabeledContent("Favourites", value: String(favouriteAlbumIDs.count))
@@ -118,7 +130,7 @@ public struct PadLibraryView: View {
                     }
                 }
             }
-            .task { loadState() }
+            .task { if isLoadingSnapshot { await loadState() } }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { checkForNewerSource() }
                 else { persistCurrentResumePosition() }
@@ -148,7 +160,7 @@ public struct PadLibraryView: View {
         }
     }
 
-    private func loadState() {
+    private func loadState() async {
         mappings = (try? mappingStore.mappings()) ?? []
         sourceDirectory = try? sourceStore.selectedDirectory()
         do { favouriteAlbumIDs = try preferenceStore.favouriteAlbumIDs() }
@@ -157,28 +169,36 @@ public struct PadLibraryView: View {
         catch { message = "Could not load device-local play history: \(error.localizedDescription)" }
         do { playCountsByAlbumID = try preferenceStore.playCountsByAlbumID() }
         catch { message = "Could not load device-local play counts: \(error.localizedDescription)" }
-        do {
-            catalogue = try client.localCatalogue()
+        resumePositionsByTrackID = (try? preferenceStore.resumePositions()) ?? [:]
+
+        let cache = snapshotDirectory
+        let local = await Task.detached(priority: .userInitiated) {
+            let client = SnapshotClient(cacheDirectory: cache)
+            return (catalogue: try client.localCatalogue(), verifiedAt: try? client.localManifestModificationDate())
+        }.result
+        guard !Task.isCancelled else { return }
+        isLoadingSnapshot = false
+        switch local {
+        case .success(let snapshot):
+            catalogue = snapshot.catalogue
+            localSnapshotUpdatedAt = snapshot.verifiedAt
             updateSnapshotStatus()
-            localSnapshotUpdatedAt = try client.localManifestModificationDate()
-            if let catalogue {
-                resumePositionsByTrackID = Dictionary(uniqueKeysWithValues: catalogue.albums.flatMap(\.discs).flatMap(\.tracks).compactMap { track in
-                    (try? preferenceStore.resumePosition(for: track.id)).map { (track.id, $0) }
-                })
-            }
-            checkForNewerSource()
-        } catch {
+        case .failure(let error):
             catalogue = nil
             localSnapshotUpdatedAt = nil
             snapshotStatus = "Verified cache could not be opened"
             message = "The local snapshot is not usable: \(error.localizedDescription)"
         }
+        checkForNewerSource()
     }
 
     private func selectSnapshotSource(_ result: Result<URL, Error>) {
+        guard !snapshotRefresh.isRefreshing else { return }
         do {
             let directory = try result.get()
             try sourceStore.set(selectedDirectory: directory)
+            cancelSourceCheck()
+            updateAvailable = false
             sourceDirectory = directory
             updateSnapshotStatus()
             checkForNewerSource()
@@ -208,16 +228,23 @@ public struct PadLibraryView: View {
     }
 
     private func refreshSnapshot() {
-        guard let sourceDirectory else { return }
-        let gainedAccess = sourceDirectory.startAccessingSecurityScopedResource()
-        defer { if gainedAccess { sourceDirectory.stopAccessingSecurityScopedResource() } }
-        do {
-            message = try client.update(from: sourceDirectory) ? "Snapshot updated." : "Already using the latest verified snapshot."
-            updateAvailable = false
-            loadState()
-        } catch {
-            let fallback = catalogue == nil ? "" : " The previous verified snapshot is still available."
-            message = "Snapshot refresh failed. \(error.localizedDescription)\(fallback)"
+        guard let sourceDirectory, !isLoadingSnapshot, !snapshotRefresh.isRefreshing else { return }
+        cancelSourceCheck()
+        snapshotRefresh.start(from: sourceDirectory) { result in
+            switch result {
+            case .success(let snapshot):
+                if let verified = snapshot.catalogue {
+                    catalogue = verified
+                    localSnapshotUpdatedAt = snapshot.verifiedAt
+                }
+                updateSnapshotStatus()
+                message = snapshot.updated ? "Snapshot updated." : "Already using the latest verified snapshot."
+                updateAvailable = false
+                checkForNewerSource()
+            case .failure(let error):
+                let fallback = catalogue == nil ? "" : " The previous verified snapshot is still available."
+                message = "Snapshot refresh failed. \(error.localizedDescription)\(fallback)"
+            }
         }
     }
 
@@ -229,10 +256,24 @@ public struct PadLibraryView: View {
     }
 
     private func checkForNewerSource() {
-        guard let sourceDirectory else { updateAvailable = false; return }
-        let gainedAccess = sourceDirectory.startAccessingSecurityScopedResource()
-        defer { if gainedAccess { sourceDirectory.stopAccessingSecurityScopedResource() } }
-        updateAvailable = (try? client.sourceManifestIsNewer(from: sourceDirectory)) ?? false
+        guard let sourceDirectory, !isLoadingSnapshot, !snapshotRefresh.isRefreshing, sourceCheck == nil else { return }
+        let cache = snapshotDirectory
+        sourceCheck = Task {
+            let newer = await Task.detached(priority: .utility) {
+                let access = sourceDirectory.startAccessingSecurityScopedResource()
+                defer { if access { sourceDirectory.stopAccessingSecurityScopedResource() } }
+                let client = SnapshotClient(cacheDirectory: cache)
+                return (try? client.sourceManifestIsNewer(from: sourceDirectory)) ?? false
+            }.value
+            guard !Task.isCancelled else { return }
+            sourceCheck = nil
+            updateAvailable = newer
+        }
+    }
+
+    private func cancelSourceCheck() {
+        sourceCheck?.cancel()
+        sourceCheck = nil
     }
 
     private var filteredAlbums: [ReadOnlyAlbum] {

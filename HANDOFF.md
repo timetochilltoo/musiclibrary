@@ -4,7 +4,29 @@ Last updated: 28 November 2026
 Repository: `https://github.com/timetochilltoo/musiclibrary.git`
 Primary branch: `main`
 
-## Current resume — companion snapshot cache retention
+## Current resume — companion background snapshot refresh
+
+`SnapshotRefresh` runs download, verification and activation off the main
+actor and returns the verified decoded catalogue to the Pad shell. The shell
+shows progress, prevents duplicate refresh and source changes, and keeps
+the current catalogue and local playback preferences available. The shell
+also opens the local snapshot and reads published manifests off the main
+actor. Superseded manifest probes cannot set the update indicator.
+
+A gated fixture uses temporary publications to verify the progress state,
+duplicate refusal, successful replacement and checksum-failure fallback.
+The 24 focused tests, 300 Debug tests, 289 Release tests, Swift build and
+`git diff --check` passed. The iOS Simulator target compiled with signing
+disabled. Logs are at `/private/tmp/musiclibrary-companion-background-refresh-{focused,debug,release,build,ios}.log`.
+Interactive simulator, physical iPad and live SMB behaviour were outside
+this validation.
+
+Next review **persisted snapshot source bookmark access after relaunch**.
+Use disposable source folders and check that failures leave the offline
+catalogue browseable. The latest packaged Mac app is Music Library 0.72
+build 73 with SQLite schema 17. See [the migration inventory](CATALOGUE_USE_MIGRATION.md).
+
+## Previous resume — companion snapshot cache retention
 
 `SnapshotClient` keeps the active local payload and prunes obsolete snapshot
 files after verification and atomic manifest activation. Cleanup covers both

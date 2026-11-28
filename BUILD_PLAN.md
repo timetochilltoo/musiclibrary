@@ -384,6 +384,10 @@ Companion cache retention checkpoint. A verified activation keeps the
 active local payload and reclaims obsolete snapshot files. Failed refreshes
 leave the cache available for offline browsing.
 
+Companion refresh runs in the background and shows progress. Browsing
+continues with the verified local catalogue until a replacement is ready.
+Refresh and sharing-folder selection are disabled during an active refresh.
+
 Store more than an absolute path:
 
 - storage-root ID plus relative path;

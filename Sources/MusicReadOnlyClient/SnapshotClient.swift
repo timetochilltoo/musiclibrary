@@ -54,6 +54,10 @@ public final class SnapshotClient {
     }
 
     public func update(from directory: URL) throws -> Bool {
+        try refreshCatalogue(from: directory).updated
+    }
+
+    func refreshCatalogue(from directory: URL) throws -> (updated: Bool, catalogue: ReadOnlyCatalogue?) {
         Self.cacheLock.lock()
         defer { Self.cacheLock.unlock() }
 
@@ -61,18 +65,18 @@ public final class SnapshotClient {
         let manifest = try Self.readSourceManifest(at: directory.appending(path: "manifest.json"))
         let sourceID = Self.sourceID(directory)
         if let current = cachedManifest(), current.cacheSourceID == sourceID {
-            guard manifest.revision >= current.revision else { return false }
+            guard manifest.revision >= current.revision else { return (false, nil) }
             if manifest.revision == current.revision {
                 guard manifest.sha256 == current.sha256 else { throw SnapshotClientError.checksumMismatch }
                 // Refresh can repair this publication even when the share has
                 // no newer manifest. A readable current payload needs no copy.
-                guard (try? readCachedCatalogue(current)) == nil else { return false }
+                if let catalogue = try? readCachedCatalogue(current) { return (false, catalogue) }
             }
         }
         let data = try Data(contentsOf: directory.appending(path: manifest.fileName))
         let hash = Self.digest(data)
         guard hash == manifest.sha256 else { throw SnapshotClientError.checksumMismatch }
-        _ = try Self.decodeCatalogue(data)
+        let catalogue = try Self.decodeCatalogue(data)
 
         // Two sources can publish the same filename. Key local payloads by
         // their verified bytes and atomically activate source and payload
@@ -86,7 +90,7 @@ public final class SnapshotClient {
         try data.write(to: cacheDirectory.appending(path: name), options: .atomic)
         try JSONEncoder().encode(installed).write(to: localManifestURL, options: .atomic)
         pruneInactivePayloads(keeping: name)
-        return true
+        return (true, catalogue)
     }
 
     public func localCatalogue() throws -> ReadOnlyCatalogue? {

@@ -25,6 +25,7 @@ func companionFavourites() throws {
     try store.setResumePosition(42.5, for: "track-1")
     #expect(try store.resumePosition(for: "track-1") == 42.5)
     #expect(try CompanionPreferenceStore(url: url).resumePosition(for: "track-1") == 42.5)
+    #expect(try CompanionPreferenceStore(url: url).resumePositions() == ["track-1": 42.5])
     try store.setResumePosition(nil, for: "track-1")
     #expect(try store.resumePosition(for: "track-1") == nil)
     try store.setResumePosition(12, for: "track-2")
@@ -349,6 +350,60 @@ func snapshotCacheCannotBeItsOwnSource(viaLink: Bool) throws {
     #expect(throws: SnapshotClientError.sourceIsCache) { try client.update(from: source) }
     #expect(try Data(contentsOf: manifestURL) == manifest)
     #expect(try client.localCatalogue()?.albums.first?.title == "Legacy cache")
+}
+
+@MainActor
+@Test("A pending companion refresh rejects repeat submissions and preserves the visible catalogue until verification",
+      arguments: [false, true])
+func backgroundSnapshotRefresh(corrupt: Bool) async throws {
+    let root = FileManager.default.temporaryDirectory.appending(path: "SnapshotBackground-\(UUID())")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let cache = root.appending(path: "Cache")
+    let source = root.appending(path: "Source")
+    let client = SnapshotClient(cacheDirectory: cache)
+    try writeSnapshot("Offline album", sequence: 1, to: source)
+    #expect(try client.update(from: source))
+    let publication = try writeSnapshot("New album", sequence: 2, to: source)
+    if corrupt {
+        try Data([0]).write(to: source.appending(path: publication.fileName))
+    }
+
+    let (started, signal) = AsyncStream<Void>.makeStream()
+    let (resume, release) = AsyncStream<Void>.makeStream()
+    defer { release.finish() }
+    let refresh = SnapshotRefresh { directory in
+        signal.yield(())
+        signal.finish()
+        for await _ in resume { break }
+        return try SnapshotRefresh.perform(from: directory, cacheDirectory: cache)
+    }
+    var visible = try client.localCatalogue()
+    var result: Result<SnapshotRefreshResult, any Error>?
+    let request = try #require(refresh.start(from: source) { completed in
+        result = completed
+        if case .success(let snapshot) = completed { visible = snapshot.catalogue }
+    })
+    #expect(refresh.isRefreshing)
+    for await _ in started { break }
+    #expect(refresh.start(from: source) { _ in Issue.record("Duplicate refresh completed") } == nil)
+    #expect(visible?.albums.first?.title == "Offline album")
+    #expect(result == nil)
+
+    release.yield(())
+    release.finish()
+    await request.value
+    #expect(!refresh.isRefreshing)
+    let completed = try #require(result)
+    if corrupt {
+        #expect(throws: SnapshotClientError.checksumMismatch) { try completed.get() }
+        #expect(visible?.albums.first?.title == "Offline album")
+    } else {
+        let snapshot = try completed.get()
+        #expect(snapshot.updated)
+        #expect(snapshot.verifiedAt != nil)
+        #expect(visible?.albums.first?.title == "New album")
+    }
+    #expect(try client.localCatalogue() == visible)
 }
 
 @discardableResult

@@ -345,5 +345,10 @@ payloads, including files from the legacy numeric layout. It preserves the
 active payload, unrelated files and the published share. Failed refreshes
 preserve the prior catalogue for offline browsing.
 
-Next review refresh responsiveness while reading and verifying a large
-snapshot from a slow share.
+The companion reads and verifies snapshots off the main actor. Its refresh
+guard rejects repeat submissions, and the existing catalogue remains
+available to browse until verified replacement completes. Launch-time cache
+opening and share manifest probes also run in the background.
+
+Next review persisted snapshot source bookmark access after companion relaunch,
+using disposable folders and preserving the local offline catalogue.

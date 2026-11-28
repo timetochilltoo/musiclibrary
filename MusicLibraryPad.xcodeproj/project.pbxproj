@@ -12,6 +12,7 @@
 		3B2F2325D2450A6007A68095 /* SnapshotSourceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B62A24938336427C3F1E85D /* SnapshotSourceStore.swift */; };
 		45641128E2AC8382386EE46F /* SMBRootMappings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5640DB9CD4A8206555966A5D /* SMBRootMappings.swift */; };
 		63B3FC43303DB7A06E27CF2D /* MusicLibraryPadShell.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 1067564D050237B95ADA60D4 /* MusicLibraryPadShell.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		6545B28A6A87B83078D6DAE7 /* SnapshotRefresh.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C8A0A747E0BA96FCEA68942 /* SnapshotRefresh.swift */; };
 		777A31DBCF18118DD6810D66 /* MusicLibraryPadApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8214D0D6CE18C6FC1E82DD32 /* MusicLibraryPadApp.swift */; };
 		973FC85CA525DDF25BC5DC8D /* PadLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2D3A5718D9655919CB9BC53 /* PadLibraryView.swift */; };
 		A84CD86FA09B35A691C15E4E /* MusicReadOnlyClient.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 966A650DEE7F65D5BD9D30C3 /* MusicReadOnlyClient.framework */; };
@@ -54,6 +55,7 @@
 /* Begin PBXFileReference section */
 		1067564D050237B95ADA60D4 /* MusicLibraryPadShell.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = MusicLibraryPadShell.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		251EBF2FA9A99EA74D8D3F4F /* CompanionPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionPreferences.swift; sourceTree = "<group>"; };
+		2C8A0A747E0BA96FCEA68942 /* SnapshotRefresh.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotRefresh.swift; sourceTree = "<group>"; };
 		4920C53336EBCE7A88644BAB /* SnapshotClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotClient.swift; sourceTree = "<group>"; };
 		4B62A24938336427C3F1E85D /* SnapshotSourceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotSourceStore.swift; sourceTree = "<group>"; };
 		5640DB9CD4A8206555966A5D /* SMBRootMappings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SMBRootMappings.swift; sourceTree = "<group>"; };
@@ -101,6 +103,7 @@
 				985F4F8C651162F82D6FBB40 /* ReadOnlyCatalogue.swift */,
 				5640DB9CD4A8206555966A5D /* SMBRootMappings.swift */,
 				4920C53336EBCE7A88644BAB /* SnapshotClient.swift */,
+				2C8A0A747E0BA96FCEA68942 /* SnapshotRefresh.swift */,
 				4B62A24938336427C3F1E85D /* SnapshotSourceStore.swift */,
 			);
 			name = MusicReadOnlyClient;
@@ -240,6 +243,7 @@
 				D9F18D7D054B01D1752CB785 /* ReadOnlyCatalogue.swift in Sources */,
 				45641128E2AC8382386EE46F /* SMBRootMappings.swift in Sources */,
 				3438F8DEB9A8360E8BBF7ACE /* SnapshotClient.swift in Sources */,
+				6545B28A6A87B83078D6DAE7 /* SnapshotRefresh.swift in Sources */,
 				3B2F2325D2450A6007A68095 /* SnapshotSourceStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
